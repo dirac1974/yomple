@@ -5,7 +5,7 @@
   <meta name="referrer" content="no-referrer" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Yomple</title>
-  <meta name="description" content="Play Bloom, Word Garden, and Hall of Presidents." />
+  <meta name="description" content="Play Bloom, Word Garden, Hall of Presidents, and Star Map." />
   <link rel="icon" href="favicon.svg" />
   <style>
     :root{
@@ -48,16 +48,17 @@
       color:#fff;text-shadow:0 2px 0 rgba(43,42,56,.18);
       background:#ff6b5a;border-radius:999px;padding:8px 18px;
     }
-    .apps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;width:100%}
+    .apps{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;width:100%}
     .app{
       position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;
-      min-height:210px;border-radius:26px;padding:18px 16px 16px;text-decoration:none;color:#fff;
+      min-height:200px;border-radius:26px;padding:18px 16px 16px;text-decoration:none;color:#fff;
       box-shadow:0 10px 0 rgba(43,42,56,.12), 0 18px 28px rgba(43,42,56,.16);
       background-size:cover;background-position:center;
       transform:rotate(-0.4deg);transition:transform .15s ease;
     }
     .app:nth-child(2){transform:rotate(.5deg)}
     .app:nth-child(3){transform:rotate(-.2deg)}
+    .app:nth-child(4){transform:rotate(.35deg)}
     .app:hover{transform:translateY(-3px) rotate(0)}
     .app::after{
       content:"";position:absolute;inset:0;
@@ -85,12 +86,17 @@
       background-image:url("https://lh3.googleusercontent.com/d/14joT01-sGwPLZPPtvN9voXmzqjvRpdx8=s900"),
         linear-gradient(160deg,#f0c36a,#b8742a);
     }
+    .stars{
+      background-color:#2a4a8c;
+      background-image:url("https://lh3.googleusercontent.com/d/1f6i36HgwXbnujqamAwE78tdZLntx1jhC=s900"),
+        linear-gradient(160deg,#3d6ad4,#1a2a5a);
+    }
     footer{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:13px;padding-top:6px}
     footer a{text-decoration:none;color:#2B2A38;background:#fff;border-radius:999px;padding:6px 12px;opacity:.85;font-weight:700}
     footer a:hover{opacity:1}
     @media (max-width:700px){
       .apps{grid-template-columns:1fr}
-      .app,.app:nth-child(2),.app:nth-child(3){transform:none;min-height:168px}
+      .app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4){transform:none;min-height:168px}
     }
   </style>
 </head>
@@ -135,6 +141,11 @@
           <span class="ic">🏛️</span>
           <h2>Hall of Presidents</h2>
           <p>US presidents in order</p>
+        </a>
+        <a class="app stars" href="https://dirac1974.github.io/star-map/">
+          <span class="ic">⭐</span>
+          <h2>Star Map</h2>
+          <p>States and capitals</p>
         </a>
       </div>
     </main>
