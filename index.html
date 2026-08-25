@@ -8,15 +8,11 @@
   <meta name="description" content="Play Bloom, Word Garden, Hall of Presidents, Star Map, and Quiet Field." />
   <link rel="icon" href="favicon.svg" />
   <style>
-    :root{
-      --coral:#FF6B5A; --sun:#FFD54A; --sky:#4AA8F0; --mint:#5FCFB3;
-      --ink:#2B2A38; --soft:#4A4860;
-    }
+    :root{ --coral:#FF6B5A; --sun:#FFD54A; --sky:#4AA8F0; --mint:#5FCFB3; --ink:#2B2A38; --soft:#4A4860; }
     *{box-sizing:border-box}
     html,body{margin:0;padding:0;min-height:100%}
     body{
-      font-family:"ui-rounded","Nunito","Avenir Next","Segoe UI",system-ui,sans-serif;
-      color:var(--ink);
+      font-family:"ui-rounded","Nunito","Avenir Next","Segoe UI",system-ui,sans-serif; color:var(--ink);
       background:
         radial-gradient(circle at 12% 8%, #fff6a8 0 18%, transparent 42%),
         radial-gradient(circle at 92% 12%, #ffb7d5 0 16%, transparent 40%),
@@ -25,84 +21,36 @@
         linear-gradient(180deg,#9fe7ff 0%,#ffe28a 48%,#ffb38a 100%);
       background-attachment:fixed;
     }
-    body::before{
-      content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;
-      background-image:
-        radial-gradient(#fff 1.5px, transparent 2px),
-        radial-gradient(#fff 1px, transparent 2px);
-      background-size:46px 46px, 22px 22px;
-      background-position:0 0, 12px 18px;
-    }
+    body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;background-image:radial-gradient(#fff 1.5px, transparent 2px),radial-gradient(#fff 1px, transparent 2px);background-size:46px 46px, 22px 22px;background-position:0 0, 12px 18px;}
     a{color:inherit}
-    .wrap{width:min(920px,92vw);margin:0 auto;min-height:100vh;display:flex;flex-direction:column;
-      padding:26px 0 32px;position:relative;z-index:1}
+    .wrap{width:min(920px,92vw);margin:0 auto;min-height:100vh;display:flex;flex-direction:column;padding:26px 0 32px;position:relative;z-index:1}
     header{display:flex;align-items:center;justify-content:center;padding:6px 0 4px}
-    .brand{display:flex;align-items:center;gap:12px;text-decoration:none;
-      background:#fff;border-radius:999px;padding:8px 18px 8px 10px;
-      box-shadow:0 8px 0 rgba(255,107,90,.18), 0 16px 30px rgba(43,42,56,.12)}
+    .brand{display:flex;align-items:center;gap:12px;text-decoration:none;background:#fff;border-radius:999px;padding:8px 18px 8px 10px;box-shadow:0 8px 0 rgba(255,107,90,.18), 0 16px 30px rgba(43,42,56,.12)}
     .mark{width:58px;height:58px;display:block}
     .word{height:36px;display:block}
     main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:10px 0 18px}
-    h1{
-      font-size:clamp(22px,4vw,28px);font-weight:800;margin:0;letter-spacing:-.02em;
-      color:#fff;text-shadow:0 2px 0 rgba(43,42,56,.18);
-      background:#ff6b5a;border-radius:999px;padding:8px 18px;
-    }
+    h1{font-size:clamp(22px,4vw,28px);font-weight:800;margin:0;letter-spacing:-.02em;color:#fff;text-shadow:0 2px 0 rgba(43,42,56,.18);background:#ff6b5a;border-radius:999px;padding:8px 18px;}
     .apps{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;width:100%}
-    .app{
-      position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;
-      min-height:200px;border-radius:26px;padding:18px 16px 16px;text-decoration:none;color:#fff;
-      box-shadow:0 10px 0 rgba(43,42,56,.12), 0 18px 28px rgba(43,42,56,.16);
-      background-size:cover;background-position:center;
-      transform:rotate(-0.4deg);transition:transform .15s ease;
-    }
+    .app{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;min-height:200px;border-radius:26px;padding:18px 16px 16px;text-decoration:none;color:#fff;box-shadow:0 10px 0 rgba(43,42,56,.12), 0 18px 28px rgba(43,42,56,.16);background-size:cover;background-position:center;transform:rotate(-0.4deg);transition:transform .15s ease;}
     .app:nth-child(2){transform:rotate(.5deg)}
     .app:nth-child(3){transform:rotate(-.2deg)}
     .app:nth-child(4){transform:rotate(.35deg)}
     .app:nth-child(5){transform:rotate(-.25deg)}
     .app:hover{transform:translateY(-3px) rotate(0)}
-    .app::after{
-      content:"";position:absolute;inset:0;
-      background:linear-gradient(180deg,rgba(43,42,56,.05) 30%,rgba(43,42,56,.62) 100%);
-    }
+    .app::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(43,42,56,.05) 30%,rgba(43,42,56,.62) 100%);}
     .app > *{position:relative;z-index:1}
-    .app .ic{
-      width:44px;height:44px;border-radius:14px;display:grid;place-items:center;
-      background:#fff;font-size:24px;margin-bottom:auto;box-shadow:0 4px 0 rgba(43,42,56,.12)
-    }
+    .app .ic{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:#fff;font-size:24px;margin-bottom:auto;box-shadow:0 4px 0 rgba(43,42,56,.12)}
     .app h2{margin:0 0 2px;font-size:1.28rem;letter-spacing:-.03em;text-shadow:0 2px 8px rgba(0,0,0,.35)}
     .app p{margin:0;font-weight:700;opacity:.95;text-shadow:0 1px 6px rgba(0,0,0,.35)}
-    .bloom{
-      background-color:#7ed56a;
-      background-image:url("https://lh3.googleusercontent.com/d/1qo2wkH2ZE36E1NZYc6wSMOkdTVv16Myj=s900"),
-        linear-gradient(160deg,#b6f36a,#49c27a);
-    }
-    .garden{
-      background-color:#f4a0d2;
-      background-image:url("https://lh3.googleusercontent.com/d/11JZb4vQLGeHEzTjnRfoTXKEn4AbDcqMQ=s900"),
-        linear-gradient(160deg,#ff9ec8,#7ad36a);
-    }
-    .hall{
-      background-color:#e0a14a;
-      background-image:url("https://lh3.googleusercontent.com/d/14joT01-sGwPLZPPtvN9voXmzqjvRpdx8=s900"),
-        linear-gradient(160deg,#f0c36a,#b8742a);
-    }
-    .stars{
-      background-color:#2a4a8c;
-      background-image:url("https://lh3.googleusercontent.com/d/1f6i36HgwXbnujqamAwE78tdZLntx1jhC=s900"),
-        linear-gradient(160deg,#3d6ad4,#1a2a5a);
-    }
-    .field{
-      background-color:#3d4a3a;
-      background-image:linear-gradient(160deg,#7fb39a,#1c2436);
-    }
+    .bloom{background-color:#7ed56a;background-image:url("https://lh3.googleusercontent.com/d/1qo2wkH2ZE36E1NZYc6wSMOkdTVv16Myj=s900"),linear-gradient(160deg,#b6f36a,#49c27a);}
+    .garden{background-color:#f4a0d2;background-image:url("https://lh3.googleusercontent.com/d/11JZb4vQLGeHEzTjnRfoTXKEn4AbDcqMQ=s900"),linear-gradient(160deg,#ff9ec8,#7ad36a);}
+    .hall{background-color:#e0a14a;background-image:url("https://lh3.googleusercontent.com/d/14joT01-sGwPLZPPtvN9voXmzqjvRpdx8=s900"),linear-gradient(160deg,#f0c36a,#b8742a);}
+    .stars{background-color:#2a4a8c;background-image:url("https://lh3.googleusercontent.com/d/1f6i36HgwXbnujqamAwE78tdZLntx1jhC=s900"),linear-gradient(160deg,#3d6ad4,#1a2a5a);}
+    .field{background-color:#3d4a3a;background-image:linear-gradient(160deg,#7fb39a,#1c2436);}
     footer{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:13px;padding-top:6px}
     footer a{text-decoration:none;color:#2B2A38;background:#fff;border-radius:999px;padding:6px 12px;opacity:.85;font-weight:700}
     footer a:hover{opacity:1}
-    @media (max-width:700px){
-      .apps{grid-template-columns:1fr}
-      .app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4),.app:nth-child(5){transform:none;min-height:168px}
-    }
+    @media (max-width:700px){.apps{grid-template-columns:1fr}.app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4),.app:nth-child(5){transform:none;min-height:168px}}
   </style>
 </head>
 <body>
@@ -128,38 +76,16 @@
         </svg>
       </a>
     </header>
-
     <main>
       <h1>Pick a world</h1>
       <div class="apps">
-        <a class="app bloom" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/">
-          <span class="ic">🌱</span>
-          <h2>Bloom</h2>
-          <p>Multiplication</p>
-        </a>
-        <a class="app garden" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/">
-          <span class="ic">🌿</span>
-          <h2>Word Garden</h2>
-          <p>Spelling</p>
-        </a>
-        <a class="app hall" href="https://dirac1974.github.io/hall-of-presidents/">
-          <span class="ic">🏛️</span>
-          <h2>Hall of Presidents</h2>
-          <p>US presidents in order</p>
-        </a>
-        <a class="app stars" href="https://dirac1974.github.io/star-map/">
-          <span class="ic">⭐</span>
-          <h2>Star Map</h2>
-          <p>States and capitals</p>
-        </a>
-        <a class="app field" href="https://dirac1974.github.io/quiet-field/">
-          <span class="ic">🌾</span>
-          <h2>Quiet Field</h2>
-          <p>Recite</p>
-        </a>
+        <a class="app bloom" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/"><span class="ic">🌱</span><h2>Bloom</h2><p>Multiplication</p></a>
+        <a class="app garden" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/"><span class="ic">🌿</span><h2>Word Garden</h2><p>Spelling</p></a>
+        <a class="app hall" href="https://dirac1974.github.io/hall-of-presidents/"><span class="ic">🏛️</span><h2>Hall of Presidents</h2><p>US presidents in order</p></a>
+        <a class="app stars" href="https://dirac1974.github.io/star-map/"><span class="ic">⭐</span><h2>Star Map</h2><p>States and capitals</p></a>
+        <a class="app field" href="/field/"><span class="ic">🌾</span><h2>Quiet Field</h2><p>Recite</p></a>
       </div>
     </main>
-
     <footer>
       <a href="privacy.html">Privacy</a>
       <a href="support.html">Support</a>
