@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1c2436" />
+  <title>Quiet Field</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toast"></div>
+  <div id="screen-profiles" class="screen on">
+    <header>
+      <h1>Who is walking the field?</h1>
+      <div class="subtitle">Same household as the other Yomple worlds</div>
+    </header>
+    <div id="profile-grid" class="profile-grid"></div>
+    <div class="card">
+      <label>Use a name I already have</label>
+      <input id="find-user" type="text" placeholder="type the player name" maxlength="18" />
+      <div class="btn-row">
+        <button class="btn" onclick="findHall()">Find</button>
+        <button class="btn primary" onclick="showCreateProfile()">+ New player</button>
+      </div>
+    </div>
+    <div class="parent-link"><a href="#" onclick="showRecover(); return false;">Parent: recover household</a></div>
+  </div>
+  <div id="screen-create" class="screen">
+    <header><h1>New player</h1></header>
+    <div class="card">
+      <label>Name</label>
+      <input id="new-name" type="text" placeholder="e.g. Alex" maxlength="12" />
+      <label>Optional player PIN</label>
+      <input id="new-pin" type="password" inputmode="numeric" placeholder="4 digits, optional" maxlength="6" />
+      <label>Pick an avatar</label>
+      <div id="avatar-choices" class="avatar-choices"></div>
+      <div class="btn-row">
+        <button class="btn primary" onclick="createProfile()">Start walking</button>
+        <button class="btn secondary" onclick="showProfiles()">Back</button>
+      </div>
+    </div>
+  </div>
+  <div id="screen-home" class="screen">
+    <header class="brand-head">
+      <img id="field-mark" class="field-mark" src="lincoln-lantern.jpg" alt="Quiet Field" />
+      <div>
+        <h1>Quiet Field</h1>
+        <div class="subtitle">Hear it · hide it · say it</div>
+      </div>
+    </header>
+    <div id="current-kid-badge" class="kid-badge" onclick="showProfiles()"></div>
+    <div class="hud">
+      <div class="hud-chip">✨ <span id="star-count">0</span></div>
+      <div class="hud-chip sound" id="sound-chip" onclick="toggleSound()">🔊</div>
+    </div>
+    <p class="monument">Pick a path across the field.</p>
+    <div id="topic-grid" class="topic-grid"></div>
+    <div class="parent-link">
+      <a href="#" onclick="showHowTo(); return false;">How to use</a>
+      · <a href="#" onclick="showParent(); return false;">Parent / Progress</a>
+      · <a href="#" onclick="showProfiles(); return false;">Switch player</a>
+    </div>
+  </div>
+  <div id="screen-path" class="screen">
+    <header>
+      <h1 id="path-title">Gettysburg Address</h1>
+      <div class="subtitle" id="path-sub">Twelve lanterns on the field</div>
+      <div id="path-kid-badge" class="kid-badge" onclick="showHome()"></div>
+    </header>
+    <div class="hud">
+      <div class="hud-chip">✨ <span id="path-star-count">0</span></div>
+      <div class="hud-chip sound" id="path-sound-chip" onclick="toggleSound()">🔊</div>
+    </div>
+    <div class="next-card">
+      <div class="kicker">Do this next</div>
+      <p id="next-why">Look at the picture, hear the line, then hide the words.</p>
+      <button class="btn primary" id="next-btn">Look</button>
+    </div>
+    <div id="daily-quest" class="hint" style="text-align:center;color:#d7e0d0;font-weight:700;"></div>
+    <div class="monument" id="monument">Lanterns on this path.</div>
+    <div class="field" id="field"></div>
+    <div class="btn-row" style="justify-content:center;">
+      <button class="btn secondary" onclick="startWalk()">Walk</button>
+      <button class="btn secondary" onclick="startMix()">Mix</button>
+      <button class="btn secondary" onclick="showHome()">All paths</button>
+    </div>
+  </div>
+  <div id="screen-howto" class="screen">
+    <header><h1>How to use the field</h1></header>
+    <div class="card">
+      <ol>
+        <li><strong>Pick a path.</strong> Gettysburg Address or the Preamble.</li>
+        <li><strong>Look.</strong> Picture, hear the line, one why, one gesture.</li>
+        <li><strong>Echo.</strong> Hide the words. Mic is optional.</li>
+        <li><strong>Walk</strong> and <strong>Mix</strong> known lanterns.</li>
+      </ol>
+      <div class="btn-row"><button class="btn primary" onclick="showHome()">Back to the field</button></div>
+    </div>
+  </div>
+  <div id="screen-look" class="screen">
+    <header><h1>Look</h1></header>
+    <div class="card" id="look-card"></div>
+    <div class="btn-row">
+      <button class="btn" id="btn-hear">Hear it</button>
+      <button class="btn primary" id="btn-got-it">Got it</button>
+      <button class="btn secondary" onclick="showPath()">Path</button>
+    </div>
+  </div>
+  <div id="screen-echo" class="screen">
+    <header><h1>Echo</h1></header>
+    <div class="card" id="echo-card"></div>
+    <div class="btn-row">
+      <button class="btn" id="btn-hear-echo">Hear it</button>
+      <button class="btn" id="btn-peek">Peek</button>
+      <button class="btn sage" id="btn-said">I said it</button>
+      <button class="btn primary" id="btn-speak">Speak</button>
+      <button class="btn secondary" onclick="showPath()">Path</button>
+    </div>
+  </div>
+  <div id="screen-walk" class="screen">
+    <header><h1>Walk the field</h1></header>
+    <div class="card" id="walk-card"></div>
+    <div class="btn-row"><button class="btn secondary" onclick="showPath()">Path</button></div>
+  </div>
+  <div id="screen-mix" class="screen">
+    <header><h1>Mix</h1></header>
+    <div class="card" id="mix-card"></div>
+    <div class="btn-row"><button class="btn secondary" onclick="showPath()">Path</button></div>
+  </div>
+  <div id="screen-parent" class="screen">
+    <header><h1>Grown-up view</h1></header>
+    <div class="card stats" style="text-align:left;">
+      <div id="stats-text"></div>
+      <label style="margin-top:12px;"><input id="last-first" type="checkbox" onclick="toggleLastFirst()" style="width:auto;display:inline;margin-right:8px;" /> Light the last stretch first</label>
+      <p><strong>Family code</strong></p>
+      <p id="family-code-value" style="font-size:1.4rem;font-weight:800;">—</p>
+      <label>Parent email</label>
+      <input id="parent-email" type="email" placeholder="you@example.com" />
+      <div class="btn-row">
+        <button class="btn" onclick="saveParentEmail()">Save email</button>
+        <button class="btn" onclick="emailCodeToMyself()">Email this code to me</button>
+        <button class="btn" onclick="cloudSaveActive(); toast('Saved');">Save now</button>
+        <button class="btn" onclick="if(confirm('Reset this path?')){resetProgress(); showPath();}">Reset this path</button>
+        <button class="btn" onclick="showHome()">Back</button>
+      </div>
+    </div>
+  </div>
+  <div id="screen-recover" class="screen">
+    <header><h1>Parent recovery</h1></header>
+    <div class="card" style="text-align:left;">
+      <input id="restore-code" type="text" placeholder="MAPLE-K7Q2" maxlength="16" style="text-transform:uppercase;" />
+      <div class="btn-row"><button class="btn primary" onclick="restoreFamily()">Restore household</button></div>
+      <input id="recover-email" type="email" placeholder="the parent email on file" />
+      <div class="btn-row"><button class="btn" onclick="sendEmailOtp()">Send one-time code</button></div>
+      <div id="otp-row" style="display:none;margin-top:12px;">
+        <input id="recover-otp" type="text" inputmode="numeric" maxlength="8" />
+        <div class="btn-row"><button class="btn primary" onclick="verifyEmailOtp()">Unlock household</button></div>
+      </div>
+      <div class="btn-row"><button class="btn secondary" onclick="showProfiles()">Back</button></div>
+    </div>
+  </div>
+  <nav id="main-nav" style="display:none;">
+    <button class="active" onclick="navHome()" id="nav-home">Field</button>
+    <button onclick="var d=pickDue(); if(d) startEcho(d); else startWalk();" id="nav-echo">Echo</button>
+    <button onclick="startWalk()" id="nav-walk">Walk</button>
+  </nav>
+  <script src="lincoln-art.js"></script>
+  <script src="phrases.js"></script>
+  <script src="voice.js"></script>
+  <script src="app.js"></script>
+  <script src="sync.js"></script>
+</body>
+</html>
