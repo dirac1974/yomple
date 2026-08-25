@@ -1,7 +1,7 @@
 var YOMPLE_MODULE="field",YOMPLE_TABLE="field_players",YOMPLE_STORE="quiet-field-v1";
 function slugName(s){return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,18)||"player";}
 var SISTER_KEYS=["presidents-palace-v2","bloom.v1","word-garden-v1","star-map-v1","quiet-field-v1"];
-var AVATARS=["\ud83e\ude94","\ud83c\udf3e","\ud83e\udd85","\u2b50","\ud83d\udcd8","\ud83c\udf33","\ud83d\udd6f\ufe0f","\ud83d\uddfd"];
+var AVATARS=["\uD83E\uDE94","\uD83C\uDF3E","\uD83E\uDD85","\u2B50","\uD83D\uDCD8","\uD83C\uDF33","\uD83D\uDD6F\uFE0F","\uD83D\uDDFD"];
 var store={profiles:[],activeId:null,familyCode:"",parentEmail:"",progress:{},fun:{},lastFirst:false};
 var currentPhrase=null;
 function loadStore(){
@@ -21,8 +21,8 @@ function getActiveProfile(){return (store.profiles||[]).find(function(p){return 
 function pid(){return store.activeId;}
 function migrateFlatProgress(all){
   if(!all||all.gettysburg)return;
-  var has=false;Object.keys(all).forEach(function(k){if(/^p\d+$/.test(k)&&all[k]&&typeof all[k].state==="number")has=true;});
-  if(!has)return;all.gettysburg={};Object.keys(all).forEach(function(k){if(/^p\d+$/.test(k)){all.gettysburg[k]=all[k];delete all[k];}});
+  var has=false;Object.keys(all).forEach(function(k){if(/^p\\d+$/.test(k)&&all[k]&&typeof all[k].state==="number")has=true;});
+  if(!has)return;all.gettysburg={};Object.keys(all).forEach(function(k){if(/^p\\d+$/.test(k)){all.gettysburg[k]=all[k];delete all[k];}});
 }
 function getProg(){if(!pid())return{};if(!store.progress[pid()])store.progress[pid()]={};migrateFlatProgress(store.progress[pid()]);return store.progress[pid()];}
 function getFun(){if(!pid())return{stars:0,mute:false,questDay:"",questN:0,topic:"gettysburg"};if(!store.fun[pid()])store.fun[pid()]={stars:0,mute:false,questDay:"",questN:0,topic:"gettysburg"};if(!store.fun[pid()].topic)store.fun[pid()].topic="gettysburg";return store.fun[pid()];}
@@ -47,7 +47,7 @@ function applyLincolnArt(){
 }
 function showProfiles(){stopListen();stopSpeak();showScreen("screen-profiles");
   var grid=document.getElementById("profile-grid");if(!grid)return;grid.innerHTML="";
-  (store.profiles||[]).forEach(function(p){var d=document.createElement("div");d.className="face";d.innerHTML="<span class='av'>"+(p.avatar||"\ud83e\ude94")+"</span>"+escapeHtml(p.name);d.onclick=function(){pickPlayer(p);};grid.appendChild(d);});
+  (store.profiles||[]).forEach(function(p){var d=document.createElement("div");d.className="face";d.innerHTML="<span class='av'>"+(p.avatar||"\uD83E\uDE94")+"</span>"+escapeHtml(p.name);d.onclick=function(){pickPlayer(p);};grid.appendChild(d);});
 }
 function pickPlayer(p){if(p.pin){var pin=window.prompt("PIN for "+p.name);if(pin!==p.pin){toast("PIN did not match");return;}}store.activeId=p.id;saveStore();showHome();}
 function showCreateProfile(){showScreen("screen-create");var box=document.getElementById("avatar-choices");box.innerHTML="";box.dataset.selected=AVATARS[0];
@@ -55,7 +55,7 @@ function showCreateProfile(){showScreen("screen-create");var box=document.getEle
 }
 function createProfile(){
   var name=document.getElementById("new-name").value.trim()||"Field walker";
-  var avatar=document.getElementById("avatar-choices").dataset.selected||"\ud83e\ude94";
+  var avatar=document.getElementById("avatar-choices").dataset.selected||"\uD83E\uDE94";
   var pin=(document.getElementById("new-pin")&&document.getElementById("new-pin").value.trim())||"";
   var username=slugName(name);var id="u-"+username;
   if((store.profiles||[]).some(function(p){return p.username===username;})){toast("That name is already here.");return;}
@@ -64,7 +64,7 @@ function createProfile(){
 }
 function seedIntroduced(){var topic=currentTopic();var order=(store.lastFirst&&topic.lastFirstOk)?topic.introLastFirst:topic.introDefault;var prog=getTopicProg();var n=0;order.forEach(function(id){if(n>=3)return;if(!prog[id]){prog[id]={state:0,consec:0,introduced:true,last:0};n++;}});}
 function showHome(){stopListen();stopSpeak();if(!getActiveProfile()){showProfiles();return;}showScreen("screen-home");applyLincolnArt();
-  var p=getActiveProfile();document.getElementById("current-kid-badge").innerHTML=(p.avatar||"\ud83e\ude94")+" "+escapeHtml(p.name);
+  var p=getActiveProfile();document.getElementById("current-kid-badge").innerHTML=(p.avatar||"\uD83E\uDE94")+" "+escapeHtml(p.name);
   document.getElementById("star-count").textContent=getFun().stars||0;renderSoundChip();paintWorld();
 }
 function openTopic(id){getFun().topic=id;saveStore();seedIntroduced();showPath();}
@@ -72,7 +72,7 @@ function showPath(){stopListen();stopSpeak();if(!getActiveProfile()){showProfile
   var p=getActiveProfile(),topic=currentTopic();
   document.getElementById("path-title").textContent=topic.title;
   document.getElementById("path-sub").textContent=topic.kicker;
-  document.getElementById("path-kid-badge").innerHTML=(p.avatar||"\ud83e\ude94")+" "+escapeHtml(p.name);
+  document.getElementById("path-kid-badge").innerHTML=(p.avatar||"\uD83E\uDE94")+" "+escapeHtml(p.name);
   document.getElementById("path-star-count").textContent=getFun().stars||0;
   renderSoundChip();renderField();paintNext();paintQuest();
 }
@@ -82,7 +82,7 @@ function paintWorld(){var box=document.getElementById("topic-grid");if(!box)retu
     card.innerHTML="<div class='kicker'>"+escapeHtml(t.kicker)+"</div><h2>"+escapeHtml(t.title)+"</h2><p>"+escapeHtml(t.blurb)+"</p><div class='topic-pips'>"+t.phrases.length+" lanterns \u00b7 "+shine+" shining</div>";
     box.appendChild(card);});
 }
-function renderSoundChip(){var icon=getFun().mute?"\ud83d\udd07":"\ud83d\udd0a";["sound-chip","path-sound-chip"].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=icon;});}
+function renderSoundChip(){var icon=getFun().mute?"\uD83D\uDD07":"\uD83D\uDD0A";["sound-chip","path-sound-chip"].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=icon;});}
 function toggleSound(){var f=getFun();f.mute=!f.mute;saveStore();renderSoundChip();if(f.mute)stopSpeak();}
 function renderField(){var box=document.getElementById("field");if(!box)return;box.innerHTML="";var shining=0;
   currentPhrases().forEach(function(ph){var st=itemState(ph.id);var d=document.createElement("div");var cls="lantern";
@@ -142,5 +142,62 @@ function showParent(){showScreen("screen-parent");var all=getProg();var lines=TO
 function toggleLastFirst(){store.lastFirst=!!(document.getElementById("last-first")&&document.getElementById("last-first").checked);saveStore();}
 function resetProgress(){if(!pid())return;getProg()[topicId()]={};seedIntroduced();saveStore();}
 function navHome(){var path=document.getElementById("screen-path");if(path&&path.classList.contains("on"))showHome();else if(document.querySelector("#screen-look.on,#screen-echo.on,#screen-walk.on,#screen-mix.on"))showPath();else showHome();}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,function(c){return({"&":"&","<":"<",">":">","\"":""","'":"&#39;"})[c];});}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    if (c === "&") return String.fromCharCode(38) + "amp;";
+    if (c === "<") return String.fromCharCode(38) + "lt;";
+    if (c === ">") return String.fromCharCode(38) + "gt;";
+    if (c === '"') return String.fromCharCode(38) + "quot;";
+    return String.fromCharCode(38) + "#39;";
+  });
+}
+function showRecover(){
+  if (typeof stopListen === "function") stopListen();
+  if (typeof stopSpeak === "function") stopSpeak();
+  showScreen("screen-recover");
+  var nav = document.getElementById("main-nav");
+  if (nav) nav.style.display = "none";
+}
+function findHall(){
+  var input = document.getElementById("find-user");
+  var username = slugName(input && input.value);
+  if (!username || username === "player") { toast("Type the saved player name"); return; }
+  toast("Looking for " + username + "\u2026");
+  function welcome(row, table){
+    if (row.pin) {
+      var pin = window.prompt("PIN for " + row.display_name);
+      if (pin !== row.pin) { toast("PIN did not match"); return; }
+    }
+    if (row.family_code) store.familyCode = row.family_code;
+    if (typeof adoptPerson === "function") {
+      if (table === YOMPLE_TABLE && typeof applyCloudRow === "function") applyCloudRow(row);
+      else {
+        adoptPerson(row, {});
+        seedIntroduced();
+        if (typeof cloudSaveActive === "function") cloudSaveActive();
+      }
+    } else {
+      var id = "u-" + row.username;
+      store.profiles = store.profiles || [];
+      if (!(store.profiles || []).some(function(p){ return p.id === id; })) {
+        store.profiles.push({ id:id, name:row.display_name, avatar:row.avatar||"\uD83E\uDE94", username:row.username, pin:row.pin||"", created:Date.now() });
+      }
+      store.activeId = id;
+      if (!store.progress[id]) store.progress[id] = {};
+      if (!store.fun[id]) store.fun[id] = { stars:0, mute:false, questDay:"", questN:0, topic:"gettysburg" };
+      seedIntroduced();
+      saveStore();
+    }
+    toast("Welcome back, " + row.display_name);
+    setTimeout(showHome, 400);
+  }
+  if (typeof findAnyYomplePerson === "function") {
+    findAnyYomplePerson(username).then(function(hit){
+      if (!hit) { toast("No Yomple player with that name yet"); return; }
+      welcome(hit.row, hit.table);
+    }).catch(function(){ toast("Could not reach the household just now"); });
+    return;
+  }
+  toast("Household lookup is still waking up. Try Find once more.");
+}
 try{loadStore();applyLincolnArt();if(store.activeId&&getActiveProfile())showHome();else showProfiles();}catch(e){try{showProfiles();}catch(e2){}}
