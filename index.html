@@ -24,10 +24,11 @@
     body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;background-image:radial-gradient(#fff 1.5px, transparent 2px),radial-gradient(#fff 1px, transparent 2px);background-size:46px 46px, 22px 22px;background-position:0 0, 12px 18px;}
     a{color:inherit}
     .wrap{width:min(920px,92vw);margin:0 auto;min-height:100vh;display:flex;flex-direction:column;padding:26px 0 32px;position:relative;z-index:1}
-    header{display:flex;align-items:center;justify-content:center;padding:6px 0 4px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0 4px}
     .brand{display:flex;align-items:center;gap:12px;text-decoration:none;background:#fff;border-radius:999px;padding:8px 18px 8px 10px;box-shadow:0 8px 0 rgba(255,107,90,.18), 0 16px 30px rgba(43,42,56,.12)}
     .mark{width:58px;height:58px;display:block}
     .word{height:36px;display:block}
+    #who-pill{border:0;background:#fff;border-radius:999px;padding:10px 16px;font:inherit;font-weight:800;box-shadow:0 8px 0 rgba(43,42,56,.08);cursor:pointer;white-space:nowrap}
     main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:10px 0 18px}
     h1{font-size:clamp(22px,4vw,28px);font-weight:800;margin:0;letter-spacing:-.02em;color:#fff;text-shadow:0 2px 0 rgba(43,42,56,.18);background:#ff6b5a;border-radius:999px;padding:8px 18px;}
     .apps{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;width:100%}
@@ -49,8 +50,31 @@
     .field{background-color:#3d4a3a;background-image:url("/field/lincoln-field.svg"),linear-gradient(160deg,#7fb39a,#1c2436);background-size:cover;background-position:center 62%;}
     footer{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:13px;padding-top:6px}
     footer a{text-decoration:none;color:#2B2A38;background:#fff;border-radius:999px;padding:6px 12px;opacity:.85;font-weight:700}
-    footer a:hover{opacity:1}
-    @media (max-width:700px){.apps{grid-template-columns:1fr}.app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4),.app:nth-child(5){transform:none;min-height:168px}}
+    #who-sheet{position:fixed;inset:0;background:rgba(43,42,56,.35);display:none;align-items:flex-end;justify-content:center;z-index:20;padding:12px}
+    #who-sheet.open{display:flex}
+    .sheet{background:#fff;width:min(440px,100%);border-radius:28px 28px 22px 22px;padding:18px 16px 16px;box-shadow:0 -12px 40px rgba(43,42,56,.2);max-height:86vh;overflow:auto}
+    .sheet h2{margin:0 0 8px;font-size:1.2rem}
+    .sheet label{display:block;font-size:.8rem;font-weight:800;color:var(--soft);margin:10px 0 4px}
+    .sheet input{width:100%;padding:10px 12px;border-radius:12px;border:2px solid rgba(43,42,56,.1);font:inherit}
+    .faces{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+    .face{border:0;background:#FFF8F1;border-radius:16px;padding:10px 12px;font:inherit;font-weight:700;cursor:pointer}
+    .face.on{outline:2px solid var(--mint)}
+    .face span{display:block;font-size:1.3rem}
+    .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+    .row button,.ghost{border:0;border-radius:999px;padding:10px 14px;font:inherit;font-weight:800;cursor:pointer}
+    .row .go{background:var(--ink);color:#fff}
+    .ghost{background:transparent;color:var(--soft)}
+    .avs{display:flex;flex-wrap:wrap;gap:6px}
+    .avs span{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:#FFF8F1;cursor:pointer}
+    .avs span.sel{outline:2px solid var(--mint)}
+    #hub-code{font-size:1.3rem;font-weight:800;letter-spacing:.06em;margin:4px 0 8px}
+    #hub-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:999px;opacity:0;z-index:30;pointer-events:none}
+    #hub-toast.show{opacity:1}
+    @media (max-width:700px){
+      .apps{grid-template-columns:1fr}
+      .app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4),.app:nth-child(5){transform:none;min-height:168px}
+      header{flex-wrap:wrap;justify-content:center}
+    }
   </style>
 </head>
 <body>
@@ -75,15 +99,16 @@
           </text>
         </svg>
       </a>
+      <button type="button" id="who-pill" onclick="openWho()">Who?</button>
     </header>
     <main>
       <h1>Pick a world</h1>
       <div class="apps">
-        <a class="app bloom" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/"><span class="ic">🌱</span><h2>Bloom</h2><p>Multiplication</p></a>
-        <a class="app garden" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/"><span class="ic">🌿</span><h2>Word Garden</h2><p>Spelling</p></a>
-        <a class="app hall" href="https://dirac1974.github.io/hall-of-presidents/"><span class="ic">🏛️</span><h2>Hall of Presidents</h2><p>US presidents in order</p></a>
-        <a class="app stars" href="https://dirac1974.github.io/star-map/"><span class="ic">⭐</span><h2>Star Map</h2><p>States and capitals</p></a>
-        <a class="app field" href="/field/"><span class="ic">🌾</span><h2>Quiet Field</h2><p>Recite</p></a>
+        <a class="app bloom" data-base="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/"><span class="ic">🌱</span><h2>Bloom</h2><p>Multiplication</p></a>
+        <a class="app garden" data-base="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/"><span class="ic">🌿</span><h2>Word Garden</h2><p>Spelling</p></a>
+        <a class="app hall" data-base="https://dirac1974.github.io/hall-of-presidents/" href="https://dirac1974.github.io/hall-of-presidents/"><span class="ic">🏛️</span><h2>Hall of Presidents</h2><p>US presidents in order</p></a>
+        <a class="app stars" data-base="https://dirac1974.github.io/star-map/" href="https://dirac1974.github.io/star-map/"><span class="ic">⭐</span><h2>Star Map</h2><p>States and capitals</p></a>
+        <a class="app field" data-base="/field/" href="/field/"><span class="ic">🌾</span><h2>Quiet Field</h2><p>Recite</p></a>
       </div>
     </main>
     <footer>
@@ -91,5 +116,54 @@
       <a href="support.html">Support</a>
     </footer>
   </div>
+
+  <div id="who-sheet" onclick="if(event.target===this) closeWho()">
+    <div class="sheet">
+      <div id="who-kids">
+        <h2>Who is playing?</h2>
+        <div id="who-grid" class="faces"></div>
+        <label>Use a name I already have</label>
+        <input id="hub-find" type="text" placeholder="Alex" maxlength="18">
+        <div class="row">
+          <button class="go" type="button" onclick="hubFind()">Find</button>
+          <button type="button" onclick="showWhoTab('new')">New kid</button>
+          <button class="ghost" type="button" onclick="showWhoTab('parent')">Parent</button>
+        </div>
+      </div>
+      <div id="who-new" style="display:none">
+        <h2>New kid</h2>
+        <label>Name</label>
+        <input id="hub-name" type="text" maxlength="18">
+        <label>Optional PIN</label>
+        <input id="hub-pin" type="password" inputmode="numeric" maxlength="6">
+        <label>Avatar</label>
+        <div id="hub-avs" class="avs"></div>
+        <div class="row">
+          <button class="go" type="button" onclick="hubCreate()">Start</button>
+          <button class="ghost" type="button" onclick="showWhoTab('kids')">Back</button>
+        </div>
+      </div>
+      <div id="who-parent" style="display:none">
+        <h2>Household</h2>
+        <p id="hub-code">—</p>
+        <label>Parent email</label>
+        <input id="hub-email" type="email" placeholder="you@example.com">
+        <div class="row">
+          <button type="button" onclick="hubSaveEmail()">Save email</button>
+          <button type="button" onclick="hubEmailCode()">Email this code</button>
+        </div>
+        <label>Restore a family code</label>
+        <input id="hub-restore" type="text" placeholder="MAPLE-K7Q2" maxlength="16" style="text-transform:uppercase">
+        <div class="row">
+          <button class="go" type="button" onclick="hubRestore()">Restore</button>
+          <button class="ghost" type="button" onclick="showWhoTab('kids')">Back</button>
+        </div>
+      </div>
+      <div class="row"><button class="ghost" type="button" onclick="closeWho()">Done</button></div>
+    </div>
+  </div>
+  <div id="hub-toast"></div>
+  <script src="yomple-family.js"></script>
+  <script src="hub.js"></script>
 </body>
 </html>
