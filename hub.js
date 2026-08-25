@@ -4,6 +4,7 @@ var HUB_KEY = "yomple-hub-v1";
 var SISTERS = ["hop_players","bloom_players","garden_players","star_players","field_players"];
 var AVATARS = ["\ud83e\udd81","\ud83d\udc3b","\ud83e\udd8a","\ud83e\udd84","\ud83d\udc3c","\ud83d\udc38","\ud83d\udc27","\ud83c\udf1f","\ud83d\ude80","\ud83c\udf88"];
 var hub = { familyCode: null, parentEmail: "", profiles: [], activeUser: null };
+var pendingWorld = null;
 
 function slugName(s){
   return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,18) || "player";
@@ -68,14 +69,16 @@ function adoptRow(row){
 function worldQuery(){
   var p = active();
   if (!p) return "";
-  var q = "?u="+encodeURIComponent(p.username);
+  var q = "?u="+encodeURIComponent(p.username)+"&from=yomple";
   if (hub.familyCode) q += "&f="+encodeURIComponent(hub.familyCode);
   return q;
 }
+function worldUrl(base){
+  return (base || "") + worldQuery();
+}
 function paintLinks(){
-  var q = worldQuery();
   document.querySelectorAll("a.app[data-base]").forEach(function(a){
-    a.href = a.getAttribute("data-base") + q;
+    a.href = worldUrl(a.getAttribute("data-base"));
   });
 }
 function paintWho(){
@@ -84,16 +87,47 @@ function paintWho(){
   var p = active();
   el.textContent = p ? (p.avatar+" "+p.name) : "Who?";
 }
+function worldTitle(href){
+  var a = document.querySelector('a.app[data-base="'+href+'"] h2');
+  return (a && a.textContent) || "that world";
+}
+function goPending(){
+  paintLinks();
+  if (!pendingWorld || !active()) { closeWho(); return; }
+  var url = worldUrl(pendingWorld);
+  pendingWorld = null;
+  closeWho();
+  location.href = url;
+}
+function gateWorld(ev){
+  var a = ev.target.closest("a.app");
+  if (!a) return;
+  var base = a.getAttribute("data-base") || a.getAttribute("href");
+  if (active()) {
+    a.href = worldUrl(base);
+    return;
+  }
+  ev.preventDefault();
+  pendingWorld = base;
+  ping("Choose who is playing first");
+  openWho("kids");
+  var h = document.querySelector("#who-kids h2");
+  if (h) h.textContent = "Who is opening " + worldTitle(base) + "?";
+}
 function openWho(tab){
   document.getElementById("who-sheet").classList.add("open");
   showWhoTab(tab || "kids");
   paintKids();
   var code = document.getElementById("hub-code");
-  if (code) code.textContent = hub.familyCode || "—";
+  if (code) code.textContent = hub.familyCode || "\u2014";
   var em = document.getElementById("hub-email");
   if (em && hub.parentEmail) em.value = hub.parentEmail;
 }
-function closeWho(){ document.getElementById("who-sheet").classList.remove("open"); }
+function closeWho(){
+  document.getElementById("who-sheet").classList.remove("open");
+  var h = document.querySelector("#who-kids h2");
+  if (h && !pendingWorld) h.textContent = "Who is playing?";
+}
 function showWhoTab(tab){
   document.getElementById("who-kids").style.display = tab==="kids" ? "block" : "none";
   document.getElementById("who-new").style.display = tab==="new" ? "block" : "none";
@@ -107,14 +141,14 @@ function paintKids(){
     b.type = "button";
     b.className = "face" + (p.username===hub.activeUser ? " on" : "");
     b.innerHTML = "<span>"+p.avatar+"</span>"+p.name;
-    b.onclick = function(){ hub.activeUser = p.username; saveHub(); closeWho(); };
+    b.onclick = function(){ hub.activeUser = p.username; saveHub(); goPending(); };
     grid.appendChild(b);
   });
 }
 function hubFind(){
   var username = slugName(document.getElementById("hub-find").value);
   if (!username || username==="player") { ping("Type a name"); return; }
-  ping("Looking…");
+  ping("Looking\u2026");
   findAny(username).then(function(hit){
     if (!hit) { ping("No Yomple player with that name yet"); return; }
     var row = hit.row;
@@ -124,7 +158,7 @@ function hubFind(){
     }
     adoptRow(row);
     ping("Hi, "+row.display_name);
-    closeWho();
+    goPending();
   });
 }
 function hubCreate(){
@@ -132,7 +166,7 @@ function hubCreate(){
   var pin = (document.getElementById("hub-pin").value||"").trim();
   var avatar = document.getElementById("hub-avs").dataset.selected || AVATARS[0];
   var username = slugName(name);
-  ping("Checking that name…");
+  ping("Checking that name\u2026");
   findAny(username).then(function(hit){
     if (hit) {
       ping("That name is already in Yomple. Use Find.");
@@ -144,7 +178,7 @@ function hubCreate(){
     hub.activeUser = username;
     saveHub();
     ping("Welcome, "+name);
-    closeWho();
+    goPending();
   });
 }
 function hubSaveEmail(){
@@ -166,7 +200,7 @@ function hubEmailCode(){
 function hubRestore(){
   var code = (document.getElementById("hub-restore").value||"").trim().toUpperCase();
   if (!code || code.indexOf("-")<0) { ping("Type MAPLE-K7Q2"); return; }
-  ping("Finding household…");
+  ping("Finding household\u2026");
   var chain = Promise.resolve([]);
   SISTERS.forEach(function(table){
     chain = chain.then(function(all){
@@ -187,7 +221,7 @@ function hubRestore(){
     hub.familyCode = code;
     saveHub();
     upsertFamily();
-    ping(Object.keys(seen).length ? "Household restored" : "Code saved. Add a kid.");
+    ping(Object.keys(seen).length ? "Household restored — pick a face" : "Code saved. Add a kid.");
     showWhoTab("kids");
     paintKids();
   });
@@ -201,6 +235,7 @@ function ping(msg){
 }
 function paintAvatars(){
   var box = document.getElementById("hub-avs");
+  if (!box) return;
   box.innerHTML = "";
   box.dataset.selected = AVATARS[0];
   AVATARS.forEach(function(a){
@@ -220,5 +255,7 @@ document.addEventListener("DOMContentLoaded", function(){
   paintWho();
   paintLinks();
   paintAvatars();
-  if (!hub.activeUser) openWho("kids");
+  document.querySelectorAll("a.app").forEach(function(a){
+    a.addEventListener("click", gateWorld);
+  });
 });
