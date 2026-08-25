@@ -5,7 +5,7 @@
   <meta name="referrer" content="no-referrer" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Yomple</title>
-  <meta name="description" content="Play Bloom, Word Garden, Hall of Presidents, and Star Map." />
+  <meta name="description" content="Play Bloom, Word Garden, Hall of Presidents, Star Map, and Quiet Field." />
   <link rel="icon" href="favicon.svg" />
   <style>
     :root{
@@ -59,6 +59,7 @@
     .app:nth-child(2){transform:rotate(.5deg)}
     .app:nth-child(3){transform:rotate(-.2deg)}
     .app:nth-child(4){transform:rotate(.35deg)}
+    .app:nth-child(5){transform:rotate(-.25deg)}
     .app:hover{transform:translateY(-3px) rotate(0)}
     .app::after{
       content:"";position:absolute;inset:0;
@@ -91,12 +92,16 @@
       background-image:url("https://lh3.googleusercontent.com/d/1f6i36HgwXbnujqamAwE78tdZLntx1jhC=s900"),
         linear-gradient(160deg,#3d6ad4,#1a2a5a);
     }
+    .field{
+      background-color:#3d4a3a;
+      background-image:linear-gradient(160deg,#7fb39a,#1c2436);
+    }
     footer{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:13px;padding-top:6px}
     footer a{text-decoration:none;color:#2B2A38;background:#fff;border-radius:999px;padding:6px 12px;opacity:.85;font-weight:700}
     footer a:hover{opacity:1}
     @media (max-width:700px){
       .apps{grid-template-columns:1fr}
-      .app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4){transform:none;min-height:168px}
+      .app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4),.app:nth-child(5){transform:none;min-height:168px}
     }
   </style>
 </head>
@@ -128,24 +133,29 @@
       <h1>Pick a world</h1>
       <div class="apps">
         <a class="app bloom" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/">
-          <span class="ic">🌱</span>
+          <span class="ic">\ud83c\udf31</span>
           <h2>Bloom</h2>
           <p>Multiplication</p>
         </a>
         <a class="app garden" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/">
-          <span class="ic">🌿</span>
+          <span class="ic">\ud83c\udf3f</span>
           <h2>Word Garden</h2>
           <p>Spelling</p>
         </a>
         <a class="app hall" href="https://dirac1974.github.io/hall-of-presidents/">
-          <span class="ic">🏛️</span>
+          <span class="ic">\ud83c\udfdb\ufe0f</span>
           <h2>Hall of Presidents</h2>
           <p>US presidents in order</p>
         </a>
         <a class="app stars" href="https://dirac1974.github.io/star-map/">
-          <span class="ic">⭐</span>
+          <span class="ic">\u2b50</span>
           <h2>Star Map</h2>
           <p>States and capitals</p>
+        </a>
+        <a class="app field" href="https://dirac1974.github.io/quiet-field/">
+          <span class="ic">\ud83c\udf3e</span>
+          <h2>Quiet Field</h2>
+          <p>Recite</p>
         </a>
       </div>
     </main>
