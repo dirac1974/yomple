@@ -12,29 +12,32 @@ var warmFetchStarted = {};
 /* Human public-domain recitations. No original Lincoln voice exists.
    Gettysburg: Britton Rea. Preamble: Kristen McQuillin / LibriVox. */
 var GETTYSBURG_SRC = "https://archive.org/download/GettysburgAddress/gettysburg_address.mp3";
+/* Word-level cuts from the live archive files (Vosk on the streamed MP3).
+   Start sits on the first word. End sits after the last consonant and
+   before the next lantern's first word, so Hear it never steals a neighbor. */
 var GETTYSBURG_SPAN = {
   p1:  { start: 0.08,  end: 14.20 },
   p2:  { start: 14.20, end: 24.80 },
-  p3:  { start: 24.80, end: 28.12 },
-  p4:  { start: 28.12, end: 36.40 },
+  p3:  { start: 24.80, end: 28.03 },
+  p4:  { start: 28.03, end: 36.40 },
   p5:  { start: 36.40, end: 40.50 },
   p6:  { start: 40.50, end: 48.40 },
   p7:  { start: 48.40, end: 56.30 },
   p8:  { start: 56.30, end: 65.40 },
   p9:  { start: 65.40, end: 74.50 },
-  p10: { start: 74.50, end: 79.90 },
-  p11: { start: 79.90, end: 87.50 },
+  p10: { start: 74.50, end: 79.88 },
+  p11: { start: 79.88, end: 87.50 },
   p12: { start: 87.50, end: 107.20 }
 };
 var PREAMBLE_SRC = "https://archive.org/download/constitution/constitution_article_01_64kb.mp3";
 var PREAMBLE_SPAN = {
-  p1: { start: 16.20, end: 18.16 },
-  p2: { start: 18.16, end: 20.08 },
-  p3: { start: 20.04, end: 23.20 },
-  p4: { start: 23.20, end: 25.16 },
-  p5: { start: 25.16, end: 26.68 },
-  p6: { start: 26.58, end: 30.30 },
-  p7: { start: 30.28, end: 35.10 }
+  p1: { start: 16.18, end: 18.08 },
+  p2: { start: 18.06, end: 20.06 },
+  p3: { start: 20.06, end: 23.28 },
+  p4: { start: 23.28, end: 25.18 },
+  p5: { start: 25.16, end: 26.59 },
+  p6: { start: 26.58, end: 30.32 },
+  p7: { start: 30.32, end: 35.08 }
 };
 var RECITE = {
   gettysburg: { src: GETTYSBURG_SRC, span: GETTYSBURG_SPAN },
