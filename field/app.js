@@ -21,8 +21,8 @@ function getActiveProfile(){return (store.profiles||[]).find(function(p){return 
 function pid(){return store.activeId;}
 function migrateFlatProgress(all){
   if(!all||all.gettysburg)return;
-  var has=false;Object.keys(all).forEach(function(k){if(/^p\\d+$/.test(k)&&all[k]&&typeof all[k].state==="number")has=true;});
-  if(!has)return;all.gettysburg={};Object.keys(all).forEach(function(k){if(/^p\\d+$/.test(k)){all.gettysburg[k]=all[k];delete all[k];}});
+  var has=false;Object.keys(all).forEach(function(k){if(/^p\d+$/.test(k)&&all[k]&&typeof all[k].state==="number")has=true;});
+  if(!has)return;all.gettysburg={};Object.keys(all).forEach(function(k){if(/^p\d+$/.test(k)){all.gettysburg[k]=all[k];delete all[k];}});
 }
 function getProg(){if(!pid())return{};if(!store.progress[pid()])store.progress[pid()]={};migrateFlatProgress(store.progress[pid()]);return store.progress[pid()];}
 function getFun(){if(!pid())return{stars:0,mute:false,questDay:"",questN:0,topic:"gettysburg"};if(!store.fun[pid()])store.fun[pid()]={stars:0,mute:false,questDay:"",questN:0,topic:"gettysburg"};if(!store.fun[pid()].topic)store.fun[pid()].topic="gettysburg";return store.fun[pid()];}
@@ -67,8 +67,9 @@ function showHome(){stopListen();stopSpeak();if(!getActiveProfile()){showProfile
   var p=getActiveProfile();document.getElementById("current-kid-badge").innerHTML=(p.avatar||"\uD83E\uDE94")+" "+escapeHtml(p.name);
   document.getElementById("star-count").textContent=getFun().stars||0;renderSoundChip();paintWorld();
 }
-function openTopic(id){getFun().topic=id;saveStore();seedIntroduced();showPath();}
+function openTopic(id){getFun().topic=id;saveStore();seedIntroduced();if(typeof warmFieldVoice==="function")warmFieldVoice(id);showPath();}
 function showPath(){stopListen();stopSpeak();if(!getActiveProfile()){showProfiles();return;}showScreen("screen-path");
+  if(typeof warmFieldVoice==="function")warmFieldVoice(topicId());
   var p=getActiveProfile(),topic=currentTopic();
   document.getElementById("path-title").textContent=topic.title;
   document.getElementById("path-sub").textContent=topic.kicker;
@@ -105,17 +106,17 @@ function paintNext(){var why=document.getElementById("next-why"),btn=document.ge
   why.textContent="Walk this path in order.";btn.textContent="Walk";btn.onclick=startWalk;
 }
 function paintQuest(){var el=document.getElementById("daily-quest");if(!el)return;var f=getFun();var day=new Date().toISOString().slice(0,10);if(f.questDay!==day){f.questDay=day;f.questN=0;saveStore();}el.textContent="Today: light "+Math.min(f.questN,3)+" of 3 lanterns.";}
-function startLook(id,review){currentPhrase=phraseById(id);if(!currentPhrase)return;var st=itemState(id);if(!st.introduced)setItem(id,{introduced:true,state:Math.max(st.state,0)});showScreen("screen-look");
+function startLook(id,review){currentPhrase=phraseById(id);if(!currentPhrase)return;var st=itemState(id);if(!st.introduced)setItem(id,{introduced:true,state:Math.max(st.state,0)});if(typeof warmFieldVoice==="function")warmFieldVoice(topicId());if(typeof preseekLantern==="function")preseekLantern(currentPhrase);showScreen("screen-look");
   document.getElementById("look-card").innerHTML="<div class='kicker'>"+escapeHtml(currentTopic().short)+" \u00b7 lantern "+currentPhrase.n+"</div><div class='pic-hero'>"+currentPhrase.pic+"</div><p class='scene'>"+currentPhrase.scene+"</p><p class='phrase'>"+escapeHtml(currentPhrase.text)+"</p><p class='why'><strong>Why this line.</strong> "+currentPhrase.why+"</p><p class='gesture'><strong>A small gesture.</strong> "+currentPhrase.gesture+"</p>";
-  document.getElementById("btn-hear").onclick=function(){speakText(currentPhrase.text);};
+  document.getElementById("btn-hear").onclick=function(){hearLantern(currentPhrase);};
   document.getElementById("btn-got-it").onclick=function(){if(itemState(id).state===0)setItem(id,{state:1,consec:0,introduced:true});startEcho(id);};
-  if(!review)speakText(currentPhrase.text);
+  if(!review)hearLantern(currentPhrase);
 }
 function startEcho(id){currentPhrase=phraseById(id)||currentPhrase;if(!currentPhrase)return;showScreen("screen-echo");var hide=true,card=document.getElementById("echo-card");
   function paint(hidden){card.innerHTML="<div class='kicker'>Echo \u00b7 lantern "+currentPhrase.n+"</div><div class='pic-hero'>"+currentPhrase.pic+"</div><p class='hint'>"+currentPhrase.hook+"</p><p class='phrase "+(hidden?"hidden":"")+"'>"+escapeHtml(currentPhrase.text)+"</p><div id='heard-box' class='heard'>Mic is optional. You can also tap I said it.</div>";}
   paint(true);
   document.getElementById("btn-peek").onclick=function(){hide=!hide;paint(hide);};
-  document.getElementById("btn-hear-echo").onclick=function(){speakText(currentPhrase.text);};
+  document.getElementById("btn-hear-echo").onclick=function(){hearLantern(currentPhrase);};
   document.getElementById("btn-said").onclick=function(){markHit(currentPhrase.id,true);};
   var speakBtn=document.getElementById("btn-speak");
   if(!voiceSupported)speakBtn.style.display="none";
