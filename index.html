@@ -54,8 +54,10 @@
     #who-sheet.open{display:flex}
     .sheet{background:#fff;width:min(440px,100%);border-radius:28px 28px 22px 22px;padding:18px 16px 16px;box-shadow:0 -12px 40px rgba(43,42,56,.2);max-height:86vh;overflow:auto}
     .sheet h2{margin:0 0 8px;font-size:1.2rem}
+    .sheet p.fine{margin:0 0 8px;font-size:.88rem;color:var(--soft);line-height:1.35}
     .sheet label{display:block;font-size:.8rem;font-weight:800;color:var(--soft);margin:10px 0 4px}
-    .sheet input{width:100%;padding:10px 12px;border-radius:12px;border:2px solid rgba(43,42,56,.1);font:inherit}
+    .sheet input,.sheet textarea{width:100%;padding:10px 12px;border-radius:12px;border:2px solid rgba(43,42,56,.1);font:inherit}
+    .sheet textarea{min-height:64px;resize:vertical}
     .faces{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
     .face{border:0;background:#FFF8F1;border-radius:16px;padding:10px 12px;font:inherit;font-weight:700;cursor:pointer}
     .face.on{outline:2px solid var(--mint)}
@@ -126,20 +128,25 @@
         <input id="hub-find" type="text" placeholder="Alex" maxlength="18">
         <div class="row">
           <button class="go" type="button" onclick="hubFind()">Find</button>
-          <button type="button" onclick="showWhoTab('new')">New kid</button>
+          <button type="button" onclick="showWhoTab('new')">Request a player</button>
           <button class="ghost" type="button" onclick="showWhoTab('parent')">Parent</button>
         </div>
       </div>
       <div id="who-new" style="display:none">
-        <h2>New kid</h2>
-        <label>Name</label>
-        <input id="hub-name" type="text" maxlength="18">
+        <h2>Request a player</h2>
+        <p class="fine">This does not start play yet. The administrator must approve the request first.</p>
+        <label>Player name</label>
+        <input id="hub-name" type="text" maxlength="18" placeholder="Alex">
+        <label>Your email (so we can reply)</label>
+        <input id="hub-contact" type="email" placeholder="you@example.com">
         <label>Optional PIN</label>
         <input id="hub-pin" type="password" inputmode="numeric" maxlength="6">
         <label>Avatar</label>
         <div id="hub-avs" class="avs"></div>
+        <label>Note for the administrator</label>
+        <textarea id="hub-note" maxlength="240" placeholder="Who is this for?"></textarea>
         <div class="row">
-          <button class="go" type="button" onclick="hubCreate()">Start</button>
+          <button class="go" type="button" onclick="hubRequest()">Ask the administrator</button>
           <button class="ghost" type="button" onclick="showWhoTab('kids')">Back</button>
         </div>
       </div>
