@@ -8,7 +8,7 @@ function hubPerson(){
   return null;
 }
 function hideFieldFind(){
-  var card = document.querySelector("#screen-profiles .card");
+  var card = document.getElementById("find-card") || document.querySelector("#screen-profiles .card");
   if (card) card.style.display = "none";
 }
 function consumeYompleHandoff(){
@@ -18,6 +18,7 @@ function consumeYompleHandoff(){
   var username = (typeof slugName==="function" ? slugName(raw) : raw.toLowerCase());
   var f = String(who.f || "").trim().toUpperCase();
   window.YOMPLE_HANDSHAKE = true;
+  window.YOMPLE_FROM_HUB = true;
   if (f && f.indexOf("-") > 0) store.familyCode = f;
   hideFieldFind();
   function land(){
@@ -55,9 +56,14 @@ if (typeof showProfiles === "function") {
   var _showProfilesField = showProfiles;
   showProfiles = function(){
     _showProfilesField();
-    if (window.YOMPLE_HANDSHAKE) hideFieldFind();
+    if (window.YOMPLE_HANDSHAKE || window.YOMPLE_FROM_HUB) hideFieldFind();
   };
 }
-document.addEventListener("DOMContentLoaded", function(){
+function startFieldHandoff(){
   consumeYompleHandoff();
-});
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startFieldHandoff);
+} else {
+  startFieldHandoff();
+}
