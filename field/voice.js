@@ -103,7 +103,7 @@ function hearLantern(phrase, done){
     playRange(GETTYSBURG_SRC, span.start, span.end, done);
     return;
   }
-  speakText(phrase.text || phrase, done);
+  speakSynth(phrase.text || phrase, done);
 }
 
 function playRange(src, start, end, done){
@@ -123,7 +123,7 @@ function playRange(src, start, end, done){
 
   a.onerror = function(){
     if (typeof toast === "function") toast("Could not reach the field voice. Trying the device voice.");
-    speakText((typeof currentPhrase !== "undefined" && currentPhrase && currentPhrase.text) || "", done);
+    speakSynth((typeof currentPhrase !== "undefined" && currentPhrase && currentPhrase.text) || "", done);
   };
 
   function begin(){
@@ -163,6 +163,14 @@ function speakText(text, done){
     hearLantern(text, done);
     return;
   }
+  if (typeof currentPhrase !== "undefined" && currentPhrase && currentPhrase.text === text) {
+    hearLantern(currentPhrase, done);
+    return;
+  }
+  speakSynth(text, done);
+}
+
+function speakSynth(text, done){
   if (!text) { if (done) done(); return; }
   if (soundOff()) {
     if (typeof toast === "function") toast("Sound is off \u2014 tap the speaker chip");
