@@ -6,9 +6,8 @@ var lincolnVoice = null;
 var voicesReady = false;
 var fieldAudio = null;
 
-/* Britton Rea recitation, public domain (Wikimedia / Internet Archive).
-   No recording of Lincoln's own voice exists. This is a human reader,
-   not a phone voice. Times skip the spoken title at the start. */
+/* Human public-domain recitations. No original Lincoln voice exists.
+   Gettysburg: Britton Rea. Preamble: Kristen McQuillin / LibriVox. */
 var GETTYSBURG_SRC = "https://archive.org/download/GettysburgAddress/gettysburg_address.mp3";
 var GETTYSBURG_SPAN = {
   p1:  { start: 3.44,  end: 14.40 },
@@ -23,6 +22,20 @@ var GETTYSBURG_SPAN = {
   p10: { start: 74.77, end: 87.66 },
   p11: { start: 87.69, end: 98.72 },
   p12: { start: 98.74, end: 106.30 }
+};
+var PREAMBLE_SRC = "https://archive.org/download/constitution/constitution_article_01_64kb.mp3";
+var PREAMBLE_SPAN = {
+  p1: { start: 16.20, end: 18.16 },
+  p2: { start: 18.16, end: 20.08 },
+  p3: { start: 20.04, end: 23.20 },
+  p4: { start: 23.20, end: 25.16 },
+  p5: { start: 25.16, end: 26.68 },
+  p6: { start: 26.58, end: 30.30 },
+  p7: { start: 30.28, end: 35.10 }
+};
+var RECITE = {
+  gettysburg: { src: GETTYSBURG_SRC, span: GETTYSBURG_SPAN },
+  preamble:   { src: PREAMBLE_SRC,   span: PREAMBLE_SPAN }
 };
 
 function refreshVoices(){
@@ -93,14 +106,15 @@ function stopSpeak(){
 function hearLantern(phrase, done){
   if (!phrase) { if (done) done(); return; }
   if (soundOff()) {
-    if (typeof toast === "function") toast("Sound is off \u2014 tap the speaker chip");
+    if (typeof toast === "function") toast("Sound is off — tap the speaker chip");
     if (done) done();
     return;
   }
   var topic = (typeof currentTopic === "function" && currentTopic()) || {};
-  var span = (topic.id === "gettysburg" || !topic.id) ? GETTYSBURG_SPAN[phrase.id] : null;
+  var pack = RECITE[topic.id] || RECITE.gettysburg;
+  var span = pack && pack.span && phrase.id ? pack.span[phrase.id] : null;
   if (span) {
-    playRange(GETTYSBURG_SRC, span.start, span.end, done);
+    playRange(pack.src, span.start, span.end, done);
     return;
   }
   speakSynth(phrase.text || phrase, done);
@@ -173,7 +187,7 @@ function speakText(text, done){
 function speakSynth(text, done){
   if (!text) { if (done) done(); return; }
   if (soundOff()) {
-    if (typeof toast === "function") toast("Sound is off \u2014 tap the speaker chip");
+    if (typeof toast === "function") toast("Sound is off — tap the speaker chip");
     if (done) done();
     return;
   }
