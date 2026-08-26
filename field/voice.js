@@ -4,6 +4,26 @@ var listening = false;
 var rec = null;
 var lincolnVoice = null;
 var voicesReady = false;
+var fieldAudio = null;
+
+/* Britton Rea recitation, public domain (Wikimedia / Internet Archive).
+   No recording of Lincoln's own voice exists. This is a human reader,
+   not a phone voice. Times skip the spoken title at the start. */
+var GETTYSBURG_SRC = "https://archive.org/download/GettysburgAddress/gettysburg_address.mp3";
+var GETTYSBURG_SPAN = {
+  p1:  { start: 3.44,  end: 14.40 },
+  p2:  { start: 14.42, end: 24.82 },
+  p3:  { start: 24.85, end: 28.12 },
+  p4:  { start: 28.14, end: 36.64 },
+  p5:  { start: 36.67, end: 40.70 },
+  p6:  { start: 40.73, end: 48.64 },
+  p7:  { start: 48.67, end: 56.56 },
+  p8:  { start: 56.59, end: 65.62 },
+  p9:  { start: 65.65, end: 74.74 },
+  p10: { start: 74.77, end: 87.66 },
+  p11: { start: 87.69, end: 98.72 },
+  p12: { start: 98.74, end: 106.30 }
+};
 
 function refreshVoices(){
   if (!window.speechSynthesis) return [];
@@ -23,7 +43,6 @@ function pickLincolnVoice(voices){
     if (/^en(-|_)?us/i.test(v.lang)) s += 8;
     else if (/^en/i.test(v.lang)) s += 5;
     else return -1;
-    // Prefer deep / formal male system voices (best orator stand-ins)
     if (/daniel|alex|fred|ralph|aaron|bruce|tom|nathan|reed|gordon|arthur|james|david|mark/i.test(n)) s += 12;
     if (/male/i.test(n)) s += 6;
     if (/female|woman|girl|zira|samantha|karen|moira|tessa|veena|fiona/i.test(n)) s -= 10;
@@ -48,26 +67,121 @@ if (window.speechSynthesis) {
   }
 }
 
+function soundOff(){
+  return typeof getFun === "function" && getFun().mute;
+}
+
+function stopFieldAudio(){
+  if (!fieldAudio) return;
+  try { fieldAudio.pause(); } catch (e) {}
+  try {
+    fieldAudio.onended = null;
+    fieldAudio.onerror = null;
+    fieldAudio.ontimeupdate = null;
+    fieldAudio.onloadedmetadata = null;
+    fieldAudio.oncanplay = null;
+  } catch (e2) {}
+}
+
+function stopSpeak(){
+  stopFieldAudio();
+  if (window.speechSynthesis) {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+  }
+}
+
+function hearLantern(phrase, done){
+  if (!phrase) { if (done) done(); return; }
+  if (soundOff()) {
+    if (typeof toast === "function") toast("Sound is off \u2014 tap the speaker chip");
+    if (done) done();
+    return;
+  }
+  var topic = (typeof currentTopic === "function" && currentTopic()) || {};
+  var span = (topic.id === "gettysburg" || !topic.id) ? GETTYSBURG_SPAN[phrase.id] : null;
+  if (span) {
+    playRange(GETTYSBURG_SRC, span.start, span.end, done);
+    return;
+  }
+  speakText(phrase.text || phrase, done);
+}
+
+function playRange(src, start, end, done){
+  stopSpeak();
+  var finished = false;
+  function finish(){
+    if (finished) return;
+    finished = true;
+    stopFieldAudio();
+    if (done) done();
+  }
+
+  var a = new Audio();
+  fieldAudio = a;
+  a.preload = "auto";
+  a.src = src;
+
+  a.onerror = function(){
+    if (typeof toast === "function") toast("Could not reach the field voice. Trying the device voice.");
+    speakText((typeof currentPhrase !== "undefined" && currentPhrase && currentPhrase.text) || "", done);
+  };
+
+  function begin(){
+    if (finished || fieldAudio !== a) return;
+    try {
+      if (start > 0.05) a.currentTime = start;
+    } catch (e) {}
+    var playPromise = a.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(function(){
+        if (finished) return;
+        if (typeof toast === "function") toast("Tap Hear it once more");
+        finish();
+      });
+    }
+  }
+
+  a.onloadedmetadata = begin;
+  a.oncanplay = function(){
+    if (a.paused && !finished && fieldAudio === a) begin();
+  };
+
+  a.ontimeupdate = function(){
+    if (finished || fieldAudio !== a) return;
+    if (end && a.currentTime >= end - 0.04) finish();
+  };
+  a.onended = finish;
+
+  var cap = Math.max(2000, ((end - start) + 1.5) * 1000);
+  setTimeout(function(){ if (fieldAudio === a) finish(); }, cap);
+
+  try { a.load(); } catch (err) {}
+}
+
 function speakText(text, done){
+  if (text && typeof text === "object") {
+    hearLantern(text, done);
+    return;
+  }
   if (!text) { if (done) done(); return; }
+  if (soundOff()) {
+    if (typeof toast === "function") toast("Sound is off \u2014 tap the speaker chip");
+    if (done) done();
+    return;
+  }
   if (!window.speechSynthesis) {
     if (typeof toast === "function") toast("This device cannot read the line aloud");
     if (done) done();
     return;
   }
-  if (typeof getFun === "function" && getFun().mute) {
-    if (typeof toast === "function") toast("Sound is off - tap the speaker chip");
-    if (done) done();
-    return;
-  }
 
+  stopFieldAudio();
   refreshVoices();
   try { window.speechSynthesis.cancel(); } catch (e) {}
   try { if (window.speechSynthesis.paused) window.speechSynthesis.resume(); } catch (e2) {}
 
   var u = new SpeechSynthesisUtterance(String(text));
   u.lang = "en-US";
-  // Slower, lower, solemn - closer to a field speech than a chat voice
   u.rate = 0.84;
   u.pitch = 0.82;
   u.volume = 1;
@@ -82,12 +196,10 @@ function speakText(text, done){
   u.onend = finish;
   u.onerror = finish;
 
-  // iOS needs speak() close to the user gesture; a tiny delay after cancel helps
   setTimeout(function(){
     try {
       if (window.speechSynthesis.paused) window.speechSynthesis.resume();
       window.speechSynthesis.speak(u);
-      // Some iOS builds stall until a resume tick
       setTimeout(function(){
         try { if (window.speechSynthesis.paused) window.speechSynthesis.resume(); } catch (e3) {}
       }, 120);
@@ -96,12 +208,6 @@ function speakText(text, done){
       finish();
     }
   }, 40);
-}
-
-function stopSpeak(){
-  if (window.speechSynthesis) {
-    try { window.speechSynthesis.cancel(); } catch (e) {}
-  }
 }
 
 function normalizeTalk(s){
