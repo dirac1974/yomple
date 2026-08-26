@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#1c2436" />
   <title>Quiet Field</title>
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <div id="toast"></div>
@@ -45,20 +45,20 @@
       <img id="field-mark" class="field-mark" src="lincoln-mark.svg" alt="Quiet Field" />
       <div>
         <h1>Quiet Field</h1>
-        <div class="subtitle">Hear it \u00b7 hide it \u00b7 say it</div>
+        <div class="subtitle">Hear it · hide it · say it</div>
       </div>
     </header>
     <div id="current-kid-badge" class="kid-badge" onclick="showProfiles()"></div>
     <div class="hud">
-      <div class="hud-chip">\u2728 <span id="star-count">0</span></div>
-      <div class="hud-chip sound" id="sound-chip" onclick="toggleSound()">\ud83d\udd0a</div>
+      <div class="hud-chip">✨ <span id="star-count">0</span></div>
+      <div class="hud-chip sound" id="sound-chip" onclick="toggleSound()">🔊</div>
     </div>
     <p class="monument">Pick a path across the field.</p>
     <div id="topic-grid" class="topic-grid"></div>
     <div class="parent-link">
       <a href="#" onclick="showHowTo(); return false;">How to use</a>
-      \u00b7 <a href="#" onclick="showParent(); return false;">Parent / Progress</a>
-      \u00b7 <a href="#" onclick="showProfiles(); return false;">Switch player</a>
+      · <a href="#" onclick="showParent(); return false;">Parent / Progress</a>
+      · <a href="#" onclick="showProfiles(); return false;">Switch player</a>
     </div>
   </div>
   <div id="screen-path" class="screen">
@@ -68,8 +68,8 @@
       <div id="path-kid-badge" class="kid-badge" onclick="showHome()"></div>
     </header>
     <div class="hud">
-      <div class="hud-chip">\u2728 <span id="path-star-count">0</span></div>
-      <div class="hud-chip sound" id="path-sound-chip" onclick="toggleSound()">\ud83d\udd0a</div>
+      <div class="hud-chip">✨ <span id="path-star-count">0</span></div>
+      <div class="hud-chip sound" id="path-sound-chip" onclick="toggleSound()">🔊</div>
     </div>
     <div class="next-card">
       <div class="kicker">Do this next</div>
@@ -94,6 +94,7 @@
         <li><strong>Echo.</strong> Hide the words. Mic is optional.</li>
         <li><strong>Walk</strong> and <strong>Mix</strong> known lanterns.</li>
       </ol>
+      <p class="hint">Gettysburg is spoken by Britton Rea, a public-domain recitation. Lincoln himself was never recorded.</p>
       <div class="btn-row"><button class="btn primary" onclick="showHome()">Back to the field</button></div>
     </div>
   </div>
@@ -133,7 +134,7 @@
       <div id="stats-text"></div>
       <label style="margin-top:12px;"><input id="last-first" type="checkbox" onclick="toggleLastFirst()" style="width:auto;display:inline;margin-right:8px;" /> Light the last stretch first</label>
       <p><strong>Family code</strong></p>
-      <p id="family-code-value" style="font-size:1.4rem;font-weight:800;">\u2014</p>
+      <p id="family-code-value" style="font-size:1.4rem;font-weight:800;">—</p>
       <label>Parent email</label>
       <input id="parent-email" type="email" placeholder="you@example.com" />
       <div class="btn-row">
@@ -164,10 +165,10 @@
     <button onclick="var d=pickDue(); if(d) startEcho(d); else startWalk();" id="nav-echo">Echo</button>
     <button onclick="startWalk()" id="nav-walk">Walk</button>
   </nav>
-  <script src="lincoln-art.js?v=3"></script>
-  <script src="phrases.js?v=3"></script>
-  <script src="voice.js?v=3"></script>
-  <script src="app.js?v=3"></script>
-  <script src="sync.js?v=3"></script>
+  <script src="lincoln-art.js?v=4"></script>
+  <script src="phrases.js?v=4"></script>
+  <script src="voice.js?v=4"></script>
+  <script src="app.js?v=4"></script>
+  <script src="sync.js?v=4"></script>
 </body>
 </html>
