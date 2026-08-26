@@ -5,6 +5,9 @@ var rec = null;
 var lincolnVoice = null;
 var voicesReady = false;
 var fieldAudio = null;
+var warmedPlayers = {};
+var warmedBlobs = {};
+var warmFetchStarted = {};
 
 /* Human public-domain recitations. No original Lincoln voice exists.
    Gettysburg: Britton Rea. Preamble: Kristen McQuillin / LibriVox. */
@@ -84,16 +87,100 @@ function soundOff(){
   return typeof getFun === "function" && getFun().mute;
 }
 
+function clearAudioHandlers(a){
+  if (!a) return;
+  try {
+    a.onended = null;
+    a.onerror = null;
+    a.ontimeupdate = null;
+    a.onloadedmetadata = null;
+    a.oncanplay = null;
+    a.onseeked = null;
+    a.onplaying = null;
+  } catch (e) {}
+}
+
 function stopFieldAudio(){
   if (!fieldAudio) return;
   try { fieldAudio.pause(); } catch (e) {}
+  clearAudioHandlers(fieldAudio);
+}
+
+function playerFor(src){
+  var a = warmedPlayers[src];
+  if (a) return a;
+  a = new Audio();
+  a.preload = "auto";
+  a.crossOrigin = "anonymous";
+  a.src = warmedBlobs[src] || src;
+  warmedPlayers[src] = a;
+  try { a.load(); } catch (e) {}
+  return a;
+}
+
+function fetchReciteBlob(src){
+  if (!src || warmFetchStarted[src]) return;
+  warmFetchStarted[src] = true;
   try {
-    fieldAudio.onended = null;
-    fieldAudio.onerror = null;
-    fieldAudio.ontimeupdate = null;
-    fieldAudio.onloadedmetadata = null;
-    fieldAudio.oncanplay = null;
-  } catch (e2) {}
+    fetch(src, { mode: "cors", credentials: "omit", cache: "force-cache" })
+      .then(function(res){ return res.ok ? res.blob() : Promise.reject(); })
+      .then(function(blob){
+        var url = URL.createObjectURL(blob);
+        warmedBlobs[src] = url;
+        var a = warmedPlayers[src];
+        if (a && a.paused) {
+          var t = a.currentTime || 0;
+          a.src = url;
+          try { a.load(); } catch (e) {}
+          if (t > 0.05) {
+            a.addEventListener("loadedmetadata", function once(){
+              a.removeEventListener("loadedmetadata", once);
+              try { a.currentTime = t; } catch (e2) {}
+            });
+          }
+        }
+      })
+      .catch(function(){ warmFetchStarted[src] = false; });
+  } catch (err) {
+    warmFetchStarted[src] = false;
+  }
+}
+
+function warmFieldVoice(topicKey){
+  var keys = topicKey ? [topicKey] : Object.keys(RECITE);
+  keys.forEach(function(id){
+    var pack = RECITE[id];
+    if (!pack || !pack.src) return;
+    playerFor(pack.src);
+    fetchReciteBlob(pack.src);
+  });
+}
+
+function preseekLantern(phrase){
+  if (!phrase) return;
+  var topic = (typeof currentTopic === "function" && currentTopic()) || {};
+  var pack = RECITE[topic.id] || RECITE.gettysburg;
+  var span = pack && pack.span && phrase.id ? pack.span[phrase.id] : null;
+  if (!pack || !span) return;
+  var a = playerFor(pack.src);
+  if (!a.paused) return;
+  function seek(){
+    try {
+      if (Math.abs((a.currentTime || 0) - span.start) > 0.12) a.currentTime = span.start;
+    } catch (e) {}
+  }
+  if (a.readyState >= 1) seek();
+  else a.addEventListener("loadedmetadata", function once(){
+    a.removeEventListener("loadedmetadata", once);
+    seek();
+  });
+}
+
+warmFieldVoice();
+if (typeof document !== "undefined") {
+  ["pointerdown", "touchstart", "click"].forEach(function(ev){
+    document.addEventListener(ev, function(){ warmFieldVoice(); }, { passive: true });
+  });
 }
 
 function stopSpeak(){
@@ -106,7 +193,7 @@ function stopSpeak(){
 function hearLantern(phrase, done){
   if (!phrase) { if (done) done(); return; }
   if (soundOff()) {
-    if (typeof toast === "function") toast("Sound is off — tap the speaker chip");
+    if (typeof toast === "function") toast("Sound is off \u2014 tap the speaker chip");
     if (done) done();
     return;
   }
@@ -122,54 +209,80 @@ function hearLantern(phrase, done){
 
 function playRange(src, start, end, done){
   stopSpeak();
+  fetchReciteBlob(src);
+  var a = playerFor(src);
+  fieldAudio = a;
   var finished = false;
+  var token = (a._playToken = (a._playToken || 0) + 1);
+
   function finish(){
     if (finished) return;
     finished = true;
-    stopFieldAudio();
+    if (fieldAudio === a) {
+      try { a.pause(); } catch (e) {}
+      clearAudioHandlers(a);
+    }
+    if (typeof currentPhrase !== "undefined") preseekLantern(currentPhrase);
     if (done) done();
   }
 
-  var a = new Audio();
-  fieldAudio = a;
-  a.preload = "auto";
-  a.src = src;
-
   a.onerror = function(){
+    if (finished || a._playToken !== token) return;
     if (typeof toast === "function") toast("Could not reach the field voice. Trying the device voice.");
     speakSynth((typeof currentPhrase !== "undefined" && currentPhrase && currentPhrase.text) || "", done);
   };
 
-  function begin(){
-    if (finished || fieldAudio !== a) return;
-    try {
-      if (start > 0.05) a.currentTime = start;
-    } catch (e) {}
+  a.ontimeupdate = function(){
+    if (finished || a._playToken !== token) return;
+    if (end && a.currentTime >= end) finish();
+  };
+  a.onended = function(){
+    if (a._playToken !== token) return;
+    finish();
+  };
+
+  function startPlayback(){
+    if (finished || a._playToken !== token) return;
     var playPromise = a.play();
     if (playPromise && typeof playPromise.catch === "function") {
       playPromise.catch(function(){
-        if (finished) return;
+        if (finished || a._playToken !== token) return;
         if (typeof toast === "function") toast("Tap Hear it once more");
         finish();
       });
     }
   }
 
-  a.onloadedmetadata = begin;
-  a.oncanplay = function(){
-    if (a.paused && !finished && fieldAudio === a) begin();
-  };
+  function seekThenPlay(){
+    if (finished || a._playToken !== token) return;
+    var already = Math.abs((a.currentTime || 0) - start) <= 0.12;
+    if (already || start <= 0.05) {
+      startPlayback();
+      return;
+    }
+    var armed = false;
+    function go(){
+      if (armed || finished || a._playToken !== token) return;
+      armed = true;
+      startPlayback();
+    }
+    a.onseeked = go;
+    try { a.currentTime = start; } catch (e) { startPlayback(); return; }
+    setTimeout(go, 280);
+  }
 
-  a.ontimeupdate = function(){
-    if (finished || fieldAudio !== a) return;
-    if (end && a.currentTime >= end) finish();
-  };
-  a.onended = finish;
+  if (a.readyState >= 2) {
+    seekThenPlay();
+  } else {
+    a.onloadedmetadata = seekThenPlay;
+    a.oncanplay = function(){
+      if (a.paused && !finished && a._playToken === token) seekThenPlay();
+    };
+    try { a.load(); } catch (err) {}
+  }
 
   var cap = Math.max(2000, ((end - start) + 1.5) * 1000);
-  setTimeout(function(){ if (fieldAudio === a) finish(); }, cap);
-
-  try { a.load(); } catch (err) {}
+  setTimeout(function(){ if (a._playToken === token) finish(); }, cap);
 }
 
 function speakText(text, done){
@@ -187,7 +300,7 @@ function speakText(text, done){
 function speakSynth(text, done){
   if (!text) { if (done) done(); return; }
   if (soundOff()) {
-    if (typeof toast === "function") toast("Sound is off — tap the speaker chip");
+    if (typeof toast === "function") toast("Sound is off \u2014 tap the speaker chip");
     if (done) done();
     return;
   }
