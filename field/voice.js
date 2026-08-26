@@ -11,9 +11,9 @@ var fieldAudio = null;
 var GETTYSBURG_SRC = "https://archive.org/download/GettysburgAddress/gettysburg_address.mp3";
 var GETTYSBURG_SPAN = {
   p1:  { start: 0.08,  end: 14.20 },
-  p2:  { start: 14.20, end: 24.60 },
-  p3:  { start: 24.60, end: 27.90 },
-  p4:  { start: 27.90, end: 36.40 },
+  p2:  { start: 14.20, end: 24.80 },
+  p3:  { start: 24.80, end: 28.12 },
+  p4:  { start: 28.12, end: 36.40 },
   p5:  { start: 36.40, end: 40.50 },
   p6:  { start: 40.50, end: 48.40 },
   p7:  { start: 48.40, end: 56.30 },
@@ -162,7 +162,7 @@ function playRange(src, start, end, done){
 
   a.ontimeupdate = function(){
     if (finished || fieldAudio !== a) return;
-    if (end && a.currentTime >= end - 0.04) finish();
+    if (end && a.currentTime >= end) finish();
   };
   a.onended = finish;
 
