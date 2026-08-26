@@ -1,6 +1,7 @@
 var SB_URL = "https://digcgqltrlmhgmzgmvwc.supabase.co";
 var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpZ2NncWx0cmxtaGdtemdtdndjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1ODY4NjEsImV4cCI6MjA4OTE2Mjg2MX0.suxy0jXsIJqrJYbQuCc54sHbN5miCICxLUdOc9gUTkY";
 var HUB_KEY = "yomple-hub-v1";
+var ADMIN_EMAIL = "davidstucke@gmail.com";
 var SISTERS = ["hop_players","bloom_players","garden_players","star_players","field_players"];
 var AVATARS = ["\ud83e\udd81","\ud83d\udc3b","\ud83e\udd8a","\ud83e\udd84","\ud83d\udc3c","\ud83d\udc38","\ud83d\udc27","\ud83c\udf1f","\ud83d\ude80","\ud83c\udf88"];
 var hub = { familyCode: null, parentEmail: "", profiles: [], activeUser: null };
@@ -150,7 +151,7 @@ function hubFind(){
   if (!username || username==="player") { ping("Type a name"); return; }
   ping("Looking\u2026");
   findAny(username).then(function(hit){
-    if (!hit) { ping("No Yomple player with that name yet"); return; }
+    if (!hit) { ping("No approved Yomple player with that name yet"); return; }
     var row = hit.row;
     if (row.pin) {
       var pin = window.prompt("PIN for "+row.display_name);
@@ -161,26 +162,90 @@ function hubFind(){
     goPending();
   });
 }
-function hubCreate(){
-  var name = (document.getElementById("hub-name").value||"").trim() || "Player";
+function requestBody(){
+  var name = (document.getElementById("hub-name").value||"").trim();
   var pin = (document.getElementById("hub-pin").value||"").trim();
-  var avatar = document.getElementById("hub-avs").dataset.selected || AVATARS[0];
-  var username = slugName(name);
+  var contact = (document.getElementById("hub-contact") && document.getElementById("hub-contact").value || "").trim();
+  var note = (document.getElementById("hub-note") && document.getElementById("hub-note").value || "").trim();
+  var avatar = (document.getElementById("hub-avs") && document.getElementById("hub-avs").dataset.selected) || AVATARS[0];
+  return {
+    name: name,
+    username: slugName(name),
+    pin: pin,
+    avatar: avatar,
+    contact: contact,
+    note: note,
+    when: new Date().toISOString()
+  };
+}
+function emailRequest(req){
+  var body =
+    "Yomple account request (approval needed)\n\n" +
+    "Name: "+req.name+"\n" +
+    "Username: "+req.username+"\n" +
+    "Avatar: "+req.avatar+"\n" +
+    "Optional PIN: "+(req.pin || "(none)")+"\n" +
+    "Contact email: "+(req.contact || "(none)")+"\n" +
+    "Note: "+(req.note || "(none)")+"\n" +
+    "When: "+req.when+"\n\n" +
+    "This person cannot play until you approve.\n" +
+    "To approve: add a hop_players row for username "+req.username+", then tell them to tap Find and type "+req.name+".\n";
+  var subject = "Yomple account request: " + (req.name || req.username);
+  fetch("https://formsubmit.co/ajax/"+ADMIN_EMAIL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      _subject: subject,
+      _template: "box",
+      name: req.name,
+      username: req.username,
+      avatar: req.avatar,
+      pin: req.pin || "(none)",
+      contact: req.contact || "(none)",
+      note: req.note || "(none)",
+      when: req.when,
+      message: body
+    })
+  }).catch(function(){});
+  location.href = "mailto:"+encodeURIComponent(ADMIN_EMAIL)+
+    "?subject="+encodeURIComponent(subject)+
+    "&body="+encodeURIComponent(body);
+}
+function saveRequestCloud(req){
+  return fetch(SB_URL+"/rest/v1/yomple_join_requests", {
+    method: "POST",
+    headers: sbHeaders({ Prefer: "return=minimal" }),
+    body: JSON.stringify({
+      username: req.username,
+      display_name: req.name,
+      avatar: req.avatar,
+      pin: req.pin || null,
+      contact_email: req.contact || null,
+      note: req.note || null,
+      status: "pending",
+      created_at: req.when
+    })
+  }).catch(function(){ return null; });
+}
+function hubRequest(){
+  var req = requestBody();
+  if (!req.name || req.username==="player") { ping("Type the player name"); return; }
   ping("Checking that name\u2026");
-  findAny(username).then(function(hit){
+  findAny(req.username).then(function(hit){
     if (hit) {
-      ping("That name is already in Yomple. Use Find.");
+      ping("That name is already approved. Use Find.");
       showWhoTab("kids");
       return;
     }
-    ensureFamily();
-    hub.profiles.push({ username: username, name: name, avatar: avatar, pin: pin });
-    hub.activeUser = username;
-    saveHub();
-    ping("Welcome, "+name);
-    goPending();
+    ping("Sending the request to the administrator\u2026");
+    return saveRequestCloud(req).then(function(){
+      emailRequest(req);
+      ping("Requested. Wait for the administrator to approve.");
+      showWhoTab("kids");
+    });
   });
 }
+function hubCreate(){ hubRequest(); }
 function hubSaveEmail(){
   var em = (document.getElementById("hub-email").value||"").trim().toLowerCase();
   if (!em || em.indexOf("@")<1) { ping("Add a parent email"); return; }
@@ -221,7 +286,7 @@ function hubRestore(){
     hub.familyCode = code;
     saveHub();
     upsertFamily();
-    ping(Object.keys(seen).length ? "Household restored — pick a face" : "Code saved. Add a kid.");
+    ping(Object.keys(seen).length ? "Household restored \u2014 pick a face" : "Code saved. No approved kids yet.");
     showWhoTab("kids");
     paintKids();
   });
@@ -231,7 +296,7 @@ function ping(msg){
   if (!t) return;
   t.textContent = msg;
   t.classList.add("show");
-  setTimeout(function(){ t.classList.remove("show"); }, 2200);
+  setTimeout(function(){ t.classList.remove("show"); }, 2800);
 }
 function paintAvatars(){
   var box = document.getElementById("hub-avs");
@@ -258,4 +323,6 @@ document.addEventListener("DOMContentLoaded", function(){
   document.querySelectorAll("a.app").forEach(function(a){
     a.addEventListener("click", gateWorld);
   });
+  var q = new URLSearchParams(location.search);
+  if (q.get("request") === "1") openWho("new");
 });
