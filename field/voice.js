@@ -10,18 +10,18 @@ var fieldAudio = null;
    Gettysburg: Britton Rea. Preamble: Kristen McQuillin / LibriVox. */
 var GETTYSBURG_SRC = "https://archive.org/download/GettysburgAddress/gettysburg_address.mp3";
 var GETTYSBURG_SPAN = {
-  p1:  { start: 3.44,  end: 14.40 },
-  p2:  { start: 14.42, end: 24.82 },
-  p3:  { start: 24.85, end: 28.12 },
-  p4:  { start: 28.14, end: 36.64 },
-  p5:  { start: 36.67, end: 40.70 },
-  p6:  { start: 40.73, end: 48.64 },
-  p7:  { start: 48.67, end: 56.56 },
-  p8:  { start: 56.59, end: 65.62 },
-  p9:  { start: 65.65, end: 74.74 },
-  p10: { start: 74.77, end: 87.66 },
-  p11: { start: 87.69, end: 98.72 },
-  p12: { start: 98.74, end: 106.30 }
+  p1:  { start: 0.08,  end: 14.20 },
+  p2:  { start: 14.20, end: 24.60 },
+  p3:  { start: 24.60, end: 27.90 },
+  p4:  { start: 27.90, end: 36.40 },
+  p5:  { start: 36.40, end: 40.50 },
+  p6:  { start: 40.50, end: 48.40 },
+  p7:  { start: 48.40, end: 56.30 },
+  p8:  { start: 56.30, end: 65.40 },
+  p9:  { start: 65.40, end: 74.50 },
+  p10: { start: 74.50, end: 79.90 },
+  p11: { start: 79.90, end: 87.50 },
+  p12: { start: 87.50, end: 107.20 }
 };
 var PREAMBLE_SRC = "https://archive.org/download/constitution/constitution_article_01_64kb.mp3";
 var PREAMBLE_SPAN = {
