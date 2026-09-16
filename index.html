@@ -5,7 +5,7 @@
   <meta name="referrer" content="no-referrer" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Yomple</title>
-  <meta name="description" content="Play Bloom, Word Garden, Hall of Presidents, Star Map, and Quiet Field." />
+  <meta name="description" content="Play Bloom, Shockmate, Word Garden, Hall of Presidents, Star Map, and Quiet Field." />
   <link rel="icon" href="favicon.svg" />
   <style>
     :root{ --coral:#FF6B5A; --sun:#FFD54A; --sky:#4AA8F0; --mint:#5FCFB3; --ink:#2B2A38; --soft:#4A4860; }
@@ -37,6 +37,7 @@
     .app:nth-child(3){transform:rotate(-.2deg)}
     .app:nth-child(4){transform:rotate(.35deg)}
     .app:nth-child(5){transform:rotate(-.25deg)}
+    .app:nth-child(6){transform:rotate(.2deg)}
     .app:hover{transform:translateY(-3px) rotate(0)}
     .app::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(43,42,56,.05) 30%,rgba(43,42,56,.62) 100%);}
     .app > *{position:relative;z-index:1}
@@ -48,6 +49,7 @@
     .hall{background-color:#e0a14a;background-image:url("https://lh3.googleusercontent.com/d/14joT01-sGwPLZPPtvN9voXmzqjvRpdx8=s900"),linear-gradient(160deg,#f0c36a,#b8742a);}
     .stars{background-color:#2a4a8c;background-image:url("https://lh3.googleusercontent.com/d/1f6i36HgwXbnujqamAwE78tdZLntx1jhC=s900"),linear-gradient(160deg,#3d6ad4,#1a2a5a);}
     .field{background-color:#3d4a3a;background-image:url("/field/lincoln-field.svg"),linear-gradient(160deg,#7fb39a,#1c2436);background-size:cover;background-position:center 62%;}
+    .shock{background-color:#1a1640;background-image:url("/shockmate.svg"),linear-gradient(160deg,#5b3de0,#1a1640);background-size:cover;background-position:center;}
     footer{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;font-size:13px;padding-top:6px}
     footer a{text-decoration:none;color:#2B2A38;background:#fff;border-radius:999px;padding:6px 12px;opacity:.85;font-weight:700}
     #who-sheet{position:fixed;inset:0;background:rgba(43,42,56,.35);display:none;align-items:flex-end;justify-content:center;z-index:20;padding:12px}
@@ -74,7 +76,7 @@
     #hub-toast.show{opacity:1}
     @media (max-width:700px){
       .apps{grid-template-columns:1fr}
-      .app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4),.app:nth-child(5){transform:none;min-height:168px}
+      .app,.app:nth-child(2),.app:nth-child(3),.app:nth-child(4),.app:nth-child(5),.app:nth-child(6){transform:none;min-height:168px}
       header{flex-wrap:wrap;justify-content:center}
     }
   </style>
@@ -111,6 +113,7 @@
         <a class="app hall" data-base="https://dirac1974.github.io/hall-of-presidents/" href="https://dirac1974.github.io/hall-of-presidents/"><span class="ic">🏛️</span><h2>Hall of Presidents</h2><p>US presidents in order</p></a>
         <a class="app stars" data-base="https://dirac1974.github.io/star-map/" href="https://dirac1974.github.io/star-map/"><span class="ic">⭐</span><h2>Star Map</h2><p>States and capitals</p></a>
         <a class="app field" data-base="/field/" href="/field/"><span class="ic">🌾</span><h2>Quiet Field</h2><p>Recite</p></a>
+        <a class="app shock" data-base="https://raw.githack.com/dirac1974/shockmate/main/web/index.html" href="https://raw.githack.com/dirac1974/shockmate/main/web/index.html"><span class="ic">♟️</span><h2>Shockmate</h2><p>Chess tactics</p></a>
       </div>
     </main>
     <footer>
