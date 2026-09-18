@@ -35,18 +35,26 @@ function consumeYompleHandoff(){
   }
   var finder = (typeof findAnyYomplePerson==="function") ? findAnyYomplePerson(username) : Promise.resolve(null);
   return finder.then(function(hit){
-    if (hit && hit.table === "field_players" && typeof applyCloudRow==="function") {
-      applyCloudRow(hit.row);
-    } else if (hit && hit.row && typeof adoptPerson==="function") {
-      adoptPerson(hit.row, {});
-      if (typeof seedIntroduced==="function") seedIntroduced();
-      if (typeof cloudSaveActive==="function") cloudSaveActive();
-    } else if (typeof adoptPerson==="function") {
-      adoptPerson({ username: username, display_name: raw, avatar: "\ud83e\ude94", family_code: store.familyCode || f }, {});
-      if (typeof seedIntroduced==="function") seedIntroduced();
-      if (typeof cloudSaveActive==="function") cloudSaveActive();
+    if (!hit || !hit.row) {
+      if (typeof adoptPerson==="function") {
+        adoptPerson({ username: username, display_name: raw, avatar: "\ud83e\ude94", family_code: store.familyCode || f }, {});
+        if (typeof seedIntroduced==="function") seedIntroduced();
+        if (typeof cloudSaveActive==="function") cloudSaveActive();
+      }
+      return land();
     }
-    return land();
+    var claim = (typeof yompleClaim==="function") ? yompleClaim(hit.table, hit.row) : Promise.resolve(hit.row);
+    return claim.then(function(row){
+      if (!row) return land();
+      if (hit.table === "field_players" && typeof applyCloudRow==="function") {
+        applyCloudRow(row);
+      } else if (typeof adoptPerson==="function") {
+        adoptPerson(row, {});
+        if (typeof seedIntroduced==="function") seedIntroduced();
+        if (typeof cloudSaveActive==="function") cloudSaveActive();
+      }
+      return land();
+    });
   }).catch(function(){
     if (typeof adoptPerson==="function") adoptPerson({ username: username, display_name: raw, family_code: store.familyCode || f }, {});
     return land();

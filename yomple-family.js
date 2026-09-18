@@ -25,14 +25,6 @@ function readSisterHousehold(){
   return null;
 }
 function upsertHopFamily(code, email){
-  if (!code || typeof SB_URL === "undefined") return;
-  fetch(SB_URL+"/rest/v1/hop_families", {
-    method: "POST",
-    headers: sbHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
-    body: JSON.stringify({
-      family_code: code,
-      parent_email: email || null,
-      updated_at: new Date().toISOString()
-    })
-  }).catch(function(){});
+  if (!code || typeof sbRpc !== "function") return;
+  sbRpc("yomple_family_upsert", { p_code: code, p_email: email || null }).catch(function(){});
 }
