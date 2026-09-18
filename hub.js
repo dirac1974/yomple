@@ -87,8 +87,13 @@ function worldQuery(){
   if (hub.familyCode) q += "&f="+encodeURIComponent(hub.familyCode);
   return q;
 }
+var SHOCKMATE_BASE = "https://dirac1974.github.io/shockmate/";
+/* Shockmate keys its family on this household code but lives on another origin, so it cannot read
+   it from here: the link carries it as ?family=CODE, the same shape as Shockmate's own share link. */
 function worldUrl(base){
-  return (base || "") + worldQuery();
+  var q = worldQuery();
+  if (base === SHOCKMATE_BASE && hub.familyCode) q += (q ? "&" : "?") + "family=" + encodeURIComponent(hub.familyCode);
+  return (base || "") + q;
 }
 function paintLinks(){
   document.querySelectorAll("a.app[data-base]").forEach(function(a){
