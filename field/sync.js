@@ -39,7 +39,8 @@ function findAnyYomplePerson(username){
 function yompleClaim(table, row){
   if (!row) return Promise.resolve(null);
   if (!row.has_pin) return Promise.resolve(row);
-  var typed = window.prompt("PIN for "+(row.display_name || row.username));
+  var typed = null;
+  try { typed = window.prompt("PIN for "+(row.display_name || row.username)); } catch (e) {}
   if (!typed) return Promise.resolve(null);
   return sbRpc("yomple_player_claim", { p_table: table, p_username: row.username, p_pin: typed })
     .then(function(full){ if (full) full.pin = typed; return full; })
