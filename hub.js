@@ -16,6 +16,19 @@ function sbHeaders(extra){
   if (extra) Object.keys(extra).forEach(function(k){ h[k] = extra[k]; });
   return h;
 }
+/* Every table is closed to this key; the hub talks to the yomple_* functions,
+   which check PINs server side and never hand a PIN back. */
+function sbRpc(fn, args, token){
+  return fetch(SB_URL+"/rest/v1/rpc/"+fn, {
+    method: "POST",
+    headers: {
+      apikey: SB_KEY,
+      Authorization: "Bearer "+(token || SB_KEY),
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(args || {})
+  }).then(function(r){ return r.ok ? r.json() : null; });
+}
 function loadHub(){
   try { var raw = JSON.parse(localStorage.getItem(HUB_KEY)||"null"); if (raw) hub = Object.assign(hub, raw); } catch(e){}
   if (!hub.profiles) hub.profiles = [];
@@ -36,48 +49,31 @@ function ensureFamily(){
 }
 function upsertFamily(){
   if (!hub.familyCode) return;
-  fetch(SB_URL+"/rest/v1/hop_families", {
-    method: "POST",
-    headers: sbHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
-    body: JSON.stringify({ family_code: hub.familyCode, parent_email: hub.parentEmail || null, updated_at: new Date().toISOString() })
-  }).catch(function(){});
+  sbRpc("yomple_family_upsert", { p_code: hub.familyCode, p_email: hub.parentEmail || null }).catch(function(){});
 }
 function cloudGetTable(table, username){
-  return fetch(SB_URL+"/rest/v1/"+table+"?username=eq."+encodeURIComponent(username), { headers: sbHeaders() })
-    .then(function(r){ return r.json(); })
-    .then(function(rows){ return (rows && rows[0]) || null; })
+  return sbRpc("yomple_player_find", { p_table: table, p_username: username })
     .catch(function(){ return null; });
 }
 function findAny(username){
-  var prefer = hub.familyCode;
-  var chain = Promise.resolve(null);
-  SISTERS.forEach(function(table){
-    chain = chain.then(function(found){
-      if (found) return found;
-      var q = SB_URL+"/rest/v1/"+table+"?or=(username.eq."+encodeURIComponent(username)+",display_name.ilike."+encodeURIComponent(username)+")";
-      if (prefer) q += "&family_code=eq."+encodeURIComponent(prefer);
-      return fetch(q, { headers: sbHeaders() })
-        .then(function(r){ return r.json(); })
-        .then(function(rows){ return (rows && rows[0]) ? { table: table, row: rows[0] } : null; })
-        .catch(function(){ return null; });
-    });
-  });
-  return chain.then(function(found){
-    if (found) return found;
-    var again = Promise.resolve(null);
-    SISTERS.forEach(function(table){
-      again = again.then(function(hit){
-        if (hit) return hit;
-        return cloudGetTable(table, username).then(function(row){ return row ? { table: table, row: row } : null; });
-      });
-    });
-    return again;
-  });
+  // the household is tried first, then every world, as before
+  return sbRpc("yomple_player_search", { p_query: username, p_family: hub.familyCode || null })
+    .then(function(rows){
+      var row = rows && rows[0];
+      return row ? { table: row.table, row: row } : null;
+    })
+    .catch(function(){ return null; });
 }
 function adoptRow(row){
   var u = row.username;
   var existing = hub.profiles.find(function(p){ return p.username === u; });
-  var person = { username: u, name: row.display_name || u, avatar: row.avatar || "\u2b50", pin: row.pin || "" };
+  var person = {
+    username: u,
+    name: row.display_name || u,
+    avatar: row.avatar || "\u2b50",
+    pin: row.pin || (existing && existing.pin) || "",
+    hasPin: !!row.has_pin
+  };
   if (existing) Object.assign(existing, person);
   else hub.profiles.push(person);
   hub.activeUser = u;
@@ -217,13 +213,17 @@ function paintHouse(){
 function hubRemove(username, name){
   if (!username) return;
   if (!window.confirm("Remove "+name+" from this household? Progress for that name goes away.")) return;
+  var prof = hub.profiles.find(function(p){ return p.username === username; });
+  var pin = (prof && prof.pin) || "";
+  if (prof && prof.hasPin && !pin) pin = (window.prompt("PIN for "+name) || "").trim();
   ping("Removing\u2026");
   var chain = Promise.resolve();
   SISTERS.forEach(function(table){
     chain = chain.then(function(){
-      return fetch(SB_URL+"/rest/v1/"+table+"?username=eq."+encodeURIComponent(username), {
-        method: "DELETE",
-        headers: sbHeaders({ Prefer: "return=minimal" })
+      return sbRpc("yomple_player_delete", {
+        p_table: table,
+        p_username: username,
+        p_pin: pin || null
       }).catch(function(){});
     });
   });
@@ -242,17 +242,24 @@ function hubFind(){
   if (!username || username==="player") { ping("Type a name"); return; }
   var pinBox = document.getElementById("hub-find-pin");
   var pinLab = document.getElementById("hub-find-pin-lab");
-  if (pendingFind && pendingFind.username === username && pendingFind.row && pendingFind.row.pin){
+  if (pendingFind && pendingFind.username === username && pendingFind.row && pendingFind.row.has_pin){
     var pin = pinBox ? (pinBox.value||"").trim() : "";
-    if (pin !== pendingFind.row.pin){ ping("PIN did not match"); return; }
-    finishFind(pendingFind.row);
+    sbRpc("yomple_player_claim", {
+      p_table: pendingFind.row.table,
+      p_username: pendingFind.row.username,
+      p_pin: pin
+    }).then(function(full){
+      if (!full){ ping("PIN did not match"); return; }
+      full.pin = pin;
+      finishFind(full);
+    });
     return;
   }
   ping("Looking\u2026");
   findAny(username).then(function(hit){
     if (!hit) { ping("No approved Yomple player with that name yet"); return; }
     var row = hit.row;
-    if (row.pin) {
+    if (row.has_pin) {
       pendingFind = { username: username, row: row };
       if (pinLab) pinLab.style.display = "block";
       if (pinBox){ pinBox.style.display = "block"; pinBox.focus(); }
@@ -288,10 +295,16 @@ function emailRequest(req){
   location.href = "mailto:"+encodeURIComponent(ADMIN_EMAIL)+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);
 }
 function saveRequestCloud(req){
-  return fetch(SB_URL+"/rest/v1/yomple_join_requests", {
-    method: "POST",
-    headers: sbHeaders({ Prefer: "return=minimal" }),
-    body: JSON.stringify({ username: req.username, display_name: req.name, avatar: req.avatar, pin: req.pin || null, contact_email: req.contact || null, note: req.note || null, status: "pending", created_at: req.when })
+  return sbRpc("yomple_join_request", {
+    p_payload: {
+      username: req.username,
+      display_name: req.name,
+      avatar: req.avatar,
+      pin: req.pin || null,
+      contact_email: req.contact || null,
+      note: req.note || null,
+      when: req.when
+    }
   }).catch(function(){ return null; });
 }
 function hubRequest(){
@@ -324,8 +337,7 @@ function refreshHousehold(quiet){
   var chain = Promise.resolve([]);
   SISTERS.forEach(function(table){
     chain = chain.then(function(all){
-      return fetch(SB_URL+"/rest/v1/"+table+"?family_code=eq."+encodeURIComponent(code), { headers: sbHeaders() })
-        .then(function(r){ return r.json(); })
+      return sbRpc("yomple_family_players", { p_code: code, p_table: table })
         .then(function(rows){ return all.concat(rows||[]); })
         .catch(function(){ return all; });
     });
@@ -337,7 +349,13 @@ function refreshHousehold(quiet){
       if (!row.username || seen[row.username]) return;
       seen[row.username] = true;
       var existing = hub.profiles.find(function(p){ return p.username === row.username; });
-      var person = { username: row.username, name: row.display_name || row.username, avatar: row.avatar || "\u2b50", pin: row.pin || "" };
+      var person = {
+        username: row.username,
+        name: row.display_name || row.username,
+        avatar: row.avatar || "\u2b50",
+        pin: (existing && existing.pin) || "",
+        hasPin: !!row.has_pin
+      };
       if (existing) Object.assign(existing, person);
       else hub.profiles.push(person);
     });
