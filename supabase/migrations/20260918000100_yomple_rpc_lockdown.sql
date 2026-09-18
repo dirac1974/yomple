@@ -542,3 +542,7 @@ grant execute on function public.yomple_join_request(jsonb)                to an
 
 -- OTP-verified callers only
 grant execute on function public.yomple_family_by_email() to authenticated;
+
+-- Supabase grants execute on new public functions to anon by default, so take
+-- that default back for the one function that is for OTP-verified callers only.
+revoke all on function public.yomple_family_by_email() from anon;
