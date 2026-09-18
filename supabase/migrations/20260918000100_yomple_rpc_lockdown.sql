@@ -450,8 +450,11 @@ begin
   on conflict (family_code) do nothing;
 
   select parent_email into v_have from public.hop_families where family_code = v_fam;
-  -- the email is claimed once; after that only the OTP-verified owner may change it
-  if v_email is not null and (v_have is null or v_jwt = v_email) then
+  -- claimed once; after that only the household's own verified owner may change
+  -- it. Compare the caller's verified email to the one already stored, never to
+  -- the one being submitted, or holding the family code would be enough to
+  -- redirect recovery to your own inbox.
+  if v_email is not null and (v_have is null or (v_jwt is not null and v_jwt = v_have)) then
     update public.hop_families
        set parent_email = v_email, updated_at = now()
      where family_code = v_fam;
