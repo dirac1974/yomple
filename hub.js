@@ -401,8 +401,32 @@ function paintAvatars(){
     box.appendChild(s);
   });
 }
+/* The hub is the front door, so it has to survive a wiped phone too. An app links back here, or the
+   parent bookmarks the address, with ?u=<username>&f=<CODE> — the same pair the hub sends out. Take
+   the household code straight away, and take the face when it is one the household already knows.
+   A name the hub has never seen is NOT signed in from a URL: that would be a sign-in anybody could
+   type. Only refreshHousehold, which asks the server, may add faces. */
+function consumeHubArrival(){
+  var q = new URLSearchParams(location.search);
+  var u = (q.get("u") || q.get("who") || "").trim().toLowerCase();
+  var f = (q.get("f") || q.get("family") || "").trim().toUpperCase();
+  var changed = false;
+  if (f && isYompleFamilyCode(f) && hub.familyCode !== f) { hub.familyCode = f; changed = true; }
+  if (u && hub.activeUser !== u && (hub.profiles || []).some(function(p){ return p.username === u; })) {
+    hub.activeUser = u; changed = true;
+  }
+  if (changed) saveHub();
+  return changed;
+}
+// Whoever is active, the address bar says so, so a bookmark or an Add to Home Screen icon taken at
+// any moment comes back knowing the household. Stamping the same URL twice is a no-op.
+function stampHub(){
+  var p = active();
+  if (p && window.YompleStay) window.YompleStay.stamp(p.username, hub.familyCode);
+}
 loadHub();
 document.addEventListener("DOMContentLoaded", function(){
+  consumeHubArrival();
   paintWho();
   paintLinks();
   paintAvatars();
@@ -410,5 +434,6 @@ document.addEventListener("DOMContentLoaded", function(){
   document.querySelectorAll("a.app").forEach(function(a){ a.addEventListener("click", gateWorld); });
   var q = new URLSearchParams(location.search);
   if (q.get("request") === "1") openWho("new");
-  if (hub.familyCode) refreshHousehold(true);
+  stampHub();
+  if (hub.familyCode) refreshHousehold(true).then(stampHub, function(){});
 });
