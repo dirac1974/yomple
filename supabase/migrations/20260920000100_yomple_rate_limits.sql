@@ -423,3 +423,29 @@ grant execute on function yomple_player_claim(text, text, text)  to anon, authen
 grant execute on function yomple_player_delete(text, text, text) to anon, authenticated;
 grant execute on function yomple_player_upsert(text, text, text, jsonb) to anon, authenticated;
 grant execute on function yomple_join_request(jsonb)          to anon, authenticated;
+
+-- yomple_player_find now spends from the rate table, so every caller of it must be
+-- volatile too: a STABLE function cannot execute the INSERT underneath it.
+create or replace function yomple_player_find_any(p_username text, p_prefer text default null::text)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+as $function$
+declare
+  v_tables text[] := array['hop_players','bloom_players','garden_players','star_players','field_players'];
+  t text;
+  v_hit jsonb;
+begin
+  if p_prefer is not null and p_prefer = any(v_tables) then
+    v_tables := array[p_prefer] || array_remove(v_tables, p_prefer);
+  end if;
+  foreach t in array v_tables loop
+    v_hit := public.yomple_player_find(t, p_username);
+    if v_hit is not null then return v_hit; end if;
+  end loop;
+  return null;
+end;
+$function$;
+
+grant execute on function yomple_player_find_any(text, text) to anon, authenticated;
