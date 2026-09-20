@@ -1,6 +1,9 @@
 function hubPerson(){
   var q = new URLSearchParams(location.search);
-  if (q.get("u")) return { u: q.get("u"), f: q.get("f"), from: q.get("from") };
+  // `who`/`family` are the spellings the sister apps use; take them as well as the hub's own pair,
+  // so a household code is never dropped just because it arrived under the other name.
+  var u = (q.get("u") || q.get("who") || "").trim();
+  if (u) return { u: u, f: (q.get("f") || q.get("family") || ""), from: q.get("from") };
   try {
     var hub = JSON.parse(localStorage.getItem("yomple-hub-v1") || "null");
     if (hub && hub.activeUser) return { u: hub.activeUser, f: hub.familyCode, from: "yomple" };
@@ -23,6 +26,9 @@ function consumeYompleHandoff(){
   hideFieldFind();
   function land(){
     if (typeof showHome === "function") showHome();
+    // Freeze the sign-in into the address bar: a wiped phone reopening this link lands here again
+    // instead of on the roster.
+    if (window.YompleStay) window.YompleStay.arrived(username, store.familyCode);
     return true;
   }
   var local = (store.profiles||[]).find(function(p){
@@ -65,6 +71,18 @@ if (typeof showProfiles === "function") {
   showProfiles = function(){
     _showProfilesField();
     if (window.YOMPLE_HANDSHAKE || window.YOMPLE_FROM_HUB) hideFieldFind();
+  };
+}
+// Whoever is signed in, the address bar says so, so a bookmark or an Add to Home Screen icon taken
+// at any moment comes back signed in. Stamping the same URL twice is a no-op.
+if (typeof showHome === "function") {
+  var _showHomeStay = showHome;
+  showHome = function(){
+    _showHomeStay();
+    var me = typeof getActiveProfile === "function" ? getActiveProfile() : null;
+    if (me && window.YompleStay) {
+      window.YompleStay.stamp(me.username || (typeof slugName === "function" ? slugName(me.name) : ""), store.familyCode);
+    }
   };
 }
 function startFieldHandoff(){
