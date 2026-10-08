@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>The Mark</title>
 <style>
-  :root{--bg:#f6efe2;--ink:#2c261c;--card:#fffaf2;--gold:#e2b340;--accent:#c46a3a;--line:#e6dcc8}
+  :root{--bg:#f6efe2;--ink:#2c261c;--card:#fffaf2;--gold:#e2b340;--accent:#c46a3a}
   *{box-sizing:border-box}
   body{margin:0;font-family:"ui-rounded",Nunito,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
   body.garden{--bg:#eef6ea;--accent:#3f8f5b;--gold:#d7b24a}
@@ -13,18 +13,19 @@
   .screen.on{display:block}
   h1{font-size:1.7rem;margin:8px 0}
   .sub{opacity:.72;font-weight:700;margin-top:0}
-  button{font:inherit;font-weight:800;border:none;border-radius:16px;background:var(--card);box-shadow:0 4px 0 rgba(0,0,0,.07);cursor:pointer}
+  button,input{font:inherit;font-weight:800}
+  button{border:none;border-radius:16px;background:var(--card);box-shadow:0 4px 0 rgba(0,0,0,.07);cursor:pointer}
+  input{width:min(92vw,420px);padding:12px 14px;border-radius:16px;border:2px solid #e6dcc8;display:block;margin:8px auto}
   .btn{display:block;width:min(92vw,420px);margin:10px auto;padding:14px;background:var(--accent);color:#fff}
   .btn.soft{background:var(--card);color:var(--ink)}
   .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .icon{width:46px;height:46px;border-radius:14px}
-  .map{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:16px 0}
+  .map,.marks{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:16px 0}
   .lev{min-width:140px;padding:12px;text-align:center}
   .lev.off{opacity:.45}
   .line{font-size:clamp(22px,5vw,32px);font-weight:800;line-height:1.7;text-align:center;margin:18px 0}
   .spot{display:inline-block;min-width:1.1em;margin:0 2px;padding:0 4px;border-bottom:3px solid var(--accent);border-radius:8px}
   .spot.bad{opacity:.25;text-decoration:line-through}
-  .marks{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
   .mark{font-size:28px;min-width:64px;padding:10px 14px}
   .mark.hit{background:var(--gold)}
   .bar{width:min(92vw,420px);height:10px;margin:8px auto;background:rgba(0,0,0,.08);border-radius:999px;overflow:hidden}
@@ -32,6 +33,8 @@
   .pause{display:none;position:fixed;inset:0;background:var(--bg);z-index:5;align-items:center;justify-content:center;text-align:center;padding:24px}
   .pause.on{display:flex}
   .chip{display:inline-block;background:var(--card);border-radius:999px;padding:6px 12px;font-weight:800;margin:4px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2c261c;color:#fff;padding:10px 14px;border-radius:14px;font-weight:800;display:none}
+  .toast.on{display:block}
 </style>
 </head>
 <body>
@@ -44,7 +47,7 @@
 </div>
 <div class="screen" id="play">
   <div class="top">
-    <button class="icon" onclick="endPlay(true)">↩︎</button>
+    <button class="icon" onclick="endPlay()">↩︎</button>
     <h1 id="playTitle">Trail</h1>
     <button class="icon" id="pauseBtn" onclick="togglePause()">⏸</button>
   </div>
@@ -55,6 +58,7 @@
   <div class="marks" id="marks"></div>
   <div class="pause" id="pause"><div><b>Paused</b><p>The sentence is hidden.</p><button class="btn" onclick="togglePause()">Back</button></div></div>
 </div>
+<div class="toast" id="toast"></div>
 <script>
 const TRAILS=[
   {id:'end',name:'End marks',g:'。',note:'period, question, or shout',
@@ -70,22 +74,81 @@ const TRAILS=[
    ]},
   {id:'list',name:'List commas',g:',',note:'a comma between items in a list',
    items:[
-    {w:['We packed apples','pears','and bread'],m:',',at:0,opts:[',']},
-    {w:['The kit held a bow','a shield','and a rope'],m:',',at:0,opts:[',']},
-    {w:['She drew a fox','a moon','and a gate'],m:',',at:0,opts:[',']},
-    {w:['Bring water','bread','and a lamp'],m:',',at:0,opts:[',']},
-    {w:['The road passed pines','stones','and a bridge'],m:',',at:0,opts:[',']},
-    {w:['He counted drums','flags','and tents'],m:',',at:0,opts:[',']},
-    {w:['We saw ducks','frogs','and one fox'],m:',',at:0,opts:[',']},
-    {w:['Pack the map','the rope','and the lantern'],m:',',at:0,opts:[',']}
+    {w:['We packed apples','pears','and bread'],m:',',at:0},
+    {w:['The kit held a bow','a shield','and a rope'],m:',',at:0},
+    {w:['She drew a fox','a moon','and a gate'],m:',',at:0},
+    {w:['Bring water','bread','and a lamp'],m:',',at:0},
+    {w:['The road passed pines','stones','and a bridge'],m:',',at:0},
+    {w:['He counted drums','flags','and tents'],m:',',at:0},
+    {w:['We saw ducks','frogs','and one fox'],m:',',at:0},
+    {w:['Pack the map','the rope','and the lantern'],m:',',at:0}
    ]}
 ];
+const SB_URL='https://digcgqltrlmhgmzgmvwc.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpZ2NncWx0cmxtaGdtemdtdndjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1ODY4NjEsImV4cCI6MjA4OTE2Mjg2MX0.suxy0jXsIJqrJYbQuCc54sHbN5miCICxLUdOc9gUTkY';
+const TABLE='mark_players';
+const SISTERS=['hop_players','bloom_players','garden_players','star_players','field_players','mark_players'];
 const KEY='mark.v1';
-let DB=load(), P=null, M=null;
-function load(){try{return JSON.parse(localStorage.getItem(KEY))||{theme:'camp',who:'Sarah',players:{}}}catch(e){return{theme:'camp',who:'Sarah',players:{}}}}
-function save(){localStorage.setItem(KEY,JSON.stringify(DB))}
+let DB=load(), M=null, cloudTimer=null;
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||{theme:'camp',who:'',familyCode:'',players:{}}}catch(e){return{theme:'camp',who:'',familyCode:'',players:{}}}}
+function save(){localStorage.setItem(KEY,JSON.stringify(DB)); scheduleCloud()}
 function book(){DB.players[DB.who]=DB.players[DB.who]||{opened:['end'],held:[],clean:{}};return DB.players[DB.who]}
 function el(id){return document.getElementById(id)}
+function toast(t){const n=el('toast'); n.textContent=t; n.classList.add('on'); setTimeout(()=>n.classList.remove('on'),1600)}
+function slug(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,18)||'player'}
+function heads(){return {apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json',Prefer:'return=representation'}}
+function cloudGet(table, username){
+  return fetch(SB_URL+'/rest/v1/'+table+'?username=eq.'+encodeURIComponent(username),{headers:heads()}).then(r=>r.json()).then(rows=>(rows&&rows[0])||null).catch(()=>null);
+}
+function findAny(username){
+  return SISTERS.reduce((p,table)=>p.then(found=>found||cloudGet(table,username).then(row=>row?{table,row}:null)), Promise.resolve(null));
+}
+function scheduleCloud(){
+  clearTimeout(cloudTimer);
+  cloudTimer=setTimeout(cloudSave,500);
+}
+function cloudSave(){
+  if(!DB.who) return;
+  const b=book();
+  fetch(SB_URL+'/rest/v1/'+TABLE,{
+    method:'POST',
+    headers:Object.assign(heads(),{Prefer:'resolution=merge-duplicates,return=minimal'}),
+    body:JSON.stringify({username:slug(DB.who),display_name:DB.who,avatar:'✏️',family_code:DB.familyCode||null,progress:{opened:b.opened,held:b.held,clean:b.clean},updated_at:new Date().toISOString()})
+  }).catch(()=>{});
+}
+function adopt(row){
+  DB.who=row.display_name||row.username;
+  if(row.family_code) DB.familyCode=row.family_code;
+  const prog=row.progress||{};
+  DB.players[DB.who]=DB.players[DB.who]||{opened:['end'],held:[],clean:{}};
+  if(prog.opened) DB.players[DB.who].opened=prog.opened;
+  if(prog.held) DB.players[DB.who].held=prog.held;
+  if(prog.clean) DB.players[DB.who].clean=prog.clean;
+  save();
+}
+function findName(){
+  const username=slug(el('findName').value);
+  toast('Looking…');
+  findAny(username).then(hit=>{
+    if(!hit){toast('No Yomple player with that name yet');return}
+    if(hit.table===TABLE){adopt(hit.row); paintHome(); toast('Welcome back'); return}
+    DB.who=hit.row.display_name; DB.familyCode=hit.row.family_code||DB.familyCode;
+    book(); cloudSave(); paintHome(); toast('Same family. Marks start here.');
+  });
+}
+function restoreFamily(){
+  const code=String(el('famCode').value||'').trim().toUpperCase();
+  if(!code||code.indexOf('-')<0){toast('Type the family code');return}
+  DB.familyCode=code; save();
+  fetch(SB_URL+'/rest/v1/'+TABLE+'?family_code=eq.'+encodeURIComponent(code),{headers:heads()}).then(r=>r.json()).then(rows=>{
+    if(rows&&rows.length){rows.forEach(adopt); paintHome(); toast(rows.length+' player'+(rows.length===1?'':'s')); return}
+    return fetch(SB_URL+'/rest/v1/garden_players?family_code=eq.'+encodeURIComponent(code),{headers:heads()}).then(r=>r.json()).then(people=>{
+      if(!people||!people.length){toast('Code saved. Use a name you already have.'); return}
+      people.forEach(row=>{DB.who=row.display_name; DB.familyCode=code; book();});
+      cloudSave(); paintHome(); toast('Household found');
+    });
+  }).catch(()=>toast('Could not reach the family yet'));
+}
 function flipTheme(){DB.theme=DB.theme==='garden'?'camp':'garden';save();paintHome()}
 function paintHome(){
   document.body.className=DB.theme==='garden'?'garden':'';
@@ -93,114 +156,81 @@ function paintHome(){
   el('title').textContent=garden?'Comma Garden':'The Mark';
   el('themeBtn').textContent=garden?'🌿':'🏕️';
   el('blurb').textContent=garden?'Plant the mark. The sentence is already grown.':'Fix the mark. The idea is already good.';
-  const b=book();
-  el('who').innerHTML='<p class="sub">Editing as <b>'+DB.who+'</b></p><div class="marks">'
-    +['Sarah','David'].map(n=>'<button class="mark" onclick="pick(\''+n+'\')">'+n+'</button>').join('')
-    +'</div>';
+  const ready=!!DB.who;
+  el('who').innerHTML = ready
+    ? '<p class="sub">Editing as <b>'+DB.who+'</b>'+(DB.familyCode?' · '+DB.familyCode:'')+'</p><button class="btn soft" onclick="DB.who=\'\';paintHome()">Switch</button>'
+    : '<p class="sub">Who is editing?</p><input id="findName" placeholder="Sarah or David" /><button class="btn" onclick="findName()">Use a name I already have</button><input id="famCode" placeholder="Family code" /><button class="btn soft" onclick="restoreFamily()">Recover household</button>';
   const map=el('map'); map.innerHTML='';
+  if(!ready){show('home');return}
+  const b=book();
   TRAILS.forEach((t,i)=>{
-    const open=i===0||b.opened.includes(t.id)||b.held.includes(TRAILS[i-1].id);
+    const open=i===0||(b.opened||[]).includes(t.id)||(b.held||[]).includes(TRAILS[i-1].id);
     const btn=document.createElement('button');
     btn.className='lev'+(open?'':' off');
-    btn.innerHTML='<div>'+(b.held.includes(t.id)?'⭐':t.g)+'</div>'+t.name+'<div style="font-size:12px;opacity:.7">'+(open?t.note:'answer the trail before')+'</div>';
+    btn.innerHTML='<div>'+((b.held||[]).includes(t.id)?'⭐':t.g)+'</div>'+t.name+'<div style="font-size:12px;opacity:.7">'+(open?t.note:'hold the trail before')+'</div>';
     if(open) btn.onclick=()=>startTrail(i);
     map.appendChild(btn);
   });
-  if(b.held.includes('end')&&b.held.includes('list')){
-    const c=document.createElement('button');
-    c.className='btn soft'; c.textContent='Mix check'; c.onclick=()=>startTrail(0,true);
-    map.appendChild(c);
+  if((b.held||[]).includes('end')&&(b.held||[]).includes('list')){
+    const c=document.createElement('button'); c.className='btn soft'; c.textContent='Mix check'; c.onclick=()=>startTrail(0,true); map.appendChild(c);
   }
   show('home');
 }
-function pick(n){DB.who=n;save();paintHome()}
 function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));el(id).classList.add('on')}
 function startTrail(i,mix){
   const t=TRAILS[i];
-  const items=mix?TRAILS.flatMap(tr=>tr.items.map(it=>({...it,trail:tr.id}))):t.items.map(it=>({...it,trail:t.id}));
-  M={i,mix:!!mix,items:items.slice(),n:0,clean:0,need:mix?6:items.length,missed:false,paused:false};
+  const items=mix?TRAILS.flatMap(tr=>tr.items):t.items;
+  M={i,mix:!!mix,items,n:0,clean:0,need:mix?6:items.length,missed:false,paused:false};
   show('play');
   el('playTitle').textContent=mix?'Mix check':t.name;
-  el('playSub').textContent=mix?'Old marks, mixed.':'Tap the mark. A miss lifts off.';
+  el('playSub').textContent='Tap the mark. A miss lifts off.';
   nextItem();
 }
-function nextItem(){
-  if(!M) return;
-  if(M.n>=M.need){ return finish(); }
-  const it=M.items[M.n%M.items.length];
-  M.cur=it; M.missed=false;
-  paintItem();
-}
+function nextItem(){ if(!M)return; if(M.n>=M.need) return finish(); M.cur=M.items[M.n%M.items.length]; M.missed=false; paintItem(); }
 function paintItem(){
-  if(!M||M.paused){ el('line').textContent=''; el('marks').innerHTML=''; return; }
-  const it=M.cur;
-  const line=el('line'); line.innerHTML='';
+  if(!M||M.paused){el('line').textContent='';el('marks').innerHTML='';return}
+  const it=M.cur, line=el('line'); line.innerHTML='';
   if(it.at!=null){
     it.w.forEach((word,i)=>{
       line.appendChild(document.createTextNode(word+' '));
       if(i<it.w.length-1){
-        const s=document.createElement('button');
-        s.className='spot'; s.textContent='·';
-        s.onclick=()=>pickSpot(i,s);
-        line.appendChild(s);
-        line.appendChild(document.createTextNode(' '));
+        const s=document.createElement('button'); s.className='spot'; s.textContent='·';
+        s.onclick=()=>pickSpot(i,s); line.appendChild(s); line.appendChild(document.createTextNode(' '));
       }
     });
     el('marks').innerHTML='';
   } else {
     line.textContent=it.w.join(' ')+' ';
-    const slot=document.createElement('span'); slot.className='spot'; slot.id='slot'; slot.textContent=' ';
-    line.appendChild(slot);
+    const slot=document.createElement('span'); slot.className='spot'; slot.id='slot'; slot.textContent=' '; line.appendChild(slot);
     const box=el('marks'); box.innerHTML='';
-    it.opts.forEach(o=>{
-      const b=document.createElement('button'); b.className='mark'; b.textContent=o;
-      b.onclick=()=>pickMark(o,b); box.appendChild(b);
-    });
+    it.opts.forEach(o=>{const b=document.createElement('button'); b.className='mark'; b.textContent=o; b.onclick=()=>pickMark(o,b); box.appendChild(b)});
   }
-  el('hud').innerHTML='<span class="chip">'+(M.n+1)+' / '+M.need+'</span><span class="chip">clean '+M.clean+'</span>';
+  el('hud').innerHTML='<span class="chip">'+(M.n+1)+' / '+M.need+'</span>';
   el('prog').style.width=Math.round(M.n/M.need*100)+'%';
 }
 function pickMark(o,btn){
   if(!M||M.paused||M.lock) return;
-  if(o===M.cur.m){
-    M.lock=true; btn.classList.add('hit'); el('slot').textContent=o;
-    if(!M.missed) M.clean++;
-    M.n++; setTimeout(()=>{M.lock=false; nextItem()}, 280);
-  } else {
-    M.missed=true; btn.classList.add('spot'); btn.classList.add('bad'); btn.onclick=null;
-  }
+  if(o===M.cur.m){M.lock=true; btn.classList.add('hit'); el('slot').textContent=o; if(!M.missed) M.clean++; M.n++; setTimeout(()=>{M.lock=false; nextItem()},280)}
+  else {M.missed=true; btn.classList.add('bad'); btn.onclick=null}
 }
 function pickSpot(i,btn){
   if(!M||M.paused||M.lock) return;
-  if(i===M.cur.at){
-    M.lock=true; btn.textContent=','; btn.classList.add('hit');
-    if(!M.missed) M.clean++;
-    M.n++; setTimeout(()=>{M.lock=false; nextItem()}, 280);
-  } else {
-    M.missed=true; btn.classList.add('bad'); btn.onclick=null;
-  }
+  if(i===M.cur.at){M.lock=true; btn.textContent=','; btn.classList.add('hit'); if(!M.missed) M.clean++; M.n++; setTimeout(()=>{M.lock=false; nextItem()},280)}
+  else {M.missed=true; btn.classList.add('bad'); btn.onclick=null}
 }
 function finish(){
-  const b=book();
-  const t=TRAILS[M.i];
-  const held=M.clean>=Math.ceil(M.need*0.7);
-  if(!M.mix && held && !b.held.includes(t.id)) b.held.push(t.id);
+  const b=book(), t=TRAILS[M.i], held=M.clean>=Math.ceil(M.need*0.7);
+  if(!M.mix && held && !(b.held||[]).includes(t.id)) b.held.push(t.id);
   const nxt=TRAILS[M.i+1];
-  if(nxt && held && !b.opened.includes(nxt.id)) b.opened.push(nxt.id);
+  if(nxt && held && !(b.opened||[]).includes(nxt.id)) b.opened.push(nxt.id);
   save();
-  el('line').textContent=held?(t?t.name+' held':'Check held'):'The trail rests';
+  el('line').textContent=held?(M.mix?'Check held':t.name+' held'):'The trail rests';
   el('marks').innerHTML='<button class="btn" onclick="paintHome()">Map</button>';
-  el('playSub').textContent=held?'The mark stays open.':'No lost marks. Try the trail again.';
+  el('playSub').textContent=held?'Saved to the family.':'No lost marks. Try again.';
   M=null;
 }
-function togglePause(){
-  if(!M) return;
-  M.paused=!M.paused;
-  el('pause').classList.toggle('on', M.paused);
-  el('pauseBtn').textContent=M.paused?'▶':'⏸';
-  if(!M.paused) paintItem(); else { el('line').textContent=''; el('marks').innerHTML=''; }
-}
-function endPlay(){ M=null; paintHome(); }
+function togglePause(){ if(!M)return; M.paused=!M.paused; el('pause').classList.toggle('on',M.paused); el('pauseBtn').textContent=M.paused?'▶':'⏸'; if(!M.paused) paintItem(); else {el('line').textContent=''; el('marks').innerHTML=''} }
+function endPlay(){M=null; paintHome()}
 paintHome();
 </script>
 </body>
