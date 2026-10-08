@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>The Mark</title>
+<style>
+  :root{--bg:#f6efe2;--ink:#2c261c;--card:#fffaf2;--gold:#e2b340;--accent:#c46a3a;--line:#e6dcc8}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"ui-rounded",Nunito,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  body.garden{--bg:#eef6ea;--accent:#3f8f5b;--gold:#d7b24a}
+  .screen{display:none;min-height:100dvh;padding:18px 16px 40px;max-width:720px;margin:0 auto}
+  .screen.on{display:block}
+  h1{font-size:1.7rem;margin:8px 0}
+  .sub{opacity:.72;font-weight:700;margin-top:0}
+  button{font:inherit;font-weight:800;border:none;border-radius:16px;background:var(--card);box-shadow:0 4px 0 rgba(0,0,0,.07);cursor:pointer}
+  .btn{display:block;width:min(92vw,420px);margin:10px auto;padding:14px;background:var(--accent);color:#fff}
+  .btn.soft{background:var(--card);color:var(--ink)}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .icon{width:46px;height:46px;border-radius:14px}
+  .map{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:16px 0}
+  .lev{min-width:140px;padding:12px;text-align:center}
+  .lev.off{opacity:.45}
+  .line{font-size:clamp(22px,5vw,32px);font-weight:800;line-height:1.7;text-align:center;margin:18px 0}
+  .spot{display:inline-block;min-width:1.1em;margin:0 2px;padding:0 4px;border-bottom:3px solid var(--accent);border-radius:8px}
+  .spot.bad{opacity:.25;text-decoration:line-through}
+  .marks{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+  .mark{font-size:28px;min-width:64px;padding:10px 14px}
+  .mark.hit{background:var(--gold)}
+  .bar{width:min(92vw,420px);height:10px;margin:8px auto;background:rgba(0,0,0,.08);border-radius:999px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--gold)}
+  .pause{display:none;position:fixed;inset:0;background:var(--bg);z-index:5;align-items:center;justify-content:center;text-align:center;padding:24px}
+  .pause.on{display:flex}
+  .chip{display:inline-block;background:var(--card);border-radius:999px;padding:6px 12px;font-weight:800;margin:4px}
+</style>
+</head>
+<body>
+<div class="screen on" id="home">
+  <div class="top"><h1 id="title">The Mark</h1><button class="icon" id="themeBtn" onclick="flipTheme()">🏕️</button></div>
+  <p class="sub" id="blurb">Fix the mark. The idea is already good.</p>
+  <div id="who"></div>
+  <div class="map" id="map"></div>
+  <p class="sub" style="text-align:center">A miss only lifts the wrong mark. Nothing calls the sentence stupid.</p>
+</div>
+<div class="screen" id="play">
+  <div class="top">
+    <button class="icon" onclick="endPlay(true)">↩︎</button>
+    <h1 id="playTitle">Trail</h1>
+    <button class="icon" id="pauseBtn" onclick="togglePause()">⏸</button>
+  </div>
+  <p class="sub" id="playSub"></p>
+  <div id="hud"></div>
+  <div class="bar"><i id="prog"></i></div>
+  <div class="line" id="line"></div>
+  <div class="marks" id="marks"></div>
+  <div class="pause" id="pause"><div><b>Paused</b><p>The sentence is hidden.</p><button class="btn" onclick="togglePause()">Back</button></div></div>
+</div>
+<script>
+const TRAILS=[
+  {id:'end',name:'End marks',g:'。',note:'period, question, or shout',
+   items:[
+    {w:['The fox sat on the wall'],m:'.',opts:['.','?','!']},
+    {w:['Where is the lantern'],m:'?',opts:['.','?','!']},
+    {w:['Watch the bridge'],m:'!',opts:['!','?','.']},
+    {w:['Sarah closed the gate'],m:'.',opts:['.','?','!']},
+    {w:['Can the scout see the ridge'],m:'?',opts:['?','!','.']},
+    {w:['Hold the line'],m:'!',opts:['!','?','.']},
+    {w:['The garden is quiet tonight'],m:'.',opts:['.','?','!']},
+    {w:['Who left the drum'],m:'?',opts:['?','!','.']}
+   ]},
+  {id:'list',name:'List commas',g:',',note:'a comma between items in a list',
+   items:[
+    {w:['We packed apples','pears','and bread'],m:',',at:0,opts:[',']},
+    {w:['The kit held a bow','a shield','and a rope'],m:',',at:0,opts:[',']},
+    {w:['She drew a fox','a moon','and a gate'],m:',',at:0,opts:[',']},
+    {w:['Bring water','bread','and a lamp'],m:',',at:0,opts:[',']},
+    {w:['The road passed pines','stones','and a bridge'],m:',',at:0,opts:[',']},
+    {w:['He counted drums','flags','and tents'],m:',',at:0,opts:[',']},
+    {w:['We saw ducks','frogs','and one fox'],m:',',at:0,opts:[',']},
+    {w:['Pack the map','the rope','and the lantern'],m:',',at:0,opts:[',']}
+   ]}
+];
+const KEY='mark.v1';
+let DB=load(), P=null, M=null;
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||{theme:'camp',who:'Sarah',players:{}}}catch(e){return{theme:'camp',who:'Sarah',players:{}}}}
+function save(){localStorage.setItem(KEY,JSON.stringify(DB))}
+function book(){DB.players[DB.who]=DB.players[DB.who]||{opened:['end'],held:[],clean:{}};return DB.players[DB.who]}
+function el(id){return document.getElementById(id)}
+function flipTheme(){DB.theme=DB.theme==='garden'?'camp':'garden';save();paintHome()}
+function paintHome(){
+  document.body.className=DB.theme==='garden'?'garden':'';
+  const garden=DB.theme==='garden';
+  el('title').textContent=garden?'Comma Garden':'The Mark';
+  el('themeBtn').textContent=garden?'🌿':'🏕️';
+  el('blurb').textContent=garden?'Plant the mark. The sentence is already grown.':'Fix the mark. The idea is already good.';
+  const b=book();
+  el('who').innerHTML='<p class="sub">Editing as <b>'+DB.who+'</b></p><div class="marks">'
+    +['Sarah','David'].map(n=>'<button class="mark" onclick="pick(\''+n+'\')">'+n+'</button>').join('')
+    +'</div>';
+  const map=el('map'); map.innerHTML='';
+  TRAILS.forEach((t,i)=>{
+    const open=i===0||b.opened.includes(t.id)||b.held.includes(TRAILS[i-1].id);
+    const btn=document.createElement('button');
+    btn.className='lev'+(open?'':' off');
+    btn.innerHTML='<div>'+(b.held.includes(t.id)?'⭐':t.g)+'</div>'+t.name+'<div style="font-size:12px;opacity:.7">'+(open?t.note:'answer the trail before')+'</div>';
+    if(open) btn.onclick=()=>startTrail(i);
+    map.appendChild(btn);
+  });
+  if(b.held.includes('end')&&b.held.includes('list')){
+    const c=document.createElement('button');
+    c.className='btn soft'; c.textContent='Mix check'; c.onclick=()=>startTrail(0,true);
+    map.appendChild(c);
+  }
+  show('home');
+}
+function pick(n){DB.who=n;save();paintHome()}
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));el(id).classList.add('on')}
+function startTrail(i,mix){
+  const t=TRAILS[i];
+  const items=mix?TRAILS.flatMap(tr=>tr.items.map(it=>({...it,trail:tr.id}))):t.items.map(it=>({...it,trail:t.id}));
+  M={i,mix:!!mix,items:items.slice(),n:0,clean:0,need:mix?6:items.length,missed:false,paused:false};
+  show('play');
+  el('playTitle').textContent=mix?'Mix check':t.name;
+  el('playSub').textContent=mix?'Old marks, mixed.':'Tap the mark. A miss lifts off.';
+  nextItem();
+}
+function nextItem(){
+  if(!M) return;
+  if(M.n>=M.need){ return finish(); }
+  const it=M.items[M.n%M.items.length];
+  M.cur=it; M.missed=false;
+  paintItem();
+}
+function paintItem(){
+  if(!M||M.paused){ el('line').textContent=''; el('marks').innerHTML=''; return; }
+  const it=M.cur;
+  const line=el('line'); line.innerHTML='';
+  if(it.at!=null){
+    it.w.forEach((word,i)=>{
+      line.appendChild(document.createTextNode(word+' '));
+      if(i<it.w.length-1){
+        const s=document.createElement('button');
+        s.className='spot'; s.textContent='·';
+        s.onclick=()=>pickSpot(i,s);
+        line.appendChild(s);
+        line.appendChild(document.createTextNode(' '));
+      }
+    });
+    el('marks').innerHTML='';
+  } else {
+    line.textContent=it.w.join(' ')+' ';
+    const slot=document.createElement('span'); slot.className='spot'; slot.id='slot'; slot.textContent=' ';
+    line.appendChild(slot);
+    const box=el('marks'); box.innerHTML='';
+    it.opts.forEach(o=>{
+      const b=document.createElement('button'); b.className='mark'; b.textContent=o;
+      b.onclick=()=>pickMark(o,b); box.appendChild(b);
+    });
+  }
+  el('hud').innerHTML='<span class="chip">'+(M.n+1)+' / '+M.need+'</span><span class="chip">clean '+M.clean+'</span>';
+  el('prog').style.width=Math.round(M.n/M.need*100)+'%';
+}
+function pickMark(o,btn){
+  if(!M||M.paused||M.lock) return;
+  if(o===M.cur.m){
+    M.lock=true; btn.classList.add('hit'); el('slot').textContent=o;
+    if(!M.missed) M.clean++;
+    M.n++; setTimeout(()=>{M.lock=false; nextItem()}, 280);
+  } else {
+    M.missed=true; btn.classList.add('spot'); btn.classList.add('bad'); btn.onclick=null;
+  }
+}
+function pickSpot(i,btn){
+  if(!M||M.paused||M.lock) return;
+  if(i===M.cur.at){
+    M.lock=true; btn.textContent=','; btn.classList.add('hit');
+    if(!M.missed) M.clean++;
+    M.n++; setTimeout(()=>{M.lock=false; nextItem()}, 280);
+  } else {
+    M.missed=true; btn.classList.add('bad'); btn.onclick=null;
+  }
+}
+function finish(){
+  const b=book();
+  const t=TRAILS[M.i];
+  const held=M.clean>=Math.ceil(M.need*0.7);
+  if(!M.mix && held && !b.held.includes(t.id)) b.held.push(t.id);
+  const nxt=TRAILS[M.i+1];
+  if(nxt && held && !b.opened.includes(nxt.id)) b.opened.push(nxt.id);
+  save();
+  el('line').textContent=held?(t?t.name+' held':'Check held'):'The trail rests';
+  el('marks').innerHTML='<button class="btn" onclick="paintHome()">Map</button>';
+  el('playSub').textContent=held?'The mark stays open.':'No lost marks. Try the trail again.';
+  M=null;
+}
+function togglePause(){
+  if(!M) return;
+  M.paused=!M.paused;
+  el('pause').classList.toggle('on', M.paused);
+  el('pauseBtn').textContent=M.paused?'▶':'⏸';
+  if(!M.paused) paintItem(); else { el('line').textContent=''; el('marks').innerHTML=''; }
+}
+function endPlay(){ M=null; paintHome(); }
+paintHome();
+</script>
+</body>
+</html>
