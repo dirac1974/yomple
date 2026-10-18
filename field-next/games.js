@@ -136,7 +136,7 @@
 
     var html = "";
     if (given.length) {
-      html += '<span class="given">' + given.map(function (w) { return '<span class="gw">' + esc(w) + '</span>'; }).join(" ") + '</span> ';
+      html += '<span class="given">' + given.map(function (w, i) { return '<span class="gw">' + esc(w) + '</span>' + (i < given.length - 1 && !/\u2014$/.test(w) ? " " : ""); }).join("") + '</span>' + (/\u2014$/.test(given[given.length - 1]) ? "" : " ");
     }
     words.forEach(function (w, i) {
       var show = showFor(w, rung), b = bare(w);

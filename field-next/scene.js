@@ -73,7 +73,7 @@
         [0.46, 0.70], [0.20, 0.675], [0.15, 0.635], [0.32, 0.605], [0.62, 0.585], [0.83, 0.56],
         [0.82, 0.52], [0.60, 0.49], [0.36, 0.47], [0.22, 0.44], [0.30, 0.405], [0.50, 0.385],
         [0.66, 0.36], [0.73, 0.335]],
-      label: 25
+      label: 22
     }
   };
 
@@ -397,7 +397,8 @@
     var a;
     a = road.at(0.02); var dS = depthOf(a.y, L);
     props.push({ y: a.y - 40 * dS, svg: depot(a.x + 40 * dS, a.y - 40 * dS, dS) });
-    var pw = posts[1], ws = side(pw, -60 * pw.s, 1); props.push({ y: ws.y - 6, svg: willsHouse(ws.x + 70 * pw.s, ws.y - 6, pw.s * 0.95) });
+    var pw = posts[1], ws = side(pw, -60 * pw.s, 1), wsc = lay === "wide" ? 0.95 : 0.78;
+    props.push({ y: ws.y - 6, svg: willsHouse(ws.x + 70 * pw.s, ws.y - 6, pw.s * wsc) });
     /* Baltimore Street: low houses shoulder to shoulder behind the road, where it runs level */
     var hs = rng(77);
     for (var ht = posts[2].t - 0.012; ht < posts[4].t + 0.02; ht += 0.0085) {
@@ -453,7 +454,7 @@
     s += label(posts[2].x, posts[2].y + 54 * posts[2].s, "The Diamond");
     var bp = road.at((posts[3].t + posts[4].t) / 2);
     s += label(bp.x, bp.y + 58 * depthOf(bp.y, L), "Baltimore Street");
-    s += label(go.x, go.y - 112 * gs, "Cemetery gate");
+    s += label(go.x, gp.y + 54 * gs, "Cemetery gate");
     var half = ls * 6.4 + 12;
     var plx = Math.min(W - half, Math.max(half, state.platform.x));
     s += label(plx, state.platform.y - 14, "The Dedication waits here", "dedication");

@@ -222,7 +222,7 @@ function wireInput() {
   /* a tap anywhere on the page brings the keyboard back */
   $("screen-session").addEventListener("click", function (e) {
     unlockAudio();
-    if (!e.target.closest || !e.target.closest("button,a")) focusCatcher();
+    if (onLetter && (!e.target.closest || !e.target.closest("button,a"))) focusCatcher();
   });
   document.addEventListener("touchend", unlockAudio, { passive: true });
   document.addEventListener("click", unlockAudio, true);
@@ -382,6 +382,7 @@ function runListen() {
   sp.className = "speech karaoke";
   sp.innerHTML = Games.karaokeHtml(QF.lanterns());
   letters(null);
+  blurCatcher();
   var kws = sp.querySelectorAll(".kw");
   function start() {
     stopVoice();
@@ -406,12 +407,12 @@ function runListen() {
       if (o && !o.stopped) {
         Array.prototype.forEach.call(kws, function (k) { k.classList.remove("sung"); k.classList.add("heard"); });
         msg("That is the whole of it: two hundred and seventy-one words. Now the first two lanterns.", "warm");
-        actions([{ label: "Hear it again", fn: start }, { label: "Go on", cls: "primary", fn: nextStep, enter: true }]);
+        actions([{ label: "Hear it again", fn: start, keep: false }, { label: "Go on", cls: "primary", fn: nextStep, enter: true }]);
         if (window.Juice) Juice.step();
       }
     });
   }
-  actions([{ label: "Hear it again", fn: start }, { label: "Skip to the lanterns", cls: "primary", fn: nextStep, enter: true }]);
+  actions([{ label: "Hear it again", fn: start, keep: false }, { label: "Skip to the lanterns", cls: "primary", fn: nextStep, enter: true }]);
   start();
 }
 
@@ -574,7 +575,8 @@ function runWalk(ids) {
       nextStep();
       return;
     }
-    var L = lanternOf(ids[i]);
+    var L = lanternOf(ids[i]), moved = false;
+    function go() { if (moved) return; moved = true; letters(null); i++; one(); }
     var words = Games.displayWords(L.text, L.words);
     sheet({ kicker: kickerFor(L) + "  (" + (i + 1) + " of " + ids.length + ")", title: L.title, hinge: hingeFor(L), cls: "walk", glow: 1 });
     hideRungs();
@@ -585,8 +587,8 @@ function runWalk(ids) {
       onDone: function () {
         letters(null);
         if (window.Juice) Juice.step();
-        i++;
-        setTimeout(function () { if (S && S.steps[S.k] && S.steps[S.k].kind === "walk") one(); }, 650);
+        var here = S;
+        setTimeout(function () { if (S && S === here && S.steps[S.k] && S.steps[S.k].kind === "walk") go(); }, 650);
       }
     });
     S.trail = tr;
@@ -594,8 +596,9 @@ function runWalk(ids) {
     actions([
       { label: "Line!", fn: function () { lines++; tr.line(2); } },
       { label: i === ids.length - 1 ? "Finish the walk" : "Next lantern", cls: "primary", enter: true, fn: function () {
+        if (moved) return;
         if (!tr.done) { var left = words.length - tr.pos; lines += Math.ceil(left / 2); }
-        letters(null); i++; one();
+        go();
       } }
     ]);
   }
@@ -667,7 +670,7 @@ function showPath() {
       html += "<li class='station s-" + state.toLowerCase().replace(/\s+/g, "-") + "'>" +
         "<button " + (known ? "" : "disabled ") + "onclick=\"practiceLantern('" + id + "')\">" +
         "<span class='st-n'>" + L.n + "</span>" +
-        "<span class='st-body'><span class='st-title'>" + (known ? esc(L.title) : "Not yet lit") + "</span>" +
+        "<span class='st-body'><span class='st-title'>" + esc(L.title) + "</span>" +
         "<span class='st-place'>" + esc(L.station) + "</span></span>" +
         "<span class='st-state'>" + state + "</span></button></li>";
     });

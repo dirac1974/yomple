@@ -98,6 +98,7 @@ button { font-family: inherit; }
 }
 .paper-card h2 { margin: 0 0 6px; font-weight: 400; font-size: 1.35rem; }
 .paper-card .note { color: var(--ink-soft); margin: 4px 0; }
+#stats-note { margin-top: 14px; }
 .paper-card .btn { color: var(--ink); background: rgba(255, 255, 255, .35); border-color: rgba(42, 32, 22, .3); }
 .paper-card .btn.primary { background: linear-gradient(180deg, #f6cf7c, #d9a44c); color: #2a1a08; border-color: #8a5a1c; }
 label { display: block; font-size: 1.05rem; margin: 12px 0 6px; color: var(--ink-soft); }
@@ -207,6 +208,7 @@ input[type=text], input[type=email], input[type=password] {
 .post.shining .p-glass { fill: #ffe3a0; }
 .post.next .p-glass { fill: #3a2a26; animation: waiting 3.2s ease-in-out infinite; }
 .post.next .p-num { fill: rgba(232, 160, 100, .85); }
+.post.next .p-glow { opacity: .22; }
 .pool { opacity: 0; transition: opacity .8s; }
 .pool.lit { opacity: 1; }
 .post.igniting .p-flame { animation: flame-jump .7s cubic-bezier(.2, 1.6, .4, 1) both; }
@@ -341,7 +343,8 @@ input[type=text], input[type=email], input[type=password] {
   .home-tools .tool { padding: 5px 10px 7px; font-size: .98rem; }
   .placard { padding: 14px 14px 12px; }
   .tonight { min-height: 58px; font-size: 1.7rem; }
-  .sess-actions .btn { min-width: 0; flex: 1 1 auto; }
+  .sess-actions { flex-wrap: nowrap; }
+  .sess-actions .btn { min-width: 0; flex: 1 1 0; font-size: 1rem; padding-left: 8px; padding-right: 8px; }
   .sheet-head { gap: 10px; }
   .mini-lantern { width: 30px; height: 42px; }
   .stats { grid-template-columns: 1fr; }
