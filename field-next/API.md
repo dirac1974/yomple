@@ -110,3 +110,12 @@ Returns `{state, rung, lit, shining, newlyLit, newlyShining, qualified, tomorrow
 | `FieldVoice.setVoice(id)` | switch folder `audio/<id>/` (default `'rea'`). |
 
 No speech recognition tonight.
+
+## Notes for B (added after implementation)
+
+- `sync.js` loads after `app.js` and redefines `findHall()` and `showRecover()`; the app.js stubs are only placeholders.
+- Also available: `QF.addDays(day, n)`, `QF.order()` (learning order), `QF.item(id).doneToday` (qualified today).
+- A failed household lookup in `arrive.js` now creates nothing: it toasts "Could not reach the household just now. Trying again soon.", shows the profiles screen if nobody is active, and retries (4 s, 8 s, 16 s, 32 s, and on `online`).
+- The first cloud save of a player in each page load first pulls that player's row and merges `qf2` record by record (so `QF.onReload` is not fired for that; re-read `QF.*` after a session step as usual).
+- Tests: `node field-next/tests/run.js` (no dependencies, no network).
+- Not built yet: `sw.js` (spec: "service worker last").
