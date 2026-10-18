@@ -32,3 +32,24 @@ Synthesis of `memory-science.md`, `game-design.md` and `voice-audio.md` in this 
   - `QF.lanterns(topic)` → `[{id,n,movement,title,text,words:[...],hinge,from,pic,note}]`; `QF.movements(topic)`.
   - `QF.state(profile, topic)`; `QF.rung(id)`; `QF.record(id, {kind:'ladder'|'seam'|'walk'|'mic', ok, rung, prompts, ratio})` → `{state, rung, lit, shining, tomorrow}`; `QF.seams()`; `QF.buildTonight()` → `[{kind:'walk'|'ladder'|'seam'|'pages', ids:[...]}]`; `QF.readiness()` → `{ready, missing}`; `QF.markDelivered({mode, date})`.
   - `FieldVoice.unlock()`, `.load(topic)`, `.play({lantern|from,to|full, speed, atmosphere}) → playback{on('word'|'end'), stop()}`, `.words(topic)`, `.canListen()`, `.listen(lanternId,{timeoutMs})`, `.setVoice(id)`, `.setAtmosphere(on)`.
+
+## Amendments after the adversarial review (these win over the decisions above)
+
+**Data safety (done server-side 2026-10-18):** rows backed up to `backup.field_players_20261018`; `yomple_player_upsert` now merges top-level keys for `field_players`. Cloud check showed every profile's Gettysburg records at state 0–3 on p1 only (Sarah: all 0), so migration is low-stakes.
+- v2 data lives in **top-level** `progress.qf2` and `fun.qf2` (never inside `progress.gettysburg`). Old keys are read, never written by field-next, except sync must send them back unchanged.
+- field-next uses its **own localStorage key `quiet-field-v2`**: on first boot deep-copies `quiet-field-v1` if v2 is absent; never writes v1. Reload store on `pageshow`/`visibilitychange`.
+- `arrive.js` copy gets one fix: never `cloudSaveActive()` from the catch/failed-lookup path; create a fresh profile only on a confirmed not-found. Check `{ok:false}` results from upsert (log, retry later); never upload a `qf2` with fewer lantern records than last loaded.
+- Save once per lantern result, no attempt logs.
+- **Migration** fills only missing `g` records: split lanterns (g1/g2 from p1 etc.) get parent state − 1 (min 0), unsplit ones copy the parent; display level = parent's; due today. Re-run after any cloud row is applied.
+- **Dates** by local calendar day (`getFullYear/getMonth/getDate`), never `toISOString()`.
+- Integration: classic scripts, load order `yomple-stay.js → lanterns.js → memory.js → voice.js → app.js (+scene/games) → sync.js → arrive.js`; keep the globals and DOM ids sync.js/arrive.js need (`store, saveStore, getActiveProfile, slugName, YOMPLE_TABLE, YOMPLE_STORE, toast, showScreen, showHome, showProfiles, seedIntroduced`; ids `find-user, screen-recover, main-nav, family-code-value, parent-email, recover-*, otp-row, restore-code`). All `QF.*` calls read the active profile.
+
+**Learning fixes:** the session opens with **cold recall = top-rung Ladder** (title + hinge only, typed first letters) on due lanterns — that is evidence; the Night Walk stays rehearsal. "≥ 90%" = words entered without gold ink, peek or Line!. Day 1 (nothing lit): whole-address karaoke listen, then g2, then g1 (backward within Movement I). Typed first letters only tonight (no mic in Ladder/Seams).
+
+**iPad input:** one persistent hidden input (`autocapitalize=off autocorrect=off autocomplete=off spellcheck=false`), read on `input`, never re-rendered; layout above the keyboard via `visualViewport`. A tap anywhere on the page refocuses it. Also accept hardware keys.
+
+**Audio:** 15 ms gain ramps in `play()`; unlock with `resume()` + silent buffer in `touchend`/`click`; handle `interrupted`; mute-switch hint when no `navigator.audioSession`. Known rough joins g3|g4, g6|g7, g12 end — listen on iPad; ElevenLabs takes replace them later.
+
+**Cut tonight:** Dedication/recording/certificate (readiness is ~2 weeks away; show the platform at the path's end as "The Dedication waits here"), atmosphere, voice picker, slow mode, mic, Scattered Pages, Word Detective, Field Notes beyond 3 checked facts, parallax, per-lantern pictures (use serif station cards + hinge sentence), Preamble port (the Preamble card links to `/field/?u=…&f=…`). Service worker last, network-first for HTML/JS, never intercept Supabase; navigations matched with `ignoreSearch`.
+
+**Minimum lovable session ("Tonight")**: cold recall (top rung) → ≤ 3 new lanterns on the Ladder with karaoke Hear it, gold ink, two-miss "by the window" → Seams for new joins → short Night Walk with Line! → close on a newly lit post, flame/bell, and a one-line teaser for tomorrow. The juice is required: pentatonic tick per correct letter, ink-in, flame jump, ignition + bell on a lit post.
