@@ -118,4 +118,6 @@ No speech recognition tonight.
 - A failed household lookup in `arrive.js` now creates nothing: it toasts "Could not reach the household just now. Trying again soon.", shows the profiles screen if nobody is active, and retries (4 s, 8 s, 16 s, 32 s, and on `online`).
 - The first cloud save of a player in each page load first pulls that player's row and merges `qf2` record by record (so `QF.onReload` is not fired for that; re-read `QF.*` after a session step as usual).
 - Tests: `node field-next/tests/run.js` (no dependencies, no network).
-- Not built yet: `sw.js` (spec: "service worker last").
+- Offline: `sw.js` (scope `/field-next/`), registered by `app.js` on load. **Bump `VERSION` at the top of `sw.js` on every deploy** (it names both caches; old ones are deleted on activate). Code/pages network-first (4 s stall → cache), `audio/<voice>/` cache-first and pre-fetched in the background (timing.json + 19 clips). Never intercepts other origins. Skip it with `?nosw` or `localStorage['qf2-no-sw']='1'` (tests). A new page or script is picked up automatically if `index.html` links it; other files (like `print.html`) go in `SHELL_FILES`.
+- Typing: `Games.Keys` (games.js) owns the hidden `#catcher` input; screens just set `letters(fn)` / `onEnter` in app.js.
+- Scene: `Scene.geometry(w, h)` is pure (post positions, tested in node); place names are positioned after drawing, clear of posts, the title and the placard.

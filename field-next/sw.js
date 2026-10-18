@@ -20,10 +20,10 @@ var MEDIA = PREFIX + "media-" + VERSION;
 var DEFAULT_VOICE = "rea";
 var CLIPS = ["full"];
 for (var n = 1; n <= 18; n++) CLIPS.push("g" + n);
-/* The page's own files. index.html is also read at install for any script or stylesheet added
-   later, so new modules are picked up without editing this list. */
+/* The page's own files (a missing one is skipped). index.html is also read at install for any
+   script or stylesheet added later, so new modules are picked up without editing this list. */
 var SHELL_FILES = ["./", "styles.css", "yomple-stay.js", "store.js", "lanterns.js", "memory.js", "voice.js",
-  "scene.js", "games.js", "app.js", "sync.js", "arrive.js"];
+  "scene.js", "games.js", "app.js", "sync.js", "arrive.js", "print.html"];
 var NET_TIMEOUT = 4000;
 
 var scope = self.registration ? self.registration.scope : new URL("./", self.location.href).href;
