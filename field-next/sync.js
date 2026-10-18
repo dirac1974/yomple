@@ -138,26 +138,70 @@ function mergeQf2(local, cloud){
   Object.keys(cloud).forEach(function(k){ out[k] = mergeQfRecord(local[k], cloud[k]); });
   return out;
 }
+/* fun.qf2 from two devices, field by field (local wins only where there is nothing to add up):
+   - sets become unions, deduped by a stable key: lit, joined, runs (days), notesSeen (lantern ids),
+     detective.here / .dedicate / .nation (word indices), delivered[] (date|mode|at)
+   - counters take the max: sessions, v; lastDay the later day; migrated is sticky
+   - detective.done {kind: day}: every kind finished on either device (local's day when both)
+   - anything else: local wins, cloud fills what local lacks */
+var FUN_SETS = ["lit", "joined", "runs", "notesSeen"];
+var FUN_COUNTERS = ["sessions", "v"];
+function isObj(x){ return !!x && typeof x === "object" && !Array.isArray(x); }
+function unionBy(a, b, key){
+  var seen = {}, out = [];
+  [].concat(Array.isArray(a) ? a : [], Array.isArray(b) ? b : []).forEach(function(x){
+    var k = key(x);
+    if (k === null || seen[k]) return;
+    seen[k] = 1; out.push(x);
+  });
+  return out;
+}
+function primKey(x){
+  return (x === null || typeof x === "object" || typeof x === "undefined") ? null : (typeof x) + ":" + x;
+}
+function mergeDetective(a, b){
+  if (!isObj(b)) return a;
+  if (!isObj(a)) return JSON.parse(JSON.stringify(b));
+  var out = {};
+  Object.keys(b).forEach(function(k){ out[k] = b[k]; });
+  Object.keys(a).forEach(function(k){ out[k] = a[k]; });
+  Object.keys(out).forEach(function(k){
+    if (Array.isArray(a[k]) || Array.isArray(b[k])) {
+      out[k] = unionBy(a[k], b[k], primKey).sort(function(x, y){ return x - y; });
+    }
+  });
+  if (isObj(a.done) || isObj(b.done)) {
+    var done = {};
+    Object.keys(isObj(b.done) ? b.done : {}).forEach(function(k){ done[k] = b.done[k]; });
+    Object.keys(isObj(a.done) ? a.done : {}).forEach(function(k){ done[k] = a.done[k]; });
+    out.done = done;
+  }
+  return out;
+}
 function mergeFunQf2(local, cloud){
-  if (!cloud || typeof cloud !== "object") return local;
-  if (!local || typeof local !== "object") return JSON.parse(JSON.stringify(cloud));
+  if (!isObj(cloud)) return local;
+  if (!isObj(local)) return JSON.parse(JSON.stringify(cloud));
   var out = {};
   Object.keys(cloud).forEach(function(k){ out[k] = cloud[k]; });
   Object.keys(local).forEach(function(k){ out[k] = local[k]; });
-  ["lit", "joined", "runs"].forEach(function(k){ out[k] = unionList(local[k], cloud[k]); });
+  FUN_SETS.forEach(function(k){
+    if (k === "notesSeen" && !Array.isArray(local[k]) && !Array.isArray(cloud[k])) return;
+    out[k] = unionBy(local[k], cloud[k], primKey);
+  });
   out.runs.sort();
-  out.sessions = Math.max(local.sessions || 0, cloud.sessions || 0);
+  FUN_COUNTERS.forEach(function(k){
+    if (k !== "sessions" && typeof local[k] !== "number" && typeof cloud[k] !== "number") return;
+    var a = typeof local[k] === "number" ? local[k] : 0, b = typeof cloud[k] === "number" ? cloud[k] : 0;
+    out[k] = Math.max(a, b);
+  });
   out.lastDay = (local.lastDay || "") > (cloud.lastDay || "") ? local.lastDay : (cloud.lastDay || "");
   out.migrated = !!(local.migrated || cloud.migrated);
+  if (isObj(local.detective) || isObj(cloud.detective)) out.detective = mergeDetective(local.detective, cloud.detective);
   /* Dedication (ceremony.js): keep every delivery from both sides */
   if (Array.isArray(local.delivered) || Array.isArray(cloud.delivered)) {
-    var seen = {}, dl = [];
-    [].concat(local.delivered || [], cloud.delivered || []).forEach(function(d){
-      if (!d || typeof d !== "object") return;
-      var k = (d.date || "") + "|" + (d.mode || "") + "|" + (d.at || 0);
-      if (!seen[k]) { seen[k] = 1; dl.push(d); }
-    });
-    out.delivered = dl.sort(function(a, b){ return (a.at || 0) - (b.at || 0); });
+    out.delivered = unionBy(local.delivered, cloud.delivered, function(d){
+      return isObj(d) ? (d.date || "") + "|" + (d.mode || "") + "|" + (d.at || 0) : null;
+    }).sort(function(a, b){ return (a.at || 0) - (b.at || 0); });
   }
   return out;
 }

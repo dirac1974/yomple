@@ -158,4 +158,33 @@ atest("page message warms another voice", function () {
   });
 });
 
+/* Every file the pages load must be precached, or the walk breaks offline the first time a new
+   module ships. Parses the real index.html / print.html tags against the real SHELL_FILES. */
+function localRefs(html) {
+  var out = [], re = /<(script|link|a)\b[^>]*?\b(src|href)\s*=\s*["']([^"']+)["'][^>]*>/gi, m;
+  while ((m = re.exec(html))) {
+    var tag = m[1].toLowerCase(), ref = m[3].split("#")[0].split("?")[0];
+    if (!ref || /^[a-z]+:|^\/\//i.test(ref) || ref.charAt(0) === "/" || ref.indexOf("..") === 0) continue;
+    if (tag === "a" && !/\.html$/.test(ref)) continue;          /* links: only our own pages */
+    if (ref === "./" || ref === "index.html") continue;
+    out.push(ref.replace(/^\.\//, ""));
+  }
+  return out;
+}
+atest("SHELL_FILES lists every script, stylesheet and page that index.html and print.html load", function () {
+  var ctx = { self: { location: { href: SCOPE + "sw.js", origin: ORIGIN }, registration: { scope: SCOPE }, addEventListener: function () {} }, URL: URL };
+  vm.createContext(ctx);
+  vm.runInContext(SRC, ctx);
+  var list = vm.runInContext("SHELL_FILES", ctx);
+  var refs = [];
+  ["index.html", "print.html"].forEach(function (f) {
+    localRefs(fs.readFileSync(path.join(H.ROOT, f), "utf8")).forEach(function (r) { if (refs.indexOf(r) < 0) refs.push(r); });
+  });
+  assert.ok(refs.indexOf("ceremony.js") >= 0 && refs.indexOf("ceremony.css") >= 0 && refs.indexOf("print.html") >= 0, "parser sees the tags");
+  var missing = refs.filter(function (r) { return list.indexOf(r) < 0; });
+  assert.deepStrictEqual(missing, [], "missing from sw.js SHELL_FILES: " + missing.join(", "));
+  refs.forEach(function (r) { assert.ok(fs.existsSync(path.join(H.ROOT, r)), r + " exists"); });
+  assert.ok(/^qf2-\d{4}-\d{2}-\d{2}[a-z]?$/.test(vm.runInContext("VERSION", ctx)), "VERSION shape");
+});
+
 pending.reduce(function (p, f) { return p.then(f); }, Promise.resolve());

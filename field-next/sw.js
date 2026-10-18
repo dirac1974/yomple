@@ -13,7 +13,7 @@
    Bump VERSION on every deploy: old caches are deleted on activate. */
 "use strict";
 
-var VERSION = "qf2-2026-10-18a";
+var VERSION = "qf2-2026-10-18b";
 var PREFIX = "qf2-";
 var SHELL = PREFIX + "shell-" + VERSION;
 var MEDIA = PREFIX + "media-" + VERSION;
@@ -21,9 +21,12 @@ var DEFAULT_VOICE = "rea";
 var CLIPS = ["full"];
 for (var n = 1; n <= 18; n++) CLIPS.push("g" + n);
 /* The page's own files (a missing one is skipped). index.html is also read at install for any
-   script or stylesheet added later, so new modules are picked up without editing this list. */
-var SHELL_FILES = ["./", "styles.css", "yomple-stay.js", "store.js", "lanterns.js", "memory.js", "voice.js",
-  "scene.js", "games.js", "app.js", "sync.js", "arrive.js", "print.html"];
+   script or stylesheet added later, so new modules are picked up without editing this list;
+   tests/sw.test.js checks that every file index.html and print.html load is listed here. */
+var SHELL_FILES = ["./", "styles.css", "aids.css", "ceremony.css",
+  "yomple-stay.js", "store.js", "lanterns.js", "memory.js", "voice.js", "scene.js", "games.js", "app.js",
+  "ceremony.js", "pictures.js", "cuecard.js", "notes.js", "detective.js", "aids.js",
+  "sync.js", "arrive.js", "print.html"];
 var NET_TIMEOUT = 4000;
 
 var scope = self.registration ? self.registration.scope : new URL("./", self.location.href).href;

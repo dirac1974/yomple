@@ -150,6 +150,85 @@ all.push(H.test("found in field_players: cloud row applied and migrated", functi
   });
 }));
 
+all.push(H.test("fun.qf2 merge: sets are unions, counters max, the rest local-wins", function () {
+  var env = H.makeEnv({ files: FILES });
+  var local = { v: 1, lit: ["g2", "g1"], joined: ["g1>g2"], runs: ["2026-10-17"], sessions: 4, lastDay: "2026-10-17",
+    notesSeen: ["g2"], pref: "local", only: "L",
+    detective: { here: [3, 40], dedicate: [], nation: [7], done: { nation: "2026-10-16" }, note: "local" },
+    delivered: [{ mode: "page", date: "2026-10-17", at: 5 }] };
+  var cloud = { v: 1, lit: ["g1", "g11"], joined: ["g10>g11"], runs: ["2026-10-15", "2026-10-17"], sessions: 9, lastDay: "2026-10-18",
+    notesSeen: ["g11", "g2"], pref: "cloud", other: "C", migrated: true,
+    detective: { here: [40, 12], dedicate: [55], nation: [7], done: { here: "2026-10-18", nation: "2026-10-15" }, note: "cloud" },
+    delivered: [{ mode: "memory", date: "2026-10-18", at: 9 }, { mode: "page", date: "2026-10-17", at: 5 }] };
+  var keepL = J(local), keepC = J(cloud);
+  var m = J(env.ctx.mergeFunQf2(local, cloud));
+  assert.deepStrictEqual(m.lit, ["g2", "g1", "g11"]);
+  assert.deepStrictEqual(m.joined, ["g1>g2", "g10>g11"]);
+  assert.deepStrictEqual(m.runs, ["2026-10-15", "2026-10-17"]);
+  assert.deepStrictEqual(m.notesSeen, ["g2", "g11"]);
+  assert.strictEqual(m.sessions, 9);
+  assert.strictEqual(m.v, 1);
+  assert.strictEqual(m.lastDay, "2026-10-18");
+  assert.strictEqual(m.migrated, true);
+  assert.strictEqual(m.pref, "local", "scalar: local wins");
+  assert.strictEqual(m.only, "L"); assert.strictEqual(m.other, "C", "cloud fills what local lacks");
+  assert.deepStrictEqual(m.detective.here, [3, 12, 40]);
+  assert.deepStrictEqual(m.detective.dedicate, [55]);
+  assert.deepStrictEqual(m.detective.nation, [7]);
+  assert.deepStrictEqual(m.detective.done, { here: "2026-10-18", nation: "2026-10-16" });
+  assert.strictEqual(m.detective.note, "local");
+  assert.deepStrictEqual(m.delivered, [{ mode: "page", date: "2026-10-17", at: 5 }, { mode: "memory", date: "2026-10-18", at: 9 }]);
+  assert.deepStrictEqual(local, keepL, "inputs untouched"); assert.deepStrictEqual(cloud, keepC);
+  // symmetric for sets and counters
+  var r = J(env.ctx.mergeFunQf2(J(cloud), J(local)));
+  ["lit", "joined", "notesSeen"].forEach(function (k) { assert.deepStrictEqual(r[k].slice().sort(), m[k].slice().sort(), k); });
+  assert.deepStrictEqual(r.detective.here, m.detective.here);
+  assert.strictEqual(r.sessions, 9); assert.strictEqual(r.pref, "cloud");
+  // merging is idempotent
+  assert.deepStrictEqual(J(env.ctx.mergeFunQf2(m, m)), m);
+}));
+all.push(H.test("fun.qf2 merge: missing or one-sided fields", function () {
+  var env = H.makeEnv({ files: FILES });
+  var M = function (a, b) { return J(env.ctx.mergeFunQf2(a, b)); };
+  var c = { lit: ["g1"], detective: { here: [1] }, notesSeen: ["g1"] };
+  assert.deepStrictEqual(M(undefined, c), c, "nothing local: a copy of the cloud");
+  assert.deepStrictEqual(M({ lit: ["g2"] }, undefined), { lit: ["g2"] });
+  var m = M({ lit: [] }, c);
+  assert.deepStrictEqual(m.detective, { here: [1] }, "cloud-only detective survives");
+  assert.deepStrictEqual(m.notesSeen, ["g1"]);
+  var n = M({ lit: ["g1"] }, { lit: ["g1"] });
+  assert.ok(!("notesSeen" in n) && !("detective" in n) && !("delivered" in n) && !("v" in n), "no invented fields");
+  assert.strictEqual(n.sessions, 0);
+  var bad = M({ lit: ["g1", null, { x: 1 }], detective: { here: [2, 2, null] } }, { lit: ["g1"], detective: { here: "x" } });
+  assert.deepStrictEqual(bad.lit, ["g1"]);
+  assert.deepStrictEqual(bad.detective.here, [2]);
+}));
+all.push(H.test("two devices: detective finds and notes seen from both reach the upload", function () {
+  var cloud = { username: "sarah", display_name: "Sarah", avatar: "", has_pin: false,
+    progress: { qf2: touchedQf2(11), gettysburg: { p1: { state: 2 } } },
+    fun: { stars: 2, qf2: { v: 1, lit: ["g1", "g2"], sessions: 6, runs: [], notesSeen: ["g2", "g5"],
+      detective: { here: [10, 20], dedicate: [], nation: [], done: {} } } } };
+  var env = H.makeEnv({ files: FILES, rpc: function (fn) {
+    if (fn === "yomple_player_find") return cloud;
+    if (fn === "yomple_player_upsert") return { ok: true };
+    return null;
+  } });
+  env.setDay("2026-10-18");
+  env.addPlayer("Sarah", { qf2: touchedQf2(11) });
+  var id = env.ctx.store.activeId;
+  env.ctx.store.fun[id].qf2 = { v: 1, lit: ["g1"], sessions: 2, runs: [], notesSeen: ["g9"],
+    detective: { here: [20, 30], dedicate: [4], nation: [], done: {} } };
+  return env.ctx.cloudSaveActive().then(function (sent) {
+    assert.strictEqual(sent, true);
+    var f = upserts(env)[0].args.p_row.fun;
+    assert.deepStrictEqual(f.qf2.detective.here, [10, 20, 30]);
+    assert.deepStrictEqual(f.qf2.detective.dedicate, [4]);
+    assert.deepStrictEqual(f.qf2.notesSeen.slice().sort(), ["g2", "g5", "g9"]);
+    assert.strictEqual(f.qf2.sessions, 6);
+    assert.deepStrictEqual(J(env.ctx.store.fun[id].qf2.detective.here), [10, 20, 30], "kept locally too");
+  });
+}));
+
 Promise.all(all).then(function () {
   console.log("sync/arrive: " + H.results.pass + " passed, " + H.results.fail + " failed");
 });
