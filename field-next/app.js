@@ -717,6 +717,25 @@ function paintParent() {
   paintSoundChip();
 }
 
+/* ---------- offline (sw.js): register, keep the voice warm, ask once for lasting storage ---------- */
+function registerOffline() {
+  try {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    if (/[?&]nosw\b/.test(location.search) || localStorage.getItem("qf2-no-sw") === "1") return;
+    if (navigator.storage && navigator.storage.persist && !localStorage.getItem("qf2-persist")) {
+      localStorage.setItem("qf2-persist", "1");
+      navigator.storage.persist().catch(function () {});
+    }
+  } catch (e) { return; }
+  navigator.serviceWorker.register("sw.js", { scope: "./" }).then(function () {
+    return navigator.serviceWorker.ready;
+  }).then(function (reg) {
+    var v = (voiceOk() && FieldVoice.voice) ? FieldVoice.voice() : "rea";
+    if (reg.active) reg.active.postMessage({ type: "warm", voice: v });
+  }).catch(function () {});
+}
+window.addEventListener("load", registerOffline);
+
 function reducedMotion() {
   try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; }
 }
