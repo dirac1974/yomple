@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cue Card · The Night Before</title>
+  <style>
+    /* One page of first letters, one page of full text. A4 or Letter, no external files. */
+    :root {
+      --ink: #2a2016; --ink-soft: #6b5a44; --brick: #6e3b2e; --paper: #f3e7c9; --rule: rgba(42, 32, 22, .2);
+      --qf-pic-bg: #f3e7c9;
+      --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body { background: #1c2436; color: var(--ink); font-family: var(--serif); -webkit-font-smoothing: antialiased; }
+    .bar { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; padding: 16px; }
+    .bar a, .bar button {
+      font: inherit; font-size: 1.05rem; color: #ffe7a8; background: rgba(12, 19, 34, .55); border: 1px solid rgba(255, 231, 168, .35);
+      border-radius: 4px; padding: 9px 18px; min-height: 44px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
+      font-variant-caps: all-small-caps; letter-spacing: .06em;
+    }
+    .bar button.primary { background: linear-gradient(180deg, #f6cf7c, #d9a44c); color: #2a1a08; border-color: #8a5a1c; }
+    .sheet {
+      width: min(210mm, calc(100% - 32px)); margin: 0 auto 24px; background: var(--paper); padding: 11mm 12mm 10mm;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+    }
+    .head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; border-bottom: 1.5px solid var(--ink); padding-bottom: 1.8mm; margin-bottom: 1mm; flex-wrap: wrap; }
+    .head h1 { margin: 0; font-weight: 400; font-size: 16pt; letter-spacing: .01em; }
+    .head p { margin: 0; color: var(--ink-soft); font-style: italic; font-size: 10pt; }
+    .mv { margin: 1.8mm 0 .2mm; font-size: 10.5pt; color: var(--brick); font-variant-caps: all-small-caps; letter-spacing: .1em; border-bottom: 1px solid var(--rule); padding-bottom: .6mm; }
+    .row { display: grid; grid-template-columns: 13mm 40mm 1fr; column-gap: 3.5mm; align-items: center; padding: .55mm 0; border-bottom: .5px solid var(--rule); break-inside: avoid; page-break-inside: avoid; }
+    .row .pic svg { width: 13mm; height: 9.75mm; display: block; }
+    .row .t { font-size: 9.6pt; line-height: 1.15; }
+    .row .t b { font-weight: 400; color: var(--brick); margin-right: 1.2mm; }
+    .row .letters { font-size: 12.4pt; letter-spacing: .07em; word-spacing: .16em; line-height: 1.22; }
+    .full .row { grid-template-columns: 8mm 34mm 1fr; padding: 1mm 0; }
+    .full .row .n { color: var(--brick); font-size: 10pt; text-align: right; }
+    .full .row .words { font-size: 11pt; line-height: 1.35; }
+    .foot { margin-top: 1.6mm; font-size: 8.6pt; color: var(--ink-soft); font-style: italic; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    @media (max-width: 640px) {
+      .sheet { padding: 16px 14px; }
+      .row { grid-template-columns: 54px 1fr; row-gap: 2px; }
+      .row .pic svg { width: 54px; height: 40px; }
+      .row .letters { grid-column: 1 / -1; }
+      .full .row { grid-template-columns: 26px 1fr; }
+      .full .row .words { grid-column: 1 / -1; }
+    }
+    @page { margin: 11mm 12mm; }
+    @media print {
+      :root { --paper: #fff; --qf-pic-bg: #fff; }
+      body { background: #fff; }
+      .bar { display: none; }
+      .sheet { width: auto; margin: 0; padding: 0; box-shadow: none; }
+      .sheet + .sheet { break-before: page; page-break-before: always; }
+      .row { grid-template-columns: 13mm 40mm 1fr; }
+      .row .pic svg { width: 13mm; height: 9.75mm; }
+      .row .letters { grid-column: auto; }
+      .full .row { grid-template-columns: 8mm 34mm 1fr; }
+      .full .row .words { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="bar">
+    <a href="./">Back to the road</a>
+    <button class="primary" onclick="window.print()">Print</button>
+  </nav>
+  <section class="sheet" id="cue">
+    <header class="head"><h1>The Gettysburg Address: cue card</h1><p>The first letter of every word. Say each word aloud; the letter only starts it.</p></header>
+    <div id="cue-rows"></div>
+    <p class="foot"><span>Abraham Lincoln, Gettysburg, 19 November 1863 (the Bliss copy)</span><span>The Night Before</span></p>
+  </section>
+  <section class="sheet full" id="full">
+    <header class="head"><h1>The Gettysburg Address: full text</h1><p>Eighteen lanterns in three movements: then, now, ahead.</p></header>
+    <div id="full-rows"></div>
+    <p class="foot"><span>Abraham Lincoln, Gettysburg, 19 November 1863 (the Bliss copy)</span><span>The Night Before</span></p>
+  </section>
+  <script src="lanterns.js?v=qf2-1"></script>
+  <script src="pictures.js?v=qf2-1"></script>
+  <script src="cuecard.js?v=qf2-1"></script>
+  <script>
+    (function () {
+      function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+      var D = window.QF_DATA, mvName = {}, cue = "", full = "", last = 0;
+      D.movements.forEach(function (m) { mvName[m.n] = ["", "I", "II", "III"][m.n] + ". " + m.name; });
+      QFCue.lines().forEach(function (r) {
+        if (r.movement !== last) {
+          cue += "<h2 class='mv'>" + esc(mvName[r.movement]) + "</h2>";
+          full += "<h2 class='mv'>" + esc(mvName[r.movement]) + "</h2>";
+          last = r.movement;
+        }
+        cue += "<div class='row'><div class='pic'>" + QFPictures.svg(r.id) + "</div>" +
+          "<div class='t'><b>" + r.n + "</b>" + esc(r.title) + "</div><div class='letters'>" + esc(r.letters) + "</div></div>";
+        full += "<div class='row'><div class='n'>" + r.n + "</div><div class='t'>" + esc(r.title) + "</div><div class='words'>" + esc(r.text) + "</div></div>";
+      });
+      document.getElementById("cue-rows").innerHTML = cue;
+      document.getElementById("full-rows").innerHTML = full;
+    })();
+  </script>
+</body>
+</html>

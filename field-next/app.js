@@ -294,6 +294,7 @@ function sheet(o) {
   msg(o.msg || "");
   $("sheet").className = "sheet " + (o.cls || "");
   lanternGlow(o.glow || 0);
+  if (window.Aids) Aids.sheet(o); /* memory aids hook: the lantern's picture beside its title */
   $("sess-body").scrollTop = 0;
 }
 function msg(text, cls) {
@@ -672,6 +673,7 @@ function showPath() {
     html += "</ol></section>";
   });
   box.innerHTML = html;
+  if (window.Aids) Aids.path(box); /* memory aids hook: station pictures, Field Notes, Word Detective, cue card */
 }
 
 /* ---------- grown-ups ---------- */
