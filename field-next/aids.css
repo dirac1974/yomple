@@ -19,6 +19,7 @@ body.short .sheet-pic, body.short .sheet.rung-4 .sheet-pic, body.short .sheet.co
   order: 3; width: 104px; height: auto; aspect-ratio: 4 / 3; margin: 0 0 0 auto; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid rgba(110, 59, 46, .18);
 }
 @media (max-width: 600px) { body.short .sheet-pic, body.short .sheet.rung-4 .sheet-pic, body.short .sheet.cold .sheet-pic, body.short .sheet.walk .sheet-pic { width: 76px; padding-left: 8px; } }
+body.tiny .sheet-pic, body.tiny .sheet.rung-4 .sheet-pic, body.tiny .sheet.cold .sheet-pic, body.tiny .sheet.walk .sheet-pic { width: 56px; padding-left: 8px; }
 
 /* the path: a small plate per station */
 .st-pic {

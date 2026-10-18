@@ -512,16 +512,25 @@
     var botClear = H * 0.965;
     try {
       var pl = el.parentNode && el.parentNode.querySelector(".placard:not([hidden])");
-      if (pl && pl.offsetHeight) botClear = Math.min(botClear, (pl.getBoundingClientRect().top - el.getBoundingClientRect().top) * (H / h) - 8);
+      var pr = pl && pl.offsetHeight ? pl.getBoundingClientRect() : null, er = el.getBoundingClientRect();
+      /* only when it lies across the scene (a phone held sideways puts it beside the scene) */
+      if (pr && pr.left < er.right - 1 && pr.right > er.left + 1) botClear = Math.min(botClear, (pr.top - er.top) * (H / h) - 8);
     } catch (e) {}
-    placeLabels(state.svg, posts, labels, W, ls, soft, topClear, botClear);
+    /* a scene whose edge fades out (a phone on its side) keeps its names clear of the fade */
+    var edge = 6;
+    try {
+      var cs = getComputedStyle(el), mk = cs.maskImage || cs.webkitMaskImage || "none";
+      if (mk && mk !== "none") edge = Math.max(edge, 22 * W / Math.max(1, w));
+    } catch (e) {}
+    placeLabels(state.svg, posts, labels, W, ls, soft, topClear, botClear, edge);
     paint();
   }
 
   /* Each name looks for the nearest spot around its landmark (under the road, on it, above the lamps,
      a little to either side) that is clear of every post, its number and the names already placed;
      it would rather not sit on another landmark's building. */
-  function placeLabels(svg, posts, labels, W, ls, soft, topClear, botClear) {
+  function placeLabels(svg, posts, labels, W, ls, soft, topClear, botClear, edge) {
+    edge = edge || 6;
     var hard = posts.map(postBox), placed = [], pad = Math.max(5, 4 * ls / 12.5);
     soft = soft || [];
     function hit(a, b, pad) { return !(a[2] + pad <= b[0] || b[2] + pad <= a[0] || a[3] + pad <= b[1] || b[3] + pad <= a[1]); }
@@ -530,7 +539,7 @@
       var c = 0;
       hard.concat(placed).forEach(function (b) { if (hit(bx, b, pad)) c += 1000 + area(bx, b); });
       soft.forEach(function (b, k) { if (k !== own && hit(bx, b, 2)) c += 120; });
-      if (bx[0] < 4 || bx[2] > W - 4) c += 5000;
+      if (bx[0] < edge - 2 || bx[2] > W - edge + 2) c += 5000;
       if (bx[3] > (botClear || H * 0.965) || bx[1] < (topClear || H * 0.12)) c += 5000;
       return c;
     }
@@ -555,7 +564,7 @@
       variants.forEach(function (v) {
         var half = v.m.w / 2 + 4;
         var boxAt = function (x, y) { return [x - half, y - v.m.asc - 3, x + half, y - v.m.asc + v.m.h + 3]; };
-        var clampX = function (x) { return Math.min(W - half - 6, Math.max(half + 6, x)); };
+        var clampX = function (x) { return Math.min(W - half - edge, Math.max(half + edge, x)); };
         var ys, xs = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 3, -3];
         if (lb.fixed || !lb.s) ys = [lb.y, lb.y + ls * 1.3, lb.y - ls * 1.3, lb.y + ls * 2.6];
         else {

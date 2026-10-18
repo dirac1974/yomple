@@ -244,8 +244,10 @@
   .ded-lan-t { text-align: left; }
 }
 @media (max-width: 600px) {
-  .ded-head { grid-template-columns: auto 1fr auto; }
-  .ded-mark { font-size: 1rem; letter-spacing: .1em; }
+  .ded-head { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+  .ded-mark { font-size: 1rem; letter-spacing: .1em; min-width: 0; max-width: 100%; gap: 6px; padding: 4px 10px 6px; white-space: nowrap; }
+  .ded-mark > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+  .ded-preview { font-size: .76rem; padding: 0 5px 1px; letter-spacing: .06em; }
   .ded-tool { padding: 5px 10px 7px; font-size: .98rem; }
   .ded-card { padding: 20px 18px 18px; }
   .ded-choices { grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
@@ -263,6 +265,10 @@
   .ded-sheet { padding: 20px 18px 22px; }
   .ded-cues { font-size: 1.3rem; }
   .ded-cert-acts .ded-btn { flex: 1 1 100%; }
+}
+@media (max-width: 440px) {
+  #ded-atmos > span:last-child { display: none; }
+  #ded-atmos { padding-left: 13px; padding-right: 13px; }
 }
 @media (max-height: 560px) {
   .ded-card { padding-top: 16px; padding-bottom: 14px; }

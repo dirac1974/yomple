@@ -993,7 +993,7 @@
       '<header class="ded-head">' +
       '<button class="ded-tool" id="ded-leave" type="button">Leave</button>' +
       '<p class="ded-mark"><span>The Dedication</span><span class="ded-preview" id="ded-preview" hidden>Preview</span></p>' +
-      '<button class="ded-tool" id="ded-atmos" type="button" aria-pressed="false"><span class="ded-atmos-dot" aria-hidden="true"></span><span>Atmosphere</span></button>' +
+      '<button class="ded-tool" id="ded-atmos" type="button" aria-pressed="false" aria-label="Atmosphere" title="Atmosphere"><span class="ded-atmos-dot" aria-hidden="true"></span><span>Atmosphere</span></button>' +
       '</header>' +
       '<main class="ded-stage" id="ded-stage"></main>';
     doc.body.appendChild(el);

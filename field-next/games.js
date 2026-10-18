@@ -343,7 +343,7 @@
       var h = vv ? vv.height : root.innerHeight, top = vv ? Math.max(0, vv.offsetTop) : 0;
       if (o.frame) { o.frame.style.height = Math.round(h) + "px"; o.frame.style.top = Math.round(top) + "px"; }
       doc.documentElement.style.setProperty("--vvh", Math.round(h) + "px");
-      if (doc.body) doc.body.classList.toggle("short", h < 560);
+      if (doc.body) { doc.body.classList.toggle("short", h < 560); doc.body.classList.toggle("tiny", h < 300); }
       if (o.resize) o.resize(h);
     }
     var fitT = 0;
