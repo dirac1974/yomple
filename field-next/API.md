@@ -130,3 +130,9 @@ No speech recognition tonight.
 - Recording: MediaRecorder + getUserMedia only after "Record myself"; tracks stopped right after; kept recordings live in IndexedDB `qf2-dedication/recordings` on the device only. Hidden when either API is missing.
 - Own AudioContext (chorale, applause, atmosphere), closed on leaving. Atmosphere preference: `localStorage['qf2-ded-atmos']`.
 - Tests: `tests/ceremony.test.js` (node); browser flow in the scratchpad `ded_test.py`.
+
+## Integration notes
+
+- `sync.js` merges `fun.qf2` field by field (`mergeFunQf2`): sets are unions deduped by a stable key (`lit`, `joined`, `runs`, `notesSeen`, `detective.here/.dedicate/.nation`, `delivered[]` by date|mode|at), counters take the max (`sessions`, `v`), `lastDay` the later day, `migrated` sticky, `detective.done` keeps every finished kind; anything else is local-wins with the cloud filling gaps. A new set-like field belongs in `FUN_SETS`.
+- `sw.js` `SHELL_FILES` must list every file `index.html` / `print.html` load; `tests/sw.test.js` fails otherwise. Bump `VERSION` and the `?v=` query on every deploy.
+- Phone landscape (`orientation: landscape` and `max-height: 500px`): the placard is a side column under the tools and the scene ends at it (with a short fade); `scene.js` only clears labels above the placard when it lies across the scene. `body.tiny` (visual viewport under 300 px, set by `Games.Keys`) is the keyboard-up compact session.
