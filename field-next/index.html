@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>The Night Before</title>
   <link rel="stylesheet" href="styles.css?v=qf2-1" />
+  <link rel="stylesheet" href="ceremony.css?v=qf2-1" /><!-- the Dedication -->
 </head>
 <body>
   <div id="toast" role="status" aria-live="polite"></div>
@@ -156,6 +157,12 @@
           <button class="btn" onclick="if(typeof cloudSaveActive==='function')cloudSaveActive(); toast('Saved');">Save now</button>
         </div>
       </div>
+      <!-- the Dedication (ceremony.js) -->
+      <div class="paper-card">
+        <h2>The Dedication</h2>
+        <p class="note">It opens on her home screen when every lantern and every join is shining and she has walked the whole road twice, on different nights. A preview works any time and records nothing.</p>
+        <div class="btn-row"><button class="btn" onclick="if(window.Ceremony)Ceremony.open({preview:true})">Preview the Dedication</button></div>
+      </div>
       <div class="paper-card">
         <h2>Sound</h2>
         <div class="btn-row">
@@ -196,6 +203,7 @@
   <script src="scene.js?v=qf2-1"></script>
   <script src="games.js?v=qf2-1"></script>
   <script src="app.js?v=qf2-1"></script>
+  <script src="ceremony.js?v=qf2-1"></script><!-- the Dedication -->
   <script src="sync.js?v=qf2-1"></script>
   <script src="arrive.js?v=qf2-1"></script>
 </body>

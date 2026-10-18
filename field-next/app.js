@@ -139,6 +139,8 @@ function showHome() {
   $("home-placard").hidden = false;
   var plan = tonightPlan();
   paintPlacard(plan);
+  /* the Dedication (ceremony.js): its button on the placard, the platform label */
+  if (window.Ceremony) Ceremony.paintHome();
   fitPlacard();
   if (!sceneMounted && window.Scene) { Scene.mount($("scene")); sceneMounted = true; }
   if (window.Scene) Scene.update(lanternStatus(plan.fresh));

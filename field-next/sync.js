@@ -149,6 +149,16 @@ function mergeFunQf2(local, cloud){
   out.sessions = Math.max(local.sessions || 0, cloud.sessions || 0);
   out.lastDay = (local.lastDay || "") > (cloud.lastDay || "") ? local.lastDay : (cloud.lastDay || "");
   out.migrated = !!(local.migrated || cloud.migrated);
+  /* Dedication (ceremony.js): keep every delivery from both sides */
+  if (Array.isArray(local.delivered) || Array.isArray(cloud.delivered)) {
+    var seen = {}, dl = [];
+    [].concat(local.delivered || [], cloud.delivered || []).forEach(function(d){
+      if (!d || typeof d !== "object") return;
+      var k = (d.date || "") + "|" + (d.mode || "") + "|" + (d.at || 0);
+      if (!seen[k]) { seen[k] = 1; dl.push(d); }
+    });
+    out.delivered = dl.sort(function(a, b){ return (a.at || 0) - (b.at || 0); });
+  }
   return out;
 }
 // Fold a cloud row's qf2 into the local profile with this username (local wins nothing, loses nothing).

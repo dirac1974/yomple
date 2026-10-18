@@ -363,6 +363,32 @@
     return out;
   }
 
+  /* ---------- the Dedication (ceremony.js) ---------- */
+  /* fun.qf2.delivered = [{mode:'page'|'memory', date:'YYYY-MM-DD', at:ms}], newest last. Always
+     repeatable; never touches lantern records or readiness. */
+  function deliveredList(id) {
+    var f = funOf(id || activeId());
+    if (!f) return [];
+    if (!Array.isArray(f.delivered)) f.delivered = [];
+    return f.delivered;
+  }
+  function markDelivered(o) {
+    o = o || {};
+    if (!activeId()) return null;
+    var list = deliveredList();
+    var mode = o.mode === "memory" ? "memory" : "page";
+    var date = (typeof o.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.date)) ? o.date : today();
+    var entry = { mode: mode, date: date, at: Date.now() };
+    list.push(entry);
+    funOf(activeId()).lastDay = today();
+    save();
+    return { mode: entry.mode, date: entry.date, at: entry.at, count: list.length };
+  }
+  function delivered() {
+    if (!activeId()) return [];
+    return deliveredList().map(function (d) { return { mode: d.mode, date: d.date, at: d.at }; });
+  }
+
   /* ---------- boot / reload ---------- */
   var reloadFns = [], wired = false;
   function reloadStore() {
@@ -400,6 +426,7 @@
     rung: function (id) { return activeId() && isLanternId(id) ? raw(id).rung : 0; },
     startSession: startSession, buildTonight: buildTonight, preview: preview,
     record: record, recordRun: recordRun, readiness: readiness, summary: summary,
+    markDelivered: markDelivered, delivered: delivered,
     firstLetter: D.firstLetter, tokenize: D.tokenize, cue: D.cue,
     _setClock: function (fn) { clock = fn || function () { return new Date(); }; }
   };

@@ -121,3 +121,12 @@ No speech recognition tonight.
 - Offline: `sw.js` (scope `/field-next/`), registered by `app.js` on load. **Bump `VERSION` at the top of `sw.js` on every deploy** (it names both caches; old ones are deleted on activate). Code/pages network-first (4 s stall → cache), `audio/<voice>/` cache-first and pre-fetched in the background (timing.json + 19 clips). Never intercepts other origins. Skip it with `?nosw` or `localStorage['qf2-no-sw']='1'` (tests). A new page or script is picked up automatically if `index.html` links it; other files (like `print.html`) go in `SHELL_FILES`.
 - Typing: `Games.Keys` (games.js) owns the hidden `#catcher` input; screens just set `letters(fn)` / `onEnter` in app.js.
 - Scene: `Scene.geometry(w, h)` is pure (post positions, tested in node); place names are positioned after drawing, clear of posts, the title and the placard.
+
+## ceremony.js — `window.Ceremony` (the Dedication)
+
+- `QF.markDelivered({mode:'page'|'memory', date})` → `{mode, date, at, count}`; appends to `fun.qf2.delivered[]` (date = local day by default). `QF.delivered()` → copies. Never touches lantern records or readiness. `sync.js` merges `delivered` from both sides (by date + mode + at).
+- `Ceremony.paintHome()` is called by `showHome()` (one line in app.js). When `QF.readiness().ready` it adds `#ded-slot` (a daylight "The Dedication" button) to `#home-placard`; it also turns the scene's `text.plaque.dedication` into a tappable label (`g.ded-plaque`: "The Dedication" / "The Dedication waits here" → toast "N lanterns still to light"), with a "Delivered" ribbon once delivered. A MutationObserver on `#scene` re-applies it after every redraw, so scene.js needs no changes.
+- `Ceremony.open({preview})` builds `#screen-dedication` on first use (a `.screen`, shown with `showScreen`). Preview (parent screen) works when not ready and records nothing (no `markDelivered`, recordings never stored).
+- Recording: MediaRecorder + getUserMedia only after "Record myself"; tracks stopped right after; kept recordings live in IndexedDB `qf2-dedication/recordings` on the device only. Hidden when either API is missing.
+- Own AudioContext (chorale, applause, atmosphere), closed on leaving. Atmosphere preference: `localStorage['qf2-ded-atmos']`.
+- Tests: `tests/ceremony.test.js` (node); browser flow in the scratchpad `ded_test.py`.
