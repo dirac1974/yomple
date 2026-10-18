@@ -5,7 +5,7 @@
   <meta name="referrer" content="no-referrer" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Yomple</title>
-  <meta name="description" content="Play Bloom, Shockmate, Word Garden, Hall of Presidents, Star Map, and Quiet Field." />
+  <meta name="description" content="Play Bloom, Bloom 2 (beta), Shockmate, Word Garden, Hall of Presidents, Star Map, and Quiet Field." />
   <link rel="icon" href="favicon.svg" />
   <style>
     :root{ --coral:#FF6B5A; --sun:#FFD54A; --sky:#4AA8F0; --mint:#5FCFB3; --ink:#2B2A38; --soft:#4A4860; }
@@ -45,6 +45,8 @@
     .app h2{margin:0 0 2px;font-size:1.28rem;letter-spacing:-.03em;text-shadow:0 2px 8px rgba(0,0,0,.35)}
     .app p{margin:0;font-weight:700;opacity:.95;text-shadow:0 1px 6px rgba(0,0,0,.35)}
     .bloom{background-color:#7ed56a;background-image:url("https://lh3.googleusercontent.com/d/1qo2wkH2ZE36E1NZYc6wSMOkdTVv16Myj=s900"),linear-gradient(160deg,#b6f36a,#49c27a);}
+    .bloom2{background-color:#141C33;background-image:radial-gradient(circle at 66% 30%,#F3D9A4 0 7%,rgba(243,217,164,.18) 7.5% 12%,transparent 12.5%),linear-gradient(170deg,#2A3762 0%,#1C2747 48%,#2F4C3B 49%,#141C33 100%);}
+    .bloom2 .tag{position:absolute;top:16px;right:16px;z-index:2;background:#F2B544;color:#141C33;font-weight:900;font-size:.72rem;letter-spacing:.08em;border-radius:999px;padding:4px 10px;box-shadow:0 3px 0 rgba(0,0,0,.25)}
     .garden{background-color:#f4a0d2;background-image:url("https://lh3.googleusercontent.com/d/11JZb4vQLGeHEzTjnRfoTXKEn4AbDcqMQ=s900"),linear-gradient(160deg,#ff9ec8,#7ad36a);}
     .hall{background-color:#e0a14a;background-image:url("https://lh3.googleusercontent.com/d/14joT01-sGwPLZPPtvN9voXmzqjvRpdx8=s900"),linear-gradient(160deg,#f0c36a,#b8742a);}
     .stars{background-color:#2a4a8c;background-image:url("https://lh3.googleusercontent.com/d/1f6i36HgwXbnujqamAwE78tdZLntx1jhC=s900"),linear-gradient(160deg,#3d6ad4,#1a2a5a);}
@@ -109,6 +111,7 @@
       <h1>Pick a world</h1>
       <div class="apps">
         <a class="app bloom" data-base="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom/"><span class="ic">🌱</span><h2>Bloom</h2><p>Multiplication</p></a>
+        <a class="app bloom2" data-base="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom-beta/" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/bloom-beta/"><span class="tag">BETA</span><span class="ic">⚔️</span><h2>Bloom 2</h2><p>New look · Beast Raids</p></a>
         <a class="app garden" data-base="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/" href="https://digcgqltrlmhgmzgmvwc.supabase.co/functions/v1/word-garden/"><span class="ic">🌿</span><h2>Word Garden</h2><p>Spelling</p></a>
         <a class="app hall" data-base="https://dirac1974.github.io/hall-of-presidents/" href="https://dirac1974.github.io/hall-of-presidents/"><span class="ic">🏛️</span><h2>Hall of Presidents</h2><p>US presidents in order</p></a>
         <a class="app stars" data-base="https://dirac1974.github.io/star-map/" href="https://dirac1974.github.io/star-map/"><span class="ic">⭐</span><h2>Star Map</h2><p>States and capitals</p></a>
