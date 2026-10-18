@@ -65,14 +65,18 @@
         [0.46, 0.486], [0.60, 0.454], [0.71, 0.425], [0.79, 0.392], [0.85, 0.360], [0.89, 0.335]],
       label: 26
     },
+    /* Five level terraces, each a little more than one post (and its number) above the last, so no
+       lantern ever stands in front of another; posts are spaced evenly in the world (see postTWorld). */
     tall: {
       horizon: 0.34,
       hill: [[0, 0.36], [0.25, 0.355], [0.45, 0.34], [0.62, 0.315], [0.78, 0.295], [0.92, 0.29], [1, 0.30]],
       town: [0.0, 0.5],
-      road: [[-0.04, 0.835], [0.18, 0.825], [0.50, 0.81], [0.78, 0.79], [0.87, 0.755], [0.74, 0.718],
-        [0.46, 0.70], [0.20, 0.675], [0.15, 0.635], [0.32, 0.605], [0.62, 0.585], [0.83, 0.56],
-        [0.82, 0.52], [0.60, 0.49], [0.36, 0.47], [0.22, 0.44], [0.30, 0.405], [0.50, 0.385],
-        [0.66, 0.36], [0.73, 0.335]],
+      road: [[-0.04, 0.855], [0.30, 0.853], [0.62, 0.85], [0.80, 0.848], [0.90, 0.778],
+        [0.80, 0.708], [0.50, 0.708], [0.18, 0.708], [0.08, 0.643],
+        [0.18, 0.578], [0.50, 0.578], [0.80, 0.578], [0.90, 0.522],
+        [0.80, 0.466], [0.50, 0.466], [0.20, 0.466], [0.10, 0.418],
+        [0.20, 0.370], [0.45, 0.368], [0.65, 0.364], [0.74, 0.36]],
+      world: true, posts: [0.03, 0.95], gap: 0.6, bend: 0.4,
       label: 22
     }
   };
@@ -107,15 +111,49 @@
   }
 
   /* Posts spaced evenly, with a wider gap between the three movements. */
-  function postT() {
+  function postU(gap) {
     var u = [], acc = 0;
     for (var i = 0; i < 18; i++) {
-      if (i === 2 || i === 11) acc += 0.9;
+      if (i === 2 || i === 11) acc += gap;
       u.push(acc); acc += 1;
     }
-    var max = u[17];
-    return u.map(function (v) { return 0.055 + (v / max) * (0.905 - 0.055); });
+    return u.map(function (v) { return v / u[17]; });
   }
+  function postT() {
+    return postU(0.9).map(function (v) { return 0.055 + v * (0.905 - 0.055); });
+  }
+  /* Tall screens: the same steps measured in the world, not on the glass. A post twice as far away
+     is drawn half the size, so its neighbour is drawn half as far off: every gap looks the same. */
+  function postTWorld(road, L) {
+    var span = L.posts || [0.04, 0.92], n = 400, acc = [0], prev = road.at(span[0]);
+    for (var i = 1; i <= n; i++) {
+      var t = span[0] + (span[1] - span[0]) * i / n, p = road.at(t);
+      /* the bends count for less, so no post stands on a hairpin above its neighbour */
+      var d = Math.hypot(p.x - prev.x, p.y - prev.y) / depthOf((p.y + prev.y) / 2, L);
+      if (Math.abs(p.tx) < 0.8) d *= (L.bend === undefined ? 0.25 : L.bend);
+      acc.push(acc[i - 1] + d); prev = p;
+    }
+    var total = acc[n];
+    return postU(L.gap || 0.6).map(function (v) {
+      var want = v * total, k = 0;
+      while (k < n && acc[k + 1] < want) k++;
+      var seg = (acc[k + 1] - acc[k]) || 1, u = (want - acc[k]) / seg;
+      return span[0] + (span[1] - span[0]) * (k + Math.min(1, Math.max(0, u))) / n;
+    });
+  }
+
+  /* Where everything stands for a scene of w x h pixels: pure, so the tests can check it in node. */
+  function geometry(w, h) {
+    var lay = layoutFor(w, h), L = LAYOUTS[lay];
+    if (!L.bot) L.bot = Math.max.apply(null, L.road.map(function (p) { return p[1]; })) - 0.01;
+    var W = Math.round(H * Math.max(0.42, Math.min(2.4, w / Math.max(1, h))));
+    var road = buildRoad(L.road, W);
+    var ts = L.world ? postTWorld(road, L) : postT();
+    var posts = ts.map(function (t, i) { var p = road.at(t); p.t = t; p.s = depthOf(p.y, L); p.id = IDS[i]; return p; });
+    return { lay: lay, L: L, W: W, H: H, road: road, posts: posts };
+  }
+  /* A post's footprint: lamp cap to the number under it (SVG units). */
+  function postBox(p) { return [p.x - 13 * p.s, p.y - 111 * p.s, p.x + 13 * p.s, p.y + 27 * p.s]; }
 
   function depthOf(y, L) {
     var top = L.horizon * H - 70, bot = (L.bot || 0.83) * H;
@@ -274,13 +312,8 @@
   function draw() {
     var el = state.el; if (!el) return;
     var w = el.clientWidth || 1024, h = el.clientHeight || 768;
-    var lay = layoutFor(w, h), L = LAYOUTS[lay];
-    if (!L.bot) L.bot = Math.max.apply(null, L.road.map(function (p) { return p[1]; })) - 0.01;
-    var W = Math.round(H * Math.max(0.42, Math.min(2.4, w / Math.max(1, h))));
+    var G = geometry(w, h), lay = G.lay, L = G.L, W = G.W, road = G.road, posts = G.posts;
     state.W = W; state.layout = lay;
-    var road = buildRoad(L.road, W);
-    var ts = postT();
-    var posts = ts.map(function (t, i) { var p = road.at(t); p.t = t; p.s = depthOf(p.y, L); p.id = IDS[i]; return p; });
     state.posts = posts; state.road = road;
     var r = rng(1863 + (lay === "wide" ? 0 : 7));
     var hz = L.horizon * H;
@@ -397,8 +430,11 @@
     var a;
     a = road.at(0.02); var dS = depthOf(a.y, L);
     props.push({ y: a.y - 40 * dS, svg: depot(a.x + 40 * dS, a.y - 40 * dS, dS) });
-    var pw = posts[1], ws = side(pw, -60 * pw.s, 1), wsc = lay === "wide" ? 0.95 : 0.78;
-    props.push({ y: ws.y - 6, svg: willsHouse(ws.x + 70 * pw.s, ws.y - 6, pw.s * wsc) });
+    /* tall: the terraces are close, so the Wills House stands nearer the road and lower */
+    var pw = posts[1], ws = side(pw, (lay === "wide" ? -60 : -24) * pw.s, 1), wsc = lay === "wide" ? 0.95 : 0.62;
+    var wx = ws.x + 70 * pw.s, wss = pw.s * wsc;
+    props.push({ y: ws.y - 6, svg: willsHouse(wx, ws.y - 6, wss) });
+    var soft = [[wx - 45 * wss, ws.y - 6 - 120 * wss, wx + 45 * wss, ws.y - 6]];
     /* Baltimore Street: low houses shoulder to shoulder behind the road, where it runs level */
     var hs = rng(77);
     for (var ht = posts[2].t - 0.012; ht < posts[4].t + 0.02; ht += 0.0085) {
@@ -408,11 +444,14 @@
     }
     var gp = road.at((posts[4].t + posts[5].t) / 2), gs = depthOf(gp.y, L), go = { x: gp.x, y: gp.y - 26 * gs };
     props.push({ y: go.y, svg: gatehouse(go.x, go.y, gs * 0.9) });
+    soft.push([go.x - 68 * gs * 0.9, go.y - 108 * gs * 0.9, go.x + 68 * gs * 0.9, go.y]);
     var sr2 = rng(1119);
     for (var gi = 0; gi < 26; gi++) {
       var gt = posts[5].t + 0.01 + sr2() * (posts[9].t - posts[5].t), gpp = road.at(gt), gss = depthOf(gpp.y, L);
       var gsd = (sr2() < 0.5 ? -1 : 1) * (50 + sr2() * 90) * gss;
       var sp = side(gpp, gsd, 1);
+      var sb = [sp.x - 8 * gss, sp.y - 20 * gss, sp.x + 8 * gss, sp.y];
+      if (posts.some(function (q) { var b = postBox(q); return !(sb[2] < b[0] - 4 || b[2] + 4 < sb[0] || sb[3] < b[1] || b[3] < sb[1]); })) { sr2(); continue; }
       props.push({ y: sp.y, svg: stone(sp.x, sp.y, gss, sr2) });
     }
     var end = road.at(0.985), es = depthOf(end.y, L);
@@ -441,31 +480,111 @@
     s += '<g class="props">' + props.map(function (q) { return q.svg; }).join("") + '</g>';
     s += '<g class="crowd"></g>';
 
-    /* place names, set like museum placards */
-    var ls = L.label;
-    function label(x, y, text, cls) {
-      var half = text.length * ls * 0.29 + 10;
-      x = Math.min(W - half, Math.max(half, x));
-      return '<text class="plaque ' + (cls || "") + '" x="' + f(x) + '" y="' + f(y) + '" text-anchor="middle" font-size="' + ls + '">' + text + '</text>';
-    }
+    /* place names, set like museum placards; placed after drawing so none sits on a post or another name */
+    var ls = Math.round(Math.min(30, Math.max(L.label, 12.5 * H / Math.max(1, h)))); /* never under ~12.5 px on screen */
+    var d0 = road.at(0.02), bp = road.at((posts[3].t + posts[4].t) / 2);
+    var labels = [
+      { text: "The Dedication waits here", cls: "dedication", x: state.platform.x, y: state.platform.y - 14, s: 0, fixed: true },
+      { text: "Railroad depot", x: Math.max(d0.x + 60, 110), y: d0.y + 60, s: 0 },
+      { text: "The Diamond", x: posts[2].x, y: posts[2].y, s: posts[2].s },
+      { text: "Cemetery gate", x: go.x, y: gp.y, s: gs, own: 1 },
+      { text: "Baltimore Street", x: bp.x, y: bp.y, s: depthOf(bp.y, L) }
+    ];
     s += '<g class="labels">';
-    var d0 = road.at(0.02);
-    s += label(Math.max(d0.x + 60, 110), d0.y + 60, "Railroad depot");
-    s += label(posts[2].x, posts[2].y + 54 * posts[2].s, "The Diamond");
-    var bp = road.at((posts[3].t + posts[4].t) / 2);
-    s += label(bp.x, bp.y + 58 * depthOf(bp.y, L), "Baltimore Street");
-    s += label(go.x, gp.y + 54 * gs, "Cemetery gate");
-    var half = ls * 6.4 + 12;
-    var plx = Math.min(W - half, Math.max(half, state.platform.x));
-    s += label(plx, state.platform.y - 14, "The Dedication waits here", "dedication");
+    labels.forEach(function (lb, i) {
+      s += '<text class="plaque ' + (lb.cls || "") + '" data-l="' + i + '" x="' + f(lb.x) + '" y="' + f(lb.y) + '" text-anchor="middle" font-size="' + ls + '">' + lb.text + '</text>';
+    });
     s += '</g>';
+    state.labels = labels;
 
     s += '<rect class="vignette" width="' + W + '" height="' + H + '" fill="url(#vig)" pointer-events="none"/>';
     s += '</svg>';
 
     el.innerHTML = s;
     state.svg = el.firstChild;
+    /* names stay below the page title that floats over the sky */
+    var topClear = H * 0.12;
+    try {
+      var ttl = el.parentNode && el.parentNode.querySelector(".home-title");
+      if (ttl && ttl.offsetHeight) topClear = Math.max(topClear, (ttl.getBoundingClientRect().bottom - el.getBoundingClientRect().top) * (H / h) + 10);
+    } catch (e) {}
+    /* ... and above the placard, which overlaps the foot of the scene a little */
+    var botClear = H * 0.965;
+    try {
+      var pl = el.parentNode && el.parentNode.querySelector(".placard:not([hidden])");
+      if (pl && pl.offsetHeight) botClear = Math.min(botClear, (pl.getBoundingClientRect().top - el.getBoundingClientRect().top) * (H / h) - 8);
+    } catch (e) {}
+    placeLabels(state.svg, posts, labels, W, ls, soft, topClear, botClear);
     paint();
+  }
+
+  /* Each name looks for the nearest spot around its landmark (under the road, on it, above the lamps,
+     a little to either side) that is clear of every post, its number and the names already placed;
+     it would rather not sit on another landmark's building. */
+  function placeLabels(svg, posts, labels, W, ls, soft, topClear, botClear) {
+    var hard = posts.map(postBox), placed = [], pad = Math.max(5, 4 * ls / 12.5);
+    soft = soft || [];
+    function hit(a, b, pad) { return !(a[2] + pad <= b[0] || b[2] + pad <= a[0] || a[3] + pad <= b[1] || b[3] + pad <= a[1]); }
+    function area(a, b) { return Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1])); }
+    function cost(bx, own) {
+      var c = 0;
+      hard.concat(placed).forEach(function (b) { if (hit(bx, b, pad)) c += 1000 + area(bx, b); });
+      soft.forEach(function (b, k) { if (k !== own && hit(bx, b, 2)) c += 120; });
+      if (bx[0] < 4 || bx[2] > W - 4) c += 5000;
+      if (bx[3] > (botClear || H * 0.965) || bx[1] < (topClear || H * 0.12)) c += 5000;
+      return c;
+    }
+    labels.forEach(function (lb, i) {
+      var t = svg.querySelector('.plaque[data-l="' + i + '"]'); if (!t) return;
+      function measure(str) {
+        t.textContent = str;
+        var bb = null;
+        try { bb = t.getBBox(); } catch (e) {}
+        if (bb && bb.width > 0) return { w: bb.width, h: bb.height, asc: lb.y - bb.y };
+        return { w: str.length * ls * 0.62, h: ls * 1.2, asc: ls * 0.9 };
+      }
+      /* one line, or (narrow screens) two short lines split at the middle space */
+      var variants = [{ lines: [lb.text], m: measure(lb.text), extra: 0 }];
+      var words = lb.text.split(" ");
+      if (words.length > 1 && !lb.fixed) {
+        var cut = Math.ceil(words.length / 2), l1 = words.slice(0, cut).join(" "), l2 = words.slice(cut).join(" ");
+        var m1 = measure(l1), m2 = measure(l2);
+        variants.push({ lines: [l1, l2], m: { w: Math.max(m1.w, m2.w), h: m1.h + ls * 1.05, asc: m1.asc }, extra: 70 });
+      }
+      var best = null, bestC = 1e12;
+      variants.forEach(function (v) {
+        var half = v.m.w / 2 + 4;
+        var boxAt = function (x, y) { return [x - half, y - v.m.asc - 3, x + half, y - v.m.asc + v.m.h + 3]; };
+        var clampX = function (x) { return Math.min(W - half - 6, Math.max(half + 6, x)); };
+        var ys, xs = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 3, -3];
+        if (lb.fixed || !lb.s) ys = [lb.y, lb.y + ls * 1.3, lb.y - ls * 1.3, lb.y + ls * 2.6];
+        else {
+          var s = lb.s, up = v.m.h - v.m.asc;
+          ys = [lb.y + 52 * s + ls * 0.4, lb.y + ls * 0.35, lb.y + 74 * s + ls * 0.4, lb.y - 120 * s - up, lb.y - 60 * s - up];
+        }
+        ys.forEach(function (y, yi) {
+          xs.forEach(function (k) {
+            var x = clampX(lb.x + k * half), bx = boxAt(x, y);
+            var c = cost(bx, lb.own) + Math.abs(x - lb.x) * 0.4 + Math.abs(y - lb.y) * 0.25 + yi * 10 + v.extra;
+            if (c < bestC) { bestC = c; best = { x: x, y: y, box: bx, v: v }; }
+          });
+        });
+      });
+      if (!best) return;
+      t.setAttribute("x", f(best.x)); t.setAttribute("y", f(best.y));
+      if (best.v.lines.length === 1) t.textContent = lb.text;
+      else {
+        t.textContent = "";
+        best.v.lines.forEach(function (line, n) {
+          var sp = document.createElementNS(NS, "tspan");
+          sp.setAttribute("x", f(best.x));
+          if (n) sp.setAttribute("dy", "1.05em");
+          sp.textContent = line;
+          t.appendChild(sp);
+        });
+      }
+      placed.push(best.box);
+    });
   }
 
   function hillY(hp, x) {
@@ -587,5 +706,6 @@
     return "Tomorrow: " + (count[best] === 1 ? PLACE_ONE[best] : PLACE_TEASE[best]);
   }
 
-  root.Scene = { mount: mount, update: update, ignite: ignite, place: place, teaser: teaser, redraw: draw, IDS: IDS };
+  root.Scene = { mount: mount, update: update, ignite: ignite, place: place, teaser: teaser, redraw: draw, IDS: IDS,
+    geometry: geometry, postBox: postBox, LAYOUTS: LAYOUTS };
 })(typeof window !== "undefined" ? window : this);
