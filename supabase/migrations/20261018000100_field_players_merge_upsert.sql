@@ -1,0 +1,8 @@
+-- Quiet Field 2 runs beside the live Quiet Field and both save to field_players.
+-- For that table only, yomple_player_upsert now merges top-level progress/fun keys
+-- (old row || new) instead of replacing them, so the old app can't erase progress.qf2 / fun.qf2.
+-- Applied 2026-10-18; full function body is in the database (only the update clause changed):
+--   progress = case when $8 then coalesce(progress,'{}'::jsonb) || $5 else $5 end,
+--   fun      = case when $8 then coalesce(fun,'{}'::jsonb)      || $6 else $6 end,
+-- with $8 = (p_table = 'field_players').
+-- Backup of the rows before this change: backup.field_players_20261018 (schema not exposed to the API).

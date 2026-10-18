@@ -1,0 +1,6 @@
+-- Follow-up to 20261018000100: for field_players, progress.qf2 (Quiet Field 2 lantern records)
+-- also merges record by record, so an upload missing some lanterns can't drop them:
+--   progress = (coalesce(progress,'{}') || $5)
+--              || case when both progress.qf2 and $5.qf2 are objects
+--                      then jsonb_build_object('qf2', progress->'qf2' || $5->'qf2') else '{}' end
+-- Applied 2026-10-18 by rewriting that one line of yomple_player_upsert; tested in a rolled-back transaction.

@@ -1,0 +1,101 @@
+/* Quiet Field 2: memory aids and collectibles (pictures on cards and stations, Field Notes,
+   Word Detective, the cue card tiles). No timers, no scores, no red. */
+.qf-pic { display: block; width: 100%; height: auto; }
+
+/* the picture beside the title on the ladder / cold / walk card: still, never animated */
+.sheet-pic {
+  flex: none; order: 3; margin-left: auto; width: 128px; aspect-ratio: 4 / 3;
+  border-left: 1px solid rgba(110, 59, 46, .18); padding-left: 12px; --qf-pic-bg: var(--paper);
+}
+.sheet-pic[hidden] { display: none; }
+.sheet-pic svg { width: 100%; height: 100%; }
+.sheet.rung-4 .sheet-pic, .sheet.cold .sheet-pic, .sheet.walk .sheet-pic { width: 172px; }
+@media (max-width: 600px) {
+  .sheet-pic, .sheet.rung-4 .sheet-pic, .sheet.cold .sheet-pic, .sheet.walk .sheet-pic {
+    order: 3; width: 100%; height: 104px; aspect-ratio: auto; margin: 8px 0 0; padding: 8px 0 0; border-left: 0; border-top: 1px solid rgba(110, 59, 46, .14);
+  }
+}
+body.short .sheet-pic, body.short .sheet.rung-4 .sheet-pic, body.short .sheet.cold .sheet-pic, body.short .sheet.walk .sheet-pic {
+  order: 3; width: 104px; height: auto; aspect-ratio: 4 / 3; margin: 0 0 0 auto; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid rgba(110, 59, 46, .18);
+}
+@media (max-width: 600px) { body.short .sheet-pic, body.short .sheet.rung-4 .sheet-pic, body.short .sheet.cold .sheet-pic, body.short .sheet.walk .sheet-pic { width: 76px; padding-left: 8px; } }
+body.tiny .sheet-pic, body.tiny .sheet.rung-4 .sheet-pic, body.tiny .sheet.cold .sheet-pic, body.tiny .sheet.walk .sheet-pic { width: 56px; padding-left: 8px; }
+
+/* the path: a small plate per station */
+.st-pic {
+  flex: none; width: 76px; height: 57px; border-radius: 3px; padding: 2px 3px;
+  background: var(--paper); background-image: var(--paper-tex); --qf-pic-bg: var(--paper);
+  box-shadow: 0 0 0 1px rgba(80, 56, 24, .35), 0 4px 12px rgba(0, 0, 0, .35);
+}
+.st-pic svg { width: 100%; height: 100%; }
+.station button:disabled .st-pic { opacity: .55; }
+@media (max-width: 480px) { .st-pic { width: 60px; height: 45px; } .station button { gap: 10px; } }
+
+/* the three tiles at the top of the path */
+.aids-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 22px; }
+.aids-tile {
+  appearance: none; text-align: left; cursor: pointer; text-decoration: none; color: var(--ink);
+  background: var(--paper); background-image: var(--paper-tex); border: 0; border-radius: 3px; padding: 12px 14px 13px; min-height: 64px;
+  display: flex; flex-direction: column; gap: 3px; font-family: var(--serif);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 10px 26px rgba(0, 0, 0, .4);
+}
+.aids-tile:focus-visible { outline: 2px solid var(--lamp); outline-offset: 2px; }
+.aids-tile .at-k { font-size: 1.15rem; font-variant-caps: all-small-caps; letter-spacing: .06em; color: var(--brick); }
+.aids-tile .at-v { font-size: 1rem; color: var(--ink-soft); }
+.aids-tile:disabled { cursor: default; opacity: .6; }
+@media (max-width: 560px) {
+  .aids-tiles { grid-template-columns: 1fr; gap: 8px; }
+  .aids-tile { min-height: 50px; padding: 9px 14px; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .aids-tile .at-v { text-align: right; }
+}
+
+.aids-sub { margin: -10px 0 18px; color: rgba(255, 231, 168, .72); font-size: 1.05rem; }
+.fnote-new {
+  display: inline-block; font-size: .82em; font-style: normal; font-variant-caps: all-small-caps; letter-spacing: .08em;
+  background: #f0c46a; color: #2a1a08; border-radius: 999px; padding: 0 8px 1px; margin-left: 4px; vertical-align: 1px;
+}
+
+/* Field Notes */
+.notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.fnote {
+  position: relative; margin: 0; background: var(--paper); background-image: var(--paper-tex); color: var(--ink);
+  border-radius: 3px; padding: 14px 16px 16px; box-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 14px 32px rgba(0, 0, 0, .42);
+  --qf-pic-bg: var(--paper);
+}
+.fnote.new { box-shadow: 0 0 0 2px rgba(240, 196, 106, .85), 0 0 26px rgba(240, 180, 90, .35), 0 14px 32px rgba(0, 0, 0, .42); }
+.fnote-pic { width: 100%; max-width: 176px; margin: 0 auto 10px; }
+.fnote-kick { margin: 0 0 4px; color: var(--brick); font-size: .98rem; font-variant-caps: all-small-caps; letter-spacing: .06em; }
+.fnote h2 { margin: 0 0 6px; font-weight: 400; font-size: 1.35rem; line-height: 1.15; }
+.fnote-text { margin: 0; font-size: 1.04rem; line-height: 1.45; clear: none; }
+.fnote.locked {
+  background: rgba(24, 32, 50, .75); background-image: none; color: rgba(255, 231, 168, .55);
+  border: 1px dashed rgba(255, 231, 168, .25); box-shadow: none; min-height: 150px;
+}
+.fnote.locked .fnote-kick { color: rgba(232, 160, 100, .7); }
+.fnote.locked h2 { color: rgba(255, 231, 168, .6); }
+.fnote-wait { margin: 8px 0 0; font-style: italic; font-size: .98rem; }
+.fnote-seal { float: right; width: 44px; height: 44px; border-radius: 50%; margin: 0 0 6px 10px; background: radial-gradient(circle at 40% 35%, #3a2f2a, #1a1512 70%); box-shadow: inset 0 0 0 3px rgba(255, 231, 168, .08); }
+
+/* Word Detective */
+.det-tally { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 12px; }
+.det-word { background: rgba(10, 14, 26, .55); border: 1px solid rgba(255, 231, 168, .22); border-radius: 4px; padding: 10px 12px; }
+.det-word.done { border-color: rgba(240, 196, 106, .75); box-shadow: 0 0 18px rgba(240, 180, 90, .25); }
+.det-name { display: block; font-size: 1.15rem; color: var(--glow); font-style: italic; }
+.det-dots { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.det-dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(255, 231, 168, .4); }
+.det-dot.on { background: radial-gradient(circle, #ffe7a8 0%, #f0b45a 60%, #b46a2a 100%); border-color: transparent; box-shadow: 0 0 8px rgba(255, 196, 100, .6); }
+.det-hooks { margin: 0 0 12px; }
+.det-hook { margin: 0 0 8px; padding: 10px 14px; border-left: 3px solid #f0c46a; background: rgba(240, 196, 106, .1); color: var(--lamp); font-style: italic; font-size: 1.1rem; border-radius: 0 4px 4px 0; }
+.det-text {
+  background: var(--paper); background-image: var(--paper-tex); color: var(--ink); border-radius: 3px;
+  padding: clamp(16px, 3vw, 28px); font-size: clamp(1.12rem, .8vw + 1rem, 1.4rem); line-height: 1.85;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 18px 40px rgba(0, 0, 0, .45);
+  -webkit-user-select: none; user-select: none;
+}
+.det-mv { margin: 0 0 .9em; }
+.det-mv:last-child { margin-bottom: 0; }
+.dw { cursor: pointer; border-radius: 3px; padding: 1px 0; transition: color .25s, text-shadow .25s, background-color .25s; }
+.dw:active { background: rgba(156, 101, 8, .08); }
+.dw.found { color: var(--gilt); text-shadow: 0 0 9px rgba(255, 196, 90, .5); background: rgba(240, 196, 106, .16); cursor: default; }
+@media (max-width: 560px) { .det-tally { grid-template-columns: 1fr; gap: 6px; } .det-word { display: flex; align-items: center; justify-content: space-between; gap: 10px; } .det-dots { margin-top: 0; } }
+@media (prefers-reduced-motion: reduce) { .dw { transition: none; } }
