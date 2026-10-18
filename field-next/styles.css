@@ -279,6 +279,27 @@ input[type=text], input[type=email], input[type=password] {
   padding: 10px 0 max(12px, env(safe-area-inset-bottom));
 }
 .sess-actions .btn { min-width: 120px; }
+.btn.has-note { flex-direction: column; line-height: 1.1; padding-top: 6px; padding-bottom: 7px; }
+.btn-note { display: block; font-size: .72rem; letter-spacing: .02em; font-variant-caps: normal; font-style: italic; opacity: .72; margin-top: 2px; }
+.sheet-msg.practice { color: var(--gilt); }
+/* the keyboard went away (tab switch, a tap elsewhere): a quiet way back, never an alarm */
+.type-here {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 5;
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 66px);
+  appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 10px;
+  font: inherit; font-size: 1.05rem; color: var(--ink); background: var(--paper-hi);
+  border: 1px solid rgba(156, 101, 8, .45); border-radius: 999px; padding: 8px 18px 9px 10px;
+  box-shadow: 0 0 0 4px rgba(255, 210, 122, .14), 0 10px 26px rgba(0, 0, 0, .45);
+  animation: type-here-in .3s ease-out both;
+}
+.type-here[hidden] { display: none; }
+.type-here-key {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 5px;
+  background: #fbf5e6; border: 1px solid rgba(42, 32, 22, .3); box-shadow: 0 2px 0 rgba(42, 32, 22, .25);
+  font-size: 1rem; color: var(--gilt);
+}
+@keyframes type-here-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+body.short .type-here { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 56px); }
 
 /* words */
 .w { position: relative; white-space: nowrap; border-radius: 2px; }

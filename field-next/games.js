@@ -203,7 +203,8 @@
       var clean = marks.filter(function (m) { return m === "ok"; }).length;
       return { total: words.length, clean: clean, misses: misses, peeks: peeks, lines: lines, ratio: words.length ? clean / words.length : 1 };
     }
-    return { key: key, peek: peek, line: line, stats: stats, get done() { return done; }, get pos() { return pos; } };
+    function reveal() { var cur = spans[pos] || spans[spans.length - 1]; if (cur && o.scroll !== false) keepVisible(cur); }
+    return { key: key, peek: peek, line: line, stats: stats, reveal: reveal, get done() { return done; }, get pos() { return pos; } };
   }
 
   /* Karaoke: the whole text laid out for listening, lit word by word as the voice reaches it. */
@@ -222,6 +223,139 @@
     return html + "</p>";
   }
 
+  /* ---------- the keyboard: one hidden input, iPad-proof ----------
+     Keys({input, frame, root, active(), wants(), letter(ch), enter(), tap(), resize()})
+       .focus()   focus the input (call inside a tap so iOS shows the keyboard)
+       .blur()    let it go (listening steps)
+       .refresh() show or hide the "Tap here to type" note after wants() changed
+     - letters arrive once each: from `input` while the input has focus, from `keydown` on the page
+       only while it does not (an iPad hardware keyboard sends both: never counted twice);
+     - a whole word from predictive text, autocorrect or an IME counts as its first letter; paste,
+       deletes and Backspace are ignored; composition (IME) waits for compositionend;
+     - focus comes back after every button tap, on pageshow and when the tab is visible again; if
+       iOS will not allow that without a tap, a quiet "Tap here to type" appears until she taps;
+     - the session frame follows visualViewport (the on-screen keyboard), not the layout viewport. */
+  function Keys(o) {
+    var input = o.input, doc = root.document, vv = root.visualViewport;
+    var composing = false, last = { ch: "", t: 0, via: "" }, pill = null, pillTimer = 0;
+    function now() { return (root.performance && root.performance.now) ? root.performance.now() : Date.now(); }
+    function on() { return !!(o.active && o.active()); }
+    function wants() { return on() && !!(o.wants && o.wants()); }
+    function focused() { return doc.activeElement === input; }
+
+    /* exactly once per keystroke, whichever path sees it first */
+    function deliver(ch, via) {
+      ch = String(ch || "").toLowerCase();
+      if (!/^[a-z0-9]$/.test(ch)) return;
+      var t = now();
+      if (last.ch === ch && last.via !== via && t - last.t < 120) { last.t = 0; return; }
+      last = { ch: ch, t: t, via: via };
+      if (wants() && o.letter) o.letter(ch);
+    }
+    function firstOf(s) { var m = String(s || "").match(/[A-Za-z0-9]/); return m ? m[0] : ""; }
+
+    input.addEventListener("compositionstart", function () { composing = true; });
+    input.addEventListener("compositionend", function (e) {
+      composing = false;
+      var ch = firstOf(e.data || input.value);
+      input.value = "";
+      if (on() && ch) deliver(ch, "input");
+    });
+    input.addEventListener("input", function (e) {
+      if (composing || e.isComposing) return;
+      var type = e.inputType || "insertText", data = (e.data !== undefined && e.data !== null) ? e.data : input.value;
+      input.value = "";
+      if (!on()) return;
+      if (/^delete|^history|FromPaste$|FromDrop$/.test(type)) return;
+      /* "insertText" of one letter is a keystroke; anything longer (a predicted or corrected word,
+         "insertReplacementText") is one word: its first letter */
+      var ch = firstOf(data);
+      if (ch) deliver(ch, "input");
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); if (on() && o.enter) o.enter(); return; }
+      if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); return; }
+    });
+    doc.addEventListener("keydown", function (e) {
+      if (!on() || e.target === input) return;
+      var tag = e.target && e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Enter") { if (tag === "BUTTON") return; e.preventDefault(); if (o.enter) o.enter(); return; }
+      if (e.key === "Backspace") { e.preventDefault(); return; }
+      if (e.key && e.key.length === 1 && /[a-z0-9]/i.test(e.key)) { e.preventDefault(); deliver(e.key, "key"); }
+    });
+
+    /* "Tap here to type": only while a word is waiting and the input has really lost focus */
+    function ensurePill() {
+      if (pill || !o.frame) return pill;
+      pill = doc.createElement("button");
+      pill.type = "button";
+      pill.className = "type-here";
+      pill.hidden = true;
+      pill.innerHTML = '<span class="type-here-key" aria-hidden="true">a</span>Tap here to type';
+      pill.addEventListener("click", function (e) { e.stopPropagation(); if (o.tap) o.tap(); focus(); });
+      o.frame.appendChild(pill);
+      return pill;
+    }
+    function refresh() {
+      clearTimeout(pillTimer);
+      /* give a tap that is about to refocus a moment, so the note never flickers */
+      pillTimer = setTimeout(function () {
+        var need = wants() && !focused();
+        if (need) ensurePill();
+        if (pill) pill.hidden = !need;
+        if (doc.body) doc.body.classList.toggle("typing-lost", need);
+      }, 160);
+    }
+    function focus() {
+      if (!on()) return;
+      try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (e2) {} }
+      /* iOS scrolls the page when an input takes focus; the session is fixed, so put it back */
+      if (root.scrollY) { try { root.scrollTo(0, 0); } catch (e) {} }
+      refresh();
+    }
+    function blur() { if (focused()) input.blur(); refresh(); }
+
+    input.addEventListener("focus", refresh);
+    input.addEventListener("focusout", refresh);
+    /* buttons keep the keyboard: no focus change on press (the click still fires), and focus is
+       put back in the same tap, which iOS accepts */
+    if (o.root) {
+      o.root.addEventListener("pointerdown", function (e) {
+        var b = e.target && e.target.closest && e.target.closest("button");
+        if (b && focused() && !b.hasAttribute("data-blur")) e.preventDefault();
+      });
+      o.root.addEventListener("click", function (e) {
+        if (o.tap) o.tap();
+        if (!wants()) return;
+        var b = e.target && e.target.closest && e.target.closest("button,a");
+        if (!b || !b.hasAttribute("data-blur")) focus();
+      });
+    }
+    function back() { if (on() && wants()) { focus(); } else refresh(); }
+    root.addEventListener("pageshow", back);
+    doc.addEventListener("visibilitychange", function () { if (doc.visibilityState === "visible") back(); });
+    root.addEventListener("focus", back);
+
+    /* the frame is exactly the visible part of the screen, above the on-screen keyboard */
+    function fit() {
+      var h = vv ? vv.height : root.innerHeight, top = vv ? Math.max(0, vv.offsetTop) : 0;
+      if (o.frame) { o.frame.style.height = Math.round(h) + "px"; o.frame.style.top = Math.round(top) + "px"; }
+      doc.documentElement.style.setProperty("--vvh", Math.round(h) + "px");
+      if (doc.body) doc.body.classList.toggle("short", h < 560);
+      if (o.resize) o.resize(h);
+    }
+    var fitT = 0;
+    function fitSoon() { fit(); clearTimeout(fitT); fitT = setTimeout(fit, 250); }
+    if (vv) { vv.addEventListener("resize", fitSoon); vv.addEventListener("scroll", fit); }
+    root.addEventListener("resize", fitSoon);
+    root.addEventListener("orientationchange", fitSoon);
+    fit();
+
+    return { focus: focus, blur: blur, refresh: refresh, fit: fit, deliver: deliver };
+  }
+
   root.Juice = Juice;
-  root.Games = { Trail: Trail, displayWords: displayWords, karaokeHtml: karaokeHtml, first: first, showFor: showFor, esc: esc };
+  root.Games = { Trail: Trail, Keys: Keys, displayWords: displayWords, karaokeHtml: karaokeHtml, first: first, showFor: showFor, esc: esc };
 })(typeof window !== "undefined" ? window : this);

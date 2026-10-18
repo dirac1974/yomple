@@ -193,51 +193,25 @@ function toggleSound() {
   paintSoundChip();
 }
 
-/* ---------- the hidden input ---------- */
-var sessionActive = false, onLetter = null, onEnter = null;
+/* ---------- the hidden input (games.js Keys does the iPad work) ---------- */
+var sessionActive = false, onLetter = null, onEnter = null, keys = null;
 function catcher() { return $("catcher"); }
-function focusCatcher() {
-  var c = catcher(); if (!c || !sessionActive) return;
-  try { c.focus({ preventScroll: true }); } catch (e) { try { c.focus(); } catch (e2) {} }
-}
-function blurCatcher() { var c = catcher(); if (c && document.activeElement === c) c.blur(); }
+function focusCatcher() { if (keys && sessionActive) keys.focus(); }
+function blurCatcher() { if (keys) keys.blur(); }
 function wireInput() {
-  var c = catcher(); if (!c) return;
-  c.addEventListener("input", function () {
-    var v = c.value; c.value = "";
-    if (!sessionActive) return;
-    for (var i = 0; i < v.length; i++) if (onLetter) onLetter(v.charAt(i));
-  });
-  c.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") { e.preventDefault(); if (onEnter) onEnter(); }
-  });
-  document.addEventListener("keydown", function (e) {
-    if (!sessionActive || e.target === c) return;
-    var t = e.target && e.target.tagName;
-    if (t === "INPUT" || t === "TEXTAREA") return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === "Enter") { if (e.target && e.target.tagName === "BUTTON") return; e.preventDefault(); if (onEnter) onEnter(); return; }
-    if (e.key && e.key.length === 1 && /[a-z0-9]/i.test(e.key)) { e.preventDefault(); if (onLetter) onLetter(e.key); }
-  });
-  /* a tap anywhere on the page brings the keyboard back */
-  $("screen-session").addEventListener("click", function (e) {
-    unlockAudio();
-    if (onLetter && (!e.target.closest || !e.target.closest("button,a"))) focusCatcher();
-  });
+  var c = catcher();
+  if (c && window.Games && Games.Keys) {
+    keys = Games.Keys({
+      input: c, frame: $("sess-frame"), root: $("screen-session"),
+      active: function () { return sessionActive; }, wants: function () { return !!onLetter; },
+      letter: function (ch) { if (onLetter) onLetter(ch); }, enter: function () { if (onEnter) onEnter(); },
+      tap: unlockAudio, resize: function () { if (S && S.trail && S.trail.reveal) S.trail.reveal(); }
+    });
+  }
+  /* sound may only start inside a tap: every touchend and click unlocks it (Tonight included) */
   document.addEventListener("touchend", unlockAudio, { passive: true });
   document.addEventListener("click", unlockAudio, true);
-  var vv = window.visualViewport;
-  function fit() {
-    var f = $("sess-frame"); if (!f) return;
-    var h = vv ? vv.height : window.innerHeight;
-    f.style.height = Math.round(h) + "px";
-    f.style.top = (vv ? Math.round(vv.offsetTop) : 0) + "px";
-    document.documentElement.style.setProperty("--vvh", Math.round(h) + "px");
-    document.body.classList.toggle("short", h < 560);
-  }
-  if (vv) { vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); }
-  window.addEventListener("resize", fit);
-  fit();
+  var t = $("btn-tonight"); if (t) t.addEventListener("touchend", unlockAudio, { passive: true });
 }
 
 /* ---------- session runner ---------- */
@@ -339,9 +313,12 @@ function actions(list) {
   onEnter = null;
   list.forEach(function (a) {
     var b = document.createElement("button");
-    b.className = "btn " + (a.cls || "");
+    b.className = "btn " + (a.cls || "") + (a.note ? " has-note" : "");
     b.textContent = a.label;
+    if (a.note) { var nt = document.createElement("small"); nt.className = "btn-note"; nt.textContent = a.note; b.appendChild(nt); }
     if (a.id) b.id = a.id;
+    if (a.keep === false) b.setAttribute("data-blur", "");
+    b.addEventListener("touchend", unlockAudio, { passive: true });
     b.onclick = function (e) {
       e.stopPropagation();
       unlockAudio();
@@ -352,7 +329,7 @@ function actions(list) {
     box.appendChild(b);
   });
 }
-function letters(fn) { onLetter = fn; }
+function letters(fn) { onLetter = fn; if (keys) keys.refresh(); }
 
 /* karaoke over one lantern (or the whole address) */
 function playLantern(id, root) {
@@ -436,15 +413,24 @@ function runLadder(id) {
     });
     S.trail = tr;
     letters(function (ch) { tr.key(ch); });
-    actions([
-      { label: "Hear it", fn: function () { if (rung >= 2 && !tr.done) heard++; playLantern(id, sp); } },
-      { label: "Peek", fn: function () { tr.peek(); } }
-    ]);
+    /* from rung 2 up, hearing it turns this pass into practice (it counts like a peek): say so on
+       the button before, and on the card after; never red, never a count */
+    var hear = { label: "Hear it", id: "btn-hear", note: rung >= 2 ? "(this pass becomes practice)" : "", fn: function () {
+      if (rung >= 2 && !tr.done) {
+        if (!heard) msg("Practice pass — the next one counts.", "soft practice");
+        heard++;
+      }
+      playLantern(id, sp);
+    } };
+    actions([hear, { label: "Peek", fn: function () { tr.peek(); } }]);
   }
   function finish(rung, st, heard) {
     letters(null);
+    /* a pass she heard is practice: it is recorded with the hearing as a peek (one rung down, never
+       evidence), but typed cleanly it is not a miss, so it never sets the lantern by the window */
+    var practice = heard > 0 && st.peeks === 0;
     var peeks = st.peeks + heard;
-    var ok = peeks === 0 && st.ratio >= 0.9;
+    var ok = st.peeks === 0 && st.ratio >= 0.9;
     var res = QF.record(id, { kind: "ladder", ok: ok, rung: rung, peeks: peeks, misses: st.misses, ratio: st.ratio }) || {};
     if (res.newlyLit) S.newlyLit.push(id);
     if (res.newlyShining) S.newlyShining.push(id);
@@ -454,7 +440,10 @@ function runLadder(id) {
       actions([{ label: "Go on", cls: "primary", fn: nextStep, enter: true }]);
       return;
     }
-    if (res.lit && (rung >= 4 || res.newlyLit)) {
+    if (practice && !res.newlyLit) {
+      paintRungs(res.rung, rung);
+      msg("That was a practice pass. The next one counts" + (res.rung < rung ? ", " + ["with every word showing", "with the small words hidden", "with first letters", "with key letters only", "from memory"][res.rung] : "") + ".", "soft practice");
+    } else if (res.lit && (rung >= 4 || res.newlyLit)) {
       lanternGlow(1); jumpMini();
       if (window.Juice) { Juice.whoomp(); }
       msg(res.newlyLit ? "Lantern " + L.n + " is lit." : "Still burning bright.", "warm");
@@ -462,10 +451,12 @@ function runLadder(id) {
       return;
     }
     var climbed = res.rung > rung, fell = res.rung < rung;
-    paintRungs(res.rung, rung);
-    if (climbed) { if (window.Juice) Juice.step(); msg("Up a rung: " + lowerFirst(RUNG_NAMES[res.rung]) + ".", "warm"); }
-    else if (fell) msg("One rung down, to " + lowerFirst(RUNG_NAMES[res.rung]) + ". Climb again.", "soft");
-    else msg("Once more on this rung.", "soft");
+    if (!practice) {
+      paintRungs(res.rung, rung);
+      if (climbed) { if (window.Juice) Juice.step(); msg("Up a rung: " + lowerFirst(RUNG_NAMES[res.rung]) + ".", "warm"); }
+      else if (fell) msg("One rung down, to " + lowerFirst(RUNG_NAMES[res.rung]) + ". Climb again.", "soft");
+      else msg("Once more on this rung.", "soft");
+    }
     if (passes >= 8) {
       actions([{ label: "Go on", cls: "primary", fn: nextStep, enter: true }]);
       return;
@@ -525,6 +516,7 @@ function runCold(ids) {
         actions([{ label: "Go on", cls: "primary", fn: one, enter: true }]);
       }
     });
+    S.trail = tr;
     letters(function (ch) { tr.key(ch); });
     actions([{ label: "Peek", fn: function () { tr.peek(); } }]);
   }
@@ -559,6 +551,7 @@ function runSeams(ids) {
         actions([{ label: "Go on", cls: "primary", fn: one, enter: true }]);
       }
     });
+    S.trail = tr;
     letters(function (ch) { tr.key(ch); });
     actions([{ label: "Peek", fn: function () { tr.peek(); } }]);
   }
