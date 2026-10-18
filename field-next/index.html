@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#0c1322" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>The Night Before</title>
+  <link rel="stylesheet" href="styles.css?v=qf2-1" />
+</head>
+<body>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- the one input that catches every letter she types (never re-rendered) -->
+  <input id="catcher" class="catcher" type="text" inputmode="text" enterkeyhint="next"
+         autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"
+         aria-label="Type the first letter of the next word" />
+
+  <!-- players -->
+  <section id="screen-profiles" class="screen screen-plain">
+    <div class="plain-wrap">
+      <header class="plain-head">
+        <p class="eyebrow">Quiet Field</p>
+        <h1>Who is walking tonight?</h1>
+        <p class="sub">The same household as the other Yomple worlds.</p>
+      </header>
+      <div id="profile-grid" class="profile-grid"></div>
+      <div class="paper-card" id="find-card">
+        <label for="find-user">Use a name I already have</label>
+        <input id="find-user" type="text" placeholder="the player name" maxlength="18" autocapitalize="off" autocorrect="off" spellcheck="false" />
+        <div class="btn-row">
+          <button class="btn" onclick="findHall()">Find</button>
+          <button class="btn primary" onclick="showCreateProfile()">New player</button>
+        </div>
+      </div>
+      <p class="parent-link"><a href="#" onclick="showRecover(); return false;">Parent: recover household</a></p>
+    </div>
+  </section>
+
+  <section id="screen-create" class="screen screen-plain">
+    <div class="plain-wrap">
+      <header class="plain-head"><p class="eyebrow">Quiet Field</p><h1>A new player</h1></header>
+      <div class="paper-card">
+        <label for="new-name">Name</label>
+        <input id="new-name" type="text" placeholder="e.g. Alex" maxlength="12" />
+        <label for="new-pin">Player PIN (optional)</label>
+        <input id="new-pin" type="password" inputmode="numeric" placeholder="4 digits" maxlength="6" />
+        <div class="btn-row">
+          <button class="btn primary" onclick="createProfile()">Start walking</button>
+          <button class="btn" onclick="showProfiles()">Back</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- home: the town at dusk -->
+  <section id="screen-home" class="screen screen-home">
+    <div id="scene" class="scene" aria-hidden="false"></div>
+    <header class="home-top">
+      <button id="current-kid-badge" class="kid-badge" onclick="showProfiles()" aria-label="Switch player"></button>
+      <nav class="home-tools" aria-label="More">
+        <button class="tool" id="sound-chip" onclick="toggleSound()" aria-label="Sound"></button>
+        <button class="tool" onclick="showPath()">Path</button>
+        <button class="tool" onclick="showParent()">Parent</button>
+      </nav>
+      <div class="home-title">
+        <h1>The Night Before</h1>
+        <p>Gettysburg, the evening of 18 November 1863</p>
+      </div>
+    </header>
+    <div class="placard" id="home-placard">
+      <p class="placard-lede" id="home-lede"></p>
+      <button class="tonight" id="btn-tonight" onclick="startTonight()">
+        <svg class="tonight-flame" viewBox="0 0 24 32" aria-hidden="true"><path d="M12 2C14 8 19 11 19 19a7 7 0 0 1-14 0c0-4 2-6 3.5-8C9 14 10 15 12 15c-1-4 0-9 0-13Z"/></svg>
+        <span>Tonight</span>
+      </button>
+      <p class="placard-note" id="home-note"></p>
+    </div>
+    <div class="placard placard-close" id="close-placard" hidden>
+      <p class="placard-lede" id="close-lede"></p>
+      <p class="placard-tease" id="close-tease"></p>
+      <button class="btn primary" id="close-home" onclick="finishClose()">Home</button>
+    </div>
+  </section>
+
+  <!-- the session runner -->
+  <section id="screen-session" class="screen screen-session">
+    <div class="sess-frame" id="sess-frame">
+      <div class="sess-top">
+        <button class="tool quiet" id="sess-leave" onclick="leaveSession()">Home</button>
+        <p class="sess-step" id="sess-step"></p>
+        <ol class="sess-dots" id="sess-dots" aria-hidden="true"></ol>
+      </div>
+      <div class="sess-body" id="sess-body">
+        <article class="sheet" id="sheet">
+          <div class="sheet-head">
+            <svg class="mini-lantern" id="mini-lantern" viewBox="0 0 40 56" aria-hidden="true">
+              <circle class="ml-glow" cx="20" cy="26" r="19"/>
+              <path class="ml-frame" d="M8 16L20 6L32 16Z"/>
+              <path class="ml-glass" d="M10 17H30L27.5 40H12.5Z"/>
+              <ellipse class="ml-flame" cx="20" cy="30" rx="3.4" ry="6"/>
+              <rect class="ml-frame" x="11" y="40" width="18" height="3.4"/>
+              <rect class="ml-frame" x="18.4" y="43" width="3.2" height="13"/>
+            </svg>
+            <div class="sheet-heading">
+              <p class="sheet-kicker" id="sheet-kicker"></p>
+              <h2 class="sheet-title" id="sheet-title"></h2>
+            </div>
+          </div>
+          <p class="hinge" id="sheet-hinge"></p>
+          <div class="speech" id="speech" aria-live="polite"></div>
+          <p class="sheet-msg" id="sheet-msg"></p>
+        </article>
+      </div>
+      <div class="sess-actions" id="sess-actions"></div>
+    </div>
+  </section>
+
+  <!-- the whole path, station by station -->
+  <section id="screen-path" class="screen screen-plain">
+    <div class="plain-wrap wide">
+      <header class="plain-head row">
+        <div><p class="eyebrow">The road to Cemetery Hill</p><h1>Eighteen lanterns</h1></div>
+        <button class="btn" onclick="showHome()">Home</button>
+      </header>
+      <div id="path-list" class="path-list"></div>
+    </div>
+  </section>
+
+  <!-- grown-ups -->
+  <section id="screen-parent" class="screen screen-plain">
+    <div class="plain-wrap">
+      <header class="plain-head row">
+        <div><p class="eyebrow">For grown-ups</p><h1 id="parent-name">Progress</h1></div>
+        <button class="btn" onclick="showHome()">Home</button>
+      </header>
+      <div class="paper-card">
+        <dl class="stats" id="stats-list"></dl>
+        <p class="note" id="stats-note"></p>
+      </div>
+      <div class="paper-card">
+        <h2>The Preamble</h2>
+        <p class="note">The Preamble path still lives in the first Quiet Field until it gets its own lanterns.</p>
+        <div class="btn-row"><a class="btn" id="preamble-link" href="../field/">Open the Preamble</a></div>
+      </div>
+      <div class="paper-card">
+        <h2>Household</h2>
+        <p class="note">Family code</p>
+        <p id="family-code-value" class="family-code">&mdash;</p>
+        <label for="parent-email">Parent email</label>
+        <input id="parent-email" type="email" placeholder="you@example.com" />
+        <div class="btn-row">
+          <button class="btn" onclick="saveParentEmail()">Save email</button>
+          <button class="btn" onclick="emailCodeToMyself()">Email this code to me</button>
+          <button class="btn" onclick="if(typeof cloudSaveActive==='function')cloudSaveActive(); toast('Saved');">Save now</button>
+        </div>
+      </div>
+      <div class="paper-card">
+        <h2>Sound</h2>
+        <div class="btn-row">
+          <button class="btn" onclick="toggleSound(); paintParent();" id="parent-sound">Sound</button>
+          <button class="btn" onclick="showProfiles()">Switch player</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-recover" class="screen screen-plain">
+    <div class="plain-wrap">
+      <header class="plain-head"><p class="eyebrow">For grown-ups</p><h1>Parent recovery</h1></header>
+      <div class="paper-card">
+        <label for="restore-code">Family code</label>
+        <input id="restore-code" type="text" placeholder="MAPLE-K7Q2" maxlength="16" style="text-transform:uppercase;" />
+        <div class="btn-row"><button class="btn primary" onclick="restoreFamily()">Restore household</button></div>
+        <label for="recover-email">Or the parent email on file</label>
+        <input id="recover-email" type="email" placeholder="you@example.com" />
+        <div class="btn-row"><button class="btn" onclick="sendEmailOtp()">Send one-time code</button></div>
+        <div id="otp-row" style="display:none;margin-top:12px;">
+          <input id="recover-otp" type="text" inputmode="numeric" maxlength="8" />
+          <div class="btn-row"><button class="btn primary" onclick="verifyEmailOtp()">Unlock household</button></div>
+        </div>
+        <div class="btn-row"><button class="btn" onclick="showProfiles()">Back</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- kept for sync.js / arrive.js, which hide it on the recovery screen -->
+  <nav id="main-nav" style="display:none;" aria-hidden="true"></nav>
+
+  <script src="yomple-stay.js?v=qf2-1"></script>
+  <script src="store.js?v=qf2-1"></script>
+  <script src="lanterns.js?v=qf2-1"></script>
+  <script src="memory.js?v=qf2-1"></script>
+  <script src="voice.js?v=qf2-1"></script>
+  <script src="scene.js?v=qf2-1"></script>
+  <script src="games.js?v=qf2-1"></script>
+  <script src="app.js?v=qf2-1"></script>
+  <script src="sync.js?v=qf2-1"></script>
+  <script src="arrive.js?v=qf2-1"></script>
+</body>
+</html>
