@@ -5,9 +5,10 @@
   <meta name="referrer" content="no-referrer" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Bloom N · Yomple 3D Worlds</title>
-  <meta name="description" content="Bloom N — 3D adventure worlds for Pre-Algebra, Algebra 1, Geometry Astrolabes, and Algebra 2." />
+  <meta name="description" content="Bloom N — 3D adventure realms inside Yomple: Frostwake Terra-Rigs and Oddroot Alchemy Sanctuary." />
   <link rel="icon" href="../favicon.svg" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles-oddroot.css" />
 </head>
 <body>
   <!-- ==================== SCREEN 1: BLOOM N PORTAL HUB ==================== -->
@@ -18,46 +19,71 @@
           <a id="yomple-back-link" class="pill-btn" href="/">← Yomple</a>
           <div class="brand-badge">
             <strong>Bloom<sup>n</sup></strong>
-            <span>3D Expedition Worlds</span>
+            <span>3D Expedition Realms</span>
           </div>
         </div>
 
         <div class="status-cluster">
           <button type="button" id="portal-who-btn" class="pill-btn">❄️ Explorer</button>
           <div class="stat-pill amber" title="Flux Shards">💎 <span id="portal-shards">30</span></div>
+          <div class="stat-pill teal" title="Explorer Rank"><span id="portal-architect-pill">✦ Lv. 1</span></div>
+          <div class="stat-pill amber" title="Weekly Sunshine"><span id="portal-sunshine-pill">☀️ 1/4</span></div>
           <div class="stat-pill teal" title="Household Northern Observatory">🔭 Tier <span id="portal-obs-tier">1</span></div>
           <button type="button" id="portal-garage-btn" class="pill-btn">🛠️ Garage</button>
+          <button type="button" id="portal-journal-btn" class="pill-btn">🐾 Sanctuary Journal</button>
           <button type="button" id="portal-mute-btn" class="pill-btn" aria-label="Toggle sound">🔊</button>
         </div>
       </header>
 
-      <!-- Featured Sub-Game #1: Frostwake -->
-      <article class="hero-card" id="hero-frostwake" style="background-image: url('assets/realm1-frostwake.jpg')">
-        <span class="live-tag">REALM 1 · PLAY NOW · 60FPS 3D</span>
-        <div class="hero-grid">
-          <div class="hero-copy">
-            <h1>Frostwake: Flux Terra-Rigs</h1>
-            <p>Carve real 3D snow rivers, shatter twin cryo-towers, align brass Sky-Astrolabes, and surf glowing holo-ramps.</p>
-            <div id="portal-rig-picker" class="rig-quick-row"></div>
-          </div>
-          <div class="hero-cta-box">
-            <button type="button" id="btn-launch-frostwake" class="play-btn-giant">▶ Drive Into Frostwake 3D</button>
-            <div id="portal-active-world-label" class="world-pill-sub">Active Frontier: W1 · Sub-Zero Core</div>
-          </div>
-        </div>
-      </article>
+      <!-- Active Frontier & Guardian Awakening Progress Bar -->
+      <div id="portal-zone-progress" class="zone-progress-card"></div>
 
-      <!-- Sister Sub-Games Inside Bloom N (#2 Oddroot, #3 Stardrift + Astrolabes, #4 Arc Bastion) -->
+      <!-- Dual Live 3D Realms (#1 Frostwake & #2 Oddroot Wilds) -->
+      <div class="dual-heroes-stack">
+        <!-- Featured Sub-Game #1: Frostwake -->
+        <article class="hero-card" id="hero-frostwake" data-realm="frostwake" style="background-image: url('assets/realm1-frostwake.jpg')">
+          <span class="live-tag">REALM 1 · PLAY NOW · 60FPS 3D</span>
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <h1>Frostwake: Flux Terra-Rigs</h1>
+              <p>Carve real 3D snow rivers, ram creeping rime-slimes, shatter twin cryo-towers, align brass Sky-Astrolabes, and surf glowing holo-ramps.</p>
+              <div id="portal-rig-picker" class="rig-quick-row"></div>
+            </div>
+            <div class="hero-cta-box">
+              <button type="button" id="btn-launch-frostwake" data-launch-realm="frostwake" class="play-btn-giant">▶ Drive Into Frostwake 3D</button>
+              <div id="portal-active-world-label" class="world-pill-sub">Active Frontier: Rank I · Sub-Zero Core</div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Featured Sub-Game #2: Oddroot Wilds -->
+        <article class="hero-card oddroot-hero" id="hero-oddroot" data-realm="oddroot" style="background-image: url('assets/realm2-oddroot.jpg')">
+          <span class="live-tag emerald">REALM 2 · PLAY NOW · 60FPS 3D</span>
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <h1>Oddroot Wilds: Alchemy Sanctuary</h1>
+              <p>Charge your Bramble-Plow Boar or soar on a Starlight Glide-Cape, brew zero-pair cauldrons, push back creeping blight, and hatch spirit creatures.</p>
+              <div id="portal-mount-picker" class="rig-quick-row"></div>
+            </div>
+            <div class="hero-cta-box">
+              <button type="button" id="btn-launch-oddroot" data-launch-realm="oddroot" class="play-btn-giant emerald-cta">▶ Explore Oddroot 3D</button>
+              <div id="portal-oddroot-world-label" class="world-pill-sub">Sanctuary Frontier: Rank I · Sub-Zero Core</div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Sister Sub-Games Inside Bloom N (#3 Stardrift + Astrolabes, #4 Arc Bastion) -->
       <div class="sec-head">
-        <h2>Worlds Inside Bloom<sup>n</sup></h2>
-        <span>One shared mastery brain across every realm</span>
+        <h2>More Realms Inside Bloom<sup>n</sup></h2>
+        <span>One shared mastery brain &amp; live 2-player household co-op across realms</span>
       </div>
       <div id="sister-realms-grid" class="realms-grid"></div>
 
       <!-- 3-Strand Mastery Constellation (W0 - W7) -->
       <div class="sec-head">
         <h2>Mastery Constellation</h2>
-        <span>Tap any open frontier to steer Frostwake's 3D gates</span>
+        <span>Tap any open rank to steer your 3D gates &amp; sanctuary shrines</span>
       </div>
       <div id="worlds-constellation" class="worlds-strip"></div>
 
@@ -87,7 +113,7 @@
               <strong id="rec-subzero">0</strong>
             </div>
             <div class="rec-box">
-              <span>Spirit-Foxes Woken</span>
+              <span>Creatures &amp; Foxes</span>
               <strong id="rec-foxes">0</strong>
             </div>
           </div>
@@ -97,7 +123,7 @@
       <!-- Unspoken 3D Mysteries -->
       <div class="sec-head">
         <h2>Sanctuary Mysteries</h2>
-        <span>Hidden wonders woken inside the valley</span>
+        <span>Hidden wonders woken inside the realms</span>
       </div>
       <div id="mysteries-strip" class="mysteries-row"></div>
 
@@ -108,15 +134,18 @@
   </section>
 
   <!-- ==================== SCREEN 2: FROSTWAKE 60FPS 3D WORLD ==================== -->
-  <section id="screen-frostwake" class="screen">
+  <section id="screen-frostwake" class="screen" data-realm="frostwake">
     <canvas id="frostwake-canvas"></canvas>
 
     <div class="hud-top">
       <div class="hud-group">
         <button type="button" id="hud-exit-btn" class="hud-btn">← Bloomⁿ Hub</button>
-        <button type="button" id="hud-world-btn" class="hud-btn gold">W1 · Sub-Zero Core ▾</button>
+        <button type="button" id="hud-world-btn" class="hud-btn gold">Rank I · Sub-Zero Core ▾</button>
+        <div id="fw-zone-bar" class="hud-zone-pill"></div>
       </div>
       <div class="hud-group">
+        <div id="fw-partner-pill" class="partner-pill" style="display:none"></div>
+        <button type="button" id="fw-flare-btn" class="hud-btn flare-btn">🎆 Flare</button>
         <div class="hud-btn gold">💎 <span id="hud-shards">30</span></div>
         <div class="hud-btn">⚡ <span id="hud-streak">0</span></div>
         <button type="button" id="hud-garage-btn" class="hud-btn">🛠️ Garage</button>
@@ -139,13 +168,18 @@
       </div>
     </div>
 
-    <!-- Bottom-Right Spatial 3D Encounter Dock -->
+    <!-- Shared Bottom-Right Spatial 3D Encounter Dock (moves into active 3D realm) -->
     <aside id="encounter-dock" class="encounter-dock" aria-live="polite">
       <div class="enc-header">
         <span id="enc-prompt" class="enc-prompt">Balance both crystal towers</span>
-        <span id="enc-node-tag" class="enc-world-tag">W1.2</span>
+        <div class="enc-header-right">
+          <button type="button" id="btn-show-trick" class="trick-toggle-btn">🦊 Show Trick</button>
+          <span id="enc-node-tag" class="enc-world-tag">W1.2</span>
+        </div>
       </div>
       <div id="enc-equation" class="enc-equation">n + 100 = 100 - 200</div>
+      <div id="enc-visual-clusters" class="visual-clusters-box" style="display:none"></div>
+      <div id="enc-trick-card" class="trick-holo-card" style="display:none"></div>
       <div id="enc-blueprint" class="blueprint-ribbon"></div>
       <div id="enc-beams" class="beam-row"></div>
 
@@ -162,6 +196,49 @@
     </aside>
   </section>
 
+  <!-- ==================== SCREEN 3: ODDROOT WILDS 60FPS 3D WORLD ==================== -->
+  <section id="screen-oddroot" class="screen" data-realm="oddroot">
+    <canvas id="oddroot-canvas"></canvas>
+
+    <div class="hud-top">
+      <div class="hud-group">
+        <button type="button" id="oddroot-exit-btn" class="hud-btn">← Bloomⁿ Hub</button>
+        <button type="button" id="oddroot-world-btn" class="hud-btn gold">Rank I · Sub-Zero Core ▾</button>
+        <div id="or-zone-bar" class="hud-zone-pill"></div>
+      </div>
+      <div class="hud-group">
+        <div id="or-partner-pill" class="partner-pill" style="display:none"></div>
+        <button type="button" id="or-flare-btn" class="hud-btn flare-btn">🎆 Flare</button>
+        <button type="button" id="oddroot-mount-btn" class="mount-toggle-pill is-boar">🐗 Bramble-Boar</button>
+        <div class="siphon-orb-strip" title="Harvested Siphon Orbs">
+          <span class="orb-chip sun">☀️ <b id="orb-sun-count">0</b></span>
+          <span class="orb-chip frost">❄️ <b id="orb-frost-count">0</b></span>
+          <span class="orb-chip pod">🌿 <b id="orb-pod-count">0</b></span>
+          <span class="orb-chip puff">🫧 <b id="orb-puff-count">0</b></span>
+        </div>
+        <div class="hud-btn gold">💎 <span id="oddroot-shards">30</span></div>
+        <div class="hud-btn">⚡ <span id="oddroot-streak">0</span></div>
+        <button type="button" id="oddroot-workshop-btn" class="hud-btn">🛠️ Workshop</button>
+        <button type="button" id="oddroot-journal-btn" class="hud-btn">🐾 Journal</button>
+        <button type="button" id="oddroot-siphon-btn" class="hud-btn">🌀 Siphon Pulse</button>
+        <button type="button" id="oddroot-mute-btn" class="hud-btn" aria-label="Toggle sound">🔊</button>
+      </div>
+    </div>
+
+    <div id="oddroot-surge-banner" class="surge-banner or-surge-banner">✨ STARLIGHT ELIXIR OVERDRIVE · 1.5× FLUX ✨</div>
+
+    <!-- Bottom-Left Oddroot Tactile Thumbstick & 1-Tap Shrine Autopilot -->
+    <div class="drive-cluster">
+      <div id="oddroot-joy-zone" class="joy-zone" aria-label="Sanctuary steering joystick">
+        <div id="oddroot-joy-knob" class="joy-knob"></div>
+      </div>
+      <div class="drive-quick-col">
+        <button type="button" id="oddroot-autopilot-btn" class="drive-pill">🧭 Cruise to Shrine</button>
+        <button type="button" id="oddroot-boost-btn" class="drive-pill boost">✨ Glide Boost</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ==================== MODAL: PLAYER SWITCHER ==================== -->
   <div id="modal-who" class="modal-backdrop">
     <div class="modal-sheet">
@@ -170,7 +247,7 @@
         <button type="button" class="close-btn" data-close="modal-who">Done</button>
       </div>
       <p style="margin:0 0 8px;color:var(--ink-soft);font-size:0.9rem;font-weight:700">
-        Connected directly to your Yomple household.
+        Connected directly to your Yomple household — play solo or side-by-side in live 3D!
       </p>
       <div id="who-roster" class="roster-faces"></div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -186,18 +263,37 @@
     </div>
   </div>
 
-  <!-- ==================== MODAL: 3D RIG UPGRADE GARAGE ==================== -->
+  <!-- ==================== MODAL: 3D RIG GARAGE & SANCTUARY WORKSHOP ==================== -->
   <div id="modal-garage" class="modal-backdrop">
     <div class="modal-sheet">
       <div class="modal-top">
-        <h2>🛠️ Terra-Rig Garage</h2>
+        <h2 id="garage-modal-title">🛠️ Terra-Rig Garage &amp; Sanctuary Workshop</h2>
         <button type="button" class="close-btn" data-close="modal-garage">Close</button>
       </div>
       <p style="margin:0 0 10px;color:var(--ink-soft);font-size:0.88rem;font-weight:700">
-        Switch chassis anytime — upgrades apply to both rigs! Available: <strong style="color:var(--amber)">💎 <span id="garage-shards">30</span></strong>
+        Switch rigs &amp; mounts anytime — upgrades transform live 3D terrain &amp; opposition! Available: <strong style="color:var(--amber)">💎 <span id="garage-shards">30</span></strong>
       </p>
-      <div id="garage-chassis-row" class="rig-quick-row" style="margin-bottom:14px"></div>
+      <div id="garage-chassis-row" class="rig-quick-row" style="margin-bottom:10px"></div>
+      <div id="garage-mounts-row" class="rig-quick-row" style="margin-bottom:14px"></div>
+      <div class="garage-subhead">❄️ Frostwake Rig Upgrades</div>
       <div id="garage-upgrades-grid" class="upgrade-list"></div>
+      <div class="garage-subhead" style="margin-top:14px">🌿 Oddroot Sanctuary Upgrades</div>
+      <div id="garage-oddroot-upgrades-grid" class="upgrade-list"></div>
+      <div id="garage-borrow-box" class="borrow-banner-box"></div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: SANCTUARY EVOLUTION JOURNAL ==================== -->
+  <div id="modal-journal" class="modal-backdrop oddroot-modal">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <h2>🐾 Sanctuary Evolution Journal</h2>
+        <button type="button" class="close-btn" data-close="modal-journal">Close</button>
+      </div>
+      <p style="margin:0 0 8px;color:var(--ink-soft);font-size:0.88rem;font-weight:700">
+        Spirit creatures hatched &amp; evolving across Oddroot Wilds and Frostwake Valley.
+      </p>
+      <div id="journal-grid" class="sanctuary-journal-grid"></div>
     </div>
   </div>
 
@@ -216,7 +312,7 @@
   <div id="modal-worlds" class="modal-backdrop">
     <div class="modal-sheet">
       <div class="modal-top">
-        <h2>Choose Active Valley Frontier</h2>
+        <h2>Choose Active Frontier Rank</h2>
         <button type="button" class="close-btn" data-close="modal-worlds">Close</button>
       </div>
       <div id="modal-worlds-grid" class="worlds-strip"></div>
@@ -227,7 +323,7 @@
   <div id="modal-grownups" class="modal-backdrop">
     <div class="modal-sheet">
       <div class="modal-top">
-        <h2>For Grown-Ups · Learning & Household</h2>
+        <h2>For Grown-Ups · Learning &amp; Household</h2>
         <button type="button" class="close-btn" data-close="modal-grownups">Close</button>
       </div>
       <div id="grownups-content"></div>

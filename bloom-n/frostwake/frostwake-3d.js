@@ -1,34 +1,154 @@
 /**
- * Frostwake: Flux Terra-Rigs — 60fps Three.js Deformable-Snow & 3D Math Encounter Engine
- * Built for phones, tablets, and desktops with zero external network asset dependencies.
+ * Frostwake: Flux Terra-Rigs — 60fps Three.js Deformable-Snow, Active Opposition,
+ * 2-Player Live Co-Op & 3D Spatial Encounter Engine
+ * Built for phones, tablets, desktops, and headless Node tests with zero external CDN assets.
  */
 
 import * as THREE from "../vendor/three.module.min.js";
-import { RIG_CHASSIS } from "../core/engine.js";
+import { FrostwakeAudio } from "./audio.js";
+import { FrostwakeOpposition3D, HARPOON_GRAPPLE_RANGE } from "./opposition-3d.js";
+import {
+  buildEncounter3DGroup,
+  updateEncounterDialPreview,
+  triggerTwinBeamEncounterFX,
+  applyEncounterCommitFX,
+  updateEncounterAnimations,
+  buildQuadrantWhaleBeacons,
+  updateQuadrantWhaleBeacons,
+} from "./encounters-3d.js";
+import { GhostRigController } from "./ghost-rig.js";
+import { FrostwakeCoop3D } from "./coop-3d.js";
 
-const VALLEY_SIZE = 156;
-const VALLEY_HALF = VALLEY_SIZE / 2;
-const GRID_SEGMENTS = 112;
+export const VALLEY_SIZE = 184;
+export const VALLEY_HALF = VALLEY_SIZE / 2;
+export const GRID_SEGMENTS = 128;
+export const MAX_VALLEY_RADIUS = 68;
+const MAX_SNOW_LILIES = 240;
+const MAX_WOKEN_FOXES = 12;
+
+const FROSTWAKE_CHASSIS_SPECS = [
+  {
+    id: "terra_dozer",
+    plowWidth: 3.1,
+    topSpeed: 17.5,
+    turnRate: 2.5,
+    primaryHex: 0xf4a62a,
+    secondaryHex: 0x24344d,
+    glowHex: 0x45f0df,
+  },
+  {
+    id: "aurora_sled",
+    plowWidth: 2.9,
+    topSpeed: 19.2,
+    turnRate: 3.0,
+    primaryHex: 0x5ce1e6,
+    secondaryHex: 0x1c2b4b,
+    glowHex: 0xf7d06b,
+  },
+];
+
+const GUARDIAN_WORLD_COLORS = {
+  W0: 0x6be6d3,
+  W1: 0x4ad8ff,
+  W2: 0x7ee081,
+  W3: 0xf7b955,
+  W4: 0x38d9c0,
+  W5: 0xf5c451,
+  W6: 0xff9b71,
+  W7: 0x66e3ff,
+};
+
+function finiteOr(val, fallback = 0) {
+  if (typeof val === "number") return Number.isFinite(val) ? val : fallback;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return fallback;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  return fallback;
+}
+
+function clampFinite(val, min, max, fallback = 0) {
+  const n = finiteOr(val, NaN);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function wrapAngleDiff(target, current) {
+  const a0 = Math.atan2(Math.sin(finiteOr(current, 0)), Math.cos(finiteOr(current, 0)));
+  const b0 = Math.atan2(Math.sin(finiteOr(target, 0)), Math.cos(finiteOr(target, 0)));
+  const rawDiff = b0 - a0;
+  return Math.atan2(Math.sin(rawDiff), Math.cos(rawDiff));
+}
+
+function round3(n) {
+  return Math.round(finiteOr(n, 0) * 1000) / 1000;
+}
 
 export class FrostwakeWorld3D {
-  constructor({ canvas, audio, onSnowCleared, onApproachGate, onLeaveGate, onMysteryFound }) {
+  constructor(opts = {}) {
+    const safeOpts = opts && typeof opts === "object" ? opts : {};
+    const {
+      canvas = null,
+      audio = null,
+      onWorldActivity = null,
+      onSnowCleared = null,
+      onApproachGate = null,
+      onLeaveGate = null,
+      onMysteryFound = null,
+      onCreatureHatched = null,
+      onGaragePadEntered = null,
+      onOppositionEvent = null,
+      onSharedCoinGrabbed = null,
+    } = safeOpts;
+
     this.canvas = canvas;
-    this.audio = audio;
-    this.onSnowCleared = onSnowCleared || (() => {});
-    this.onApproachGate = onApproachGate || (() => {});
-    this.onLeaveGate = onLeaveGate || (() => {});
-    this.onMysteryFound = onMysteryFound || (() => {});
+    this.audio = audio && typeof audio === "object" ? audio : new FrostwakeAudio();
+    this._onWorldActivityFn = typeof onWorldActivity === "function" ? onWorldActivity : null;
+    this._onSnowClearedFn = typeof onSnowCleared === "function" ? onSnowCleared : null;
+    this.onApproachGate = typeof onApproachGate === "function" ? onApproachGate : () => {};
+    this.onLeaveGate = typeof onLeaveGate === "function" ? onLeaveGate : () => {};
+    this.onMysteryFound = typeof onMysteryFound === "function" ? onMysteryFound : () => {};
+    this.onCreatureHatched = typeof onCreatureHatched === "function" ? onCreatureHatched : () => {};
+    this.onGaragePadEntered =
+      typeof onGaragePadEntered === "function" ? onGaragePadEntered : () => {};
+    this.onOppositionEvent =
+      typeof onOppositionEvent === "function" ? onOppositionEvent : null;
+    this.onSharedCoinGrabbed =
+      typeof onSharedCoinGrabbed === "function" ? onSharedCoinGrabbed : () => {};
+
+    // Legacy snow callback alias preserved
+    this.onSnowCleared = (m2, bonusFlux) =>
+      this._emitWorldActivity(m2, bonusFlux, "snowClearedM2");
 
     this.running = false;
-    this.webglAvailable = true;
+    this.webglAvailable = false;
+    this.renderer = null;
+    this._rafId = null;
     this.clock = new THREE.Clock();
+    this.simElapsed = 0;
+    this.encounterDockOpen = false;
+    this._boundProgressRef = null;
 
-    // Rig physics state
+    const rawDpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
+    this.maxDpr = clampFinite(rawDpr, 0.85, 2, 1);
+    this.currentDpr = this.maxDpr;
+    this._dprFrames = 0;
+    this._dprSec = 0;
+    this._dprCooldown = 0;
+
     this.rigState = {
       x: 0,
       y: 0,
       z: 22,
-      heading: Math.PI, // facing -Z (north into the valley)
+      vx: 0,
+      vz: 0,
+      pitch: 0,
+      roll: 0,
+      lateralSlip: 0,
+      distTraveled: 0,
+      heading: 0, // 0 rad faces -Z north into the valley
       speed: 0,
       steerInput: 0,
       throttleInput: 0,
@@ -37,7 +157,13 @@ export class FrostwakeWorld3D {
       upgrades: [],
       observatoryTier: 1,
       inSurge: false,
+      inPermafrost: false,
+      crossRealm: {},
+      borrowedMeta: { active: false, owner: null, displayName: null },
     };
+
+    this.crossRealmState = {};
+    this.borrowedToyState = { active: false, owner: null, displayName: null };
 
     this.autopilotTarget = null;
     this.activeGateSlot = null;
@@ -45,93 +171,216 @@ export class FrostwakeWorld3D {
     this.moonDwellSec = 0;
     this.carvedCountAccum = 0;
 
-    // Cinematic action animations (ram, ramp surf, laser slice, ice-jack nudge, sky-whale)
+    this.garagePadArmed = true;
+    this.garagePadCooldown = 0;
+    this.guardianAwakeTimer = 0;
+    this.guardianAwakeWorldId = null;
+    this.guardianAwakeningCount = 0;
+
     this.rigAnim = null;
     this.laserBeams = [];
-    this.shatterShards = [];
-    this.snowSpray = [];
     this.wokenFoxes = [];
     this.gateSlots = [];
     this.whaleTimer = 0;
+    this._quadrantWhaleTriggered = false;
+    this.lastGhostWaveResult = null;
+
+    this._tmpMat4 = new THREE.Matrix4();
+    this._tmpPos = new THREE.Vector3();
+    this._tmpQuat = new THREE.Quaternion();
+    this._tmpScale = new THREE.Vector3();
+    this._tmpEuler = new THREE.Euler();
+    this._camTargetVec = new THREE.Vector3();
 
     this._initScene();
   }
 
+  _emitWorldActivity(amount, bonusFlux, metricKey = "snowClearedM2") {
+    if (this._onWorldActivityFn) {
+      this._onWorldActivityFn(amount, bonusFlux, metricKey);
+    } else if (this._onSnowClearedFn && (metricKey === "snowClearedM2" || bonusFlux > 0)) {
+      this._onSnowClearedFn(metricKey === "snowClearedM2" ? amount : 0, bonusFlux);
+    }
+  }
+
+  _emitOppositionReward({
+    kind,
+    shardsEarned = 0,
+    message = "",
+    metricKey = null,
+    metricDelta = 1,
+  }) {
+    if (this.onOppositionEvent) {
+      this.onOppositionEvent({ kind, shardsEarned, message });
+      if (metricKey && this._onWorldActivityFn) {
+        this._onWorldActivityFn(metricDelta, 0, metricKey);
+      }
+    } else {
+      this._emitWorldActivity(
+        metricKey === "snowClearedM2" ? metricDelta : 0,
+        shardsEarned,
+        metricKey || "rimeCreepsCleared"
+      );
+    }
+  }
+
   _baseHeight(x, z) {
-    const r = Math.hypot(x, z);
-    // Flat central Moon Sanctuary around (0,0), gentle rolling alpine bowl outward
+    const sx = clampFinite(x, -VALLEY_SIZE, VALLEY_SIZE, 0);
+    const sz = clampFinite(z, -VALLEY_SIZE, VALLEY_SIZE, 0);
+    const r = Math.hypot(sx, sz);
     const centerFlat = Math.min(1, Math.max(0, (r - 10) / 18));
-    const bowl = Math.pow(Math.max(0, r - 48) / 28, 2) * 3.2;
-    const waves = (Math.sin(x * 0.055) * Math.cos(z * 0.055) * 1.15 + Math.sin(z * 0.03) * 0.6) * centerFlat;
-    return waves + bowl;
+    const bowl = Math.pow(Math.max(0, r - 56) / 26, 2) * 3.4;
+    const waves =
+      (Math.sin(sx * 0.055) * Math.cos(sz * 0.055) * 1.1 + Math.sin(sz * 0.03) * 0.55) *
+      centerFlat;
+    const dGarageSq = (sx + 24) * (sx + 24) + (sz - 16) * (sz - 16);
+    const garageBlend = 1 - 0.65 * Math.exp(-dGarageSq / 38);
+    return (waves + bowl) * garageBlend;
+  }
+
+  _buildToonRamp() {
+    const stops = new Uint8Array([
+      42, 68, 98, 255,
+      98, 145, 188, 255,
+      180, 222, 245, 255,
+      250, 253, 255, 255,
+    ]);
+    const tex = new THREE.DataTexture(stops, 4, 1, THREE.RGBAFormat);
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    return tex;
   }
 
   _initScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c2136);
-    this.scene.fog = new THREE.FogExp2(0x102b44, 0.0068);
+    this.scene.fog = new THREE.FogExp2(0x102b44, 0.0056);
 
-    this.camera = new THREE.PerspectiveCamera(52, 16 / 9, 0.4, 340);
+    this.camera = new THREE.PerspectiveCamera(52, 16 / 9, 0.4, 380);
     this.camera.position.set(0, 11, 36);
 
-    try {
-      this.renderer = new THREE.WebGLRenderer({
-        canvas: this.canvas,
-        antialias: true,
-        powerPreference: "high-performance",
-      });
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = 1.08;
-    } catch (_) {
-      this.webglAvailable = false;
-      return;
+    this.renderer = null;
+    this.webglAvailable = false;
+    if (this.canvas && typeof this.canvas.getContext === "function") {
+      try {
+        this.renderer = new THREE.WebGLRenderer({
+          canvas: this.canvas,
+          antialias: true,
+          powerPreference: "high-performance",
+        });
+        this.renderer.setPixelRatio(this.currentDpr);
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.08;
+        this.webglAvailable = true;
+      } catch (_) {
+        this.renderer = null;
+        this.webglAvailable = false;
+      }
     }
 
-    // Crisp Nordic twilight + warm sunlit alpine rim lighting
     const hemi = new THREE.HemisphereLight(0xbbeeff, 0x1b3b56, 1.25);
-    this.scene.add(hemi);
-
     const sun = new THREE.DirectionalLight(0xfff1d0, 1.55);
     sun.position.set(38, 62, 34);
-    this.scene.add(sun);
-
     const auroraFill = new THREE.DirectionalLight(0x3bf0c5, 0.55);
-    auroraFill.position.set(-40, 35, -50);
-    this.scene.add(auroraFill);
+    auroraFill.position.set(-40, 35, -56);
+    this.scene.add(hemi, sun, auroraFill);
 
+    this.toonRamp = this._buildToonRamp();
     this._buildAuroraSky();
     this._buildDeformableSnow();
+    this._buildSnowLilyPool();
     this._buildMoonSanctuaryAndObservatory();
+    this._buildFrostGuardian();
+    this._buildLiftGaragePad();
     this._buildAlpinePines();
     this._buildSnowfallParticles();
     this._buildSprayAndShardPools();
     this._buildSkyWhale();
+    this.quadrantBeacons = buildQuadrantWhaleBeacons(this.scene, (x, z) => this._baseHeight(x, z));
+
+    this.opposition = new FrostwakeOpposition3D({
+      scene: this.scene,
+      baseHeightFn: (x, z) => this._baseHeight(x, z),
+      createFoxMeshFn: () => this._createSpiritFoxMesh(),
+      tintSnowDiscFn: (x, z, r, mode) => this._tintSnowDisc(x, z, r, mode),
+      spawnCrystalBurstFn: (x, y, z, n) => this._spawnCrystalBurst(x, y, z, n),
+      audio: this.audio,
+      emitRewardFn: (payload) => this._emitOppositionReward(payload),
+    });
+
+    this.ghostController = new GhostRigController(this.scene, (x, z) => this._baseHeight(x, z));
+
+    this.coop = new FrostwakeCoop3D({
+      scene: this.scene,
+      baseHeightFn: (x, z) => this._baseHeight(x, z),
+      createFoxMeshFn: () => this._createSpiritFoxMesh(),
+      spawnCrystalBurstFn: (x, y, z, n) => this._spawnCrystalBurst(x, y, z, n),
+      audio: this.audio,
+      onSharedCoinGrabbed: (coinId) => this.onSharedCoinGrabbed(coinId),
+    });
+    this.remotePartners = this.coop.remotePartners;
+    this.sharedCoins = this.coop.sharedCoins;
+
     this.rebuildRig(this.rigState.chassisId, this.rigState.upgrades);
 
     this.resize();
-    this._onResize = () => this.resize();
-    window.addEventListener("resize", this._onResize);
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      this._onResize = () => this.resize();
+      window.addEventListener("resize", this._onResize);
+    }
   }
 
   resize() {
-    if (!this.renderer || !this.canvas) return;
-    const rect = this.canvas.parentElement
-      ? this.canvas.parentElement.getBoundingClientRect()
-      : { width: window.innerWidth, height: window.innerHeight };
-    const w = Math.max(300, rect.width || window.innerWidth);
-    const h = Math.max(260, rect.height || window.innerHeight);
+    if (!this.camera) return;
+    const winW = typeof window !== "undefined" && window.innerWidth ? window.innerWidth : 1280;
+    const winH = typeof window !== "undefined" && window.innerHeight ? window.innerHeight : 720;
+    const rect =
+      this.canvas && this.canvas.parentElement && typeof this.canvas.parentElement.getBoundingClientRect === "function"
+        ? this.canvas.parentElement.getBoundingClientRect()
+        : { width: winW, height: winH };
+    const w = Math.max(300, rect.width || winW);
+    const h = Math.max(260, rect.height || winH);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h, false);
+    if (this.renderer && this.webglAvailable) {
+      this.renderer.setSize(w, h, false);
+    }
+  }
+
+  _recordFrameSample(rawDtSec) {
+    if (!(rawDtSec > 0 && rawDtSec < 0.25)) return;
+    this._dprFrames += 1;
+    this._dprSec += rawDtSec;
+    if (this._dprCooldown > 0) {
+      this._dprCooldown = Math.max(0, this._dprCooldown - rawDtSec);
+    }
+    if (this._dprFrames < 45) return;
+
+    const avgFps = this._dprFrames / this._dprSec;
+    this._dprFrames = 0;
+    this._dprSec = 0;
+
+    if (avgFps < 50 && this.currentDpr > 0.85) {
+      this.currentDpr = Math.max(0.85, Math.round((this.currentDpr - 0.25) * 100) / 100);
+      if (this.renderer && this.webglAvailable) {
+        this.renderer.setPixelRatio(this.currentDpr);
+      }
+      this._dprCooldown = 2.5;
+    } else if (avgFps > 58.5 && this.currentDpr < this.maxDpr && this._dprCooldown <= 0) {
+      this.currentDpr = Math.min(this.maxDpr, Math.round((this.currentDpr + 0.15) * 100) / 100);
+      if (this.renderer && this.webglAvailable) {
+        this.renderer.setPixelRatio(this.currentDpr);
+      }
+      this._dprCooldown = 4.0;
+    }
   }
 
   _buildAuroraSky() {
-    // Glowing aurora ribbons waving high across the northern horizon
     this.auroraRibbons = [];
     const colors = [0x3bf0c5, 0x5ce1e6, 0xffd166];
     for (let i = 0; i < 3; i++) {
-      const geo = new THREE.PlaneGeometry(190, 26, 36, 4);
+      const geo = new THREE.PlaneGeometry(210, 28, 36, 4);
       const mat = new THREE.MeshBasicMaterial({
         color: colors[i],
         transparent: true,
@@ -141,26 +390,30 @@ export class FrostwakeWorld3D {
         blending: THREE.AdditiveBlending,
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set((i - 1) * 18, 46 + i * 7, -88 - i * 10);
+      mesh.position.set((i - 1) * 18, 48 + i * 7, -96 - i * 10);
       mesh.rotation.x = 0.22;
       this.scene.add(mesh);
-      this.auroraRibbons.push({ mesh, geo, phase: i * 1.7 });
+      this.auroraRibbons.push({ mesh, geo, mat, baseOpacity: 0.18 - i * 0.03, phase: i * 1.7 });
     }
 
-    // Crisp starfield dome
     const starCount = 320;
     const pos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i++) {
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.random() * Math.PI * 0.44;
-      const rad = 185;
+      const theta = ((i * 9301 + 49297) % 233280) / 233280 * Math.PI * 2;
+      const phi = (((i * 49297 + 9301) % 233280) / 233280) * Math.PI * 0.44;
+      const rad = 195;
       pos[i * 3] = Math.cos(theta) * Math.sin(phi) * rad;
       pos[i * 3 + 1] = Math.cos(phi) * rad + 12;
       pos[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * rad;
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    const starMat = new THREE.PointsMaterial({ color: 0xeef9ff, size: 1.35, transparent: true, opacity: 0.85 });
+    const starMat = new THREE.PointsMaterial({
+      color: 0xeef9ff,
+      size: 1.35,
+      transparent: true,
+      opacity: 0.85,
+    });
     this.scene.add(new THREE.Points(starGeo, starMat));
   }
 
@@ -170,7 +423,7 @@ export class FrostwakeWorld3D {
 
     const count = geo.attributes.position.count;
     this.snowBaseY = new Float32Array(count);
-    this.snowCarve = new Float32Array(count); // 0 = fresh powder, 1 = fully carved stream
+    this.snowCarve = new Float32Array(count);
     const colors = new Float32Array(count * 3);
 
     const posAttr = geo.attributes.position;
@@ -180,7 +433,6 @@ export class FrostwakeWorld3D {
       const y = this._baseHeight(x, z);
       this.snowBaseY[i] = y;
       posAttr.setY(i, y + 0.42);
-      // Sparkling crisp snow color with subtle elevation tint
       const shade = 0.91 + Math.min(0.08, y * 0.015);
       colors[i * 3] = shade * 0.92;
       colors[i * 3 + 1] = shade * 0.97;
@@ -192,7 +444,7 @@ export class FrostwakeWorld3D {
 
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.58,
+      roughness: 0.56,
       metalness: 0.06,
     });
 
@@ -200,7 +452,84 @@ export class FrostwakeWorld3D {
     this.scene.add(this.snowMesh);
   }
 
-  resetFreshSnow() {
+  _tintSnowDisc(wx, wz, radius, mode = "permafrost") {
+    if (!this.snowMesh) return;
+    const geo = this.snowMesh.geometry;
+    const posAttr = geo.attributes.position;
+    const colAttr = geo.attributes.color;
+    const cellSize = VALLEY_SIZE / GRID_SEGMENTS;
+    const gxCenter = Math.round(((wx + VALLEY_HALF) / VALLEY_SIZE) * GRID_SEGMENTS);
+    const gzCenter = Math.round(((wz + VALLEY_HALF) / VALLEY_SIZE) * GRID_SEGMENTS);
+    const cellSpan = Math.ceil((radius + 1.0) / cellSize);
+
+    let dirty = false;
+    for (
+      let gz = Math.max(0, gzCenter - cellSpan);
+      gz <= Math.min(GRID_SEGMENTS, gzCenter + cellSpan);
+      gz++
+    ) {
+      for (
+        let gx = Math.max(0, gxCenter - cellSpan);
+        gx <= Math.min(GRID_SEGMENTS, gxCenter + cellSpan);
+        gx++
+      ) {
+        const idx = gz * (GRID_SEGMENTS + 1) + gx;
+        const vx = posAttr.getX(idx);
+        const vz = posAttr.getZ(idx);
+        const dist = Math.hypot(vx - wx, vz - wz);
+        if (dist <= radius) {
+          const blend = 1 - dist / radius;
+          if (mode === "permafrost") {
+            posAttr.setY(idx, this.snowBaseY[idx] + 0.42 + 0.34 * blend);
+            colAttr.setXYZ(idx, 0.18 + 0.12 * (1 - blend), 0.44 + 0.2 * (1 - blend), 0.92);
+          } else {
+            posAttr.setY(idx, this.snowBaseY[idx] + 0.12);
+            colAttr.setXYZ(idx, 0.22, 0.84, 0.88);
+          }
+          dirty = true;
+        }
+      }
+    }
+
+    if (dirty) {
+      posAttr.needsUpdate = true;
+      colAttr.needsUpdate = true;
+      this._recomputeSnowNormalsWindow(gxCenter, gzCenter, cellSpan);
+    }
+  }
+
+  _recomputeSnowNormalsWindow(gxCenter, gzCenter, cellSpan) {
+    if (!this.snowMesh) return;
+    const geo = this.snowMesh.geometry;
+    const posAttr = geo.attributes.position;
+    const normAttr = geo.attributes.normal;
+    if (!normAttr) return;
+
+    const cellSize = VALLEY_SIZE / GRID_SEGMENTS;
+    const stride = GRID_SEGMENTS + 1;
+    const gx0 = Math.max(0, gxCenter - cellSpan - 1);
+    const gx1 = Math.min(GRID_SEGMENTS, gxCenter + cellSpan + 1);
+    const gz0 = Math.max(0, gzCenter - cellSpan - 1);
+    const gz1 = Math.min(GRID_SEGMENTS, gzCenter + cellSpan + 1);
+
+    for (let gz = gz0; gz <= gz1; gz++) {
+      const zU = Math.max(0, gz - 1);
+      const zD = Math.min(GRID_SEGMENTS, gz + 1);
+      const dz = Math.max(0.01, (zD - zU) * cellSize);
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const xL = Math.max(0, gx - 1);
+        const xR = Math.min(GRID_SEGMENTS, gx + 1);
+        const dx = Math.max(0.01, (xR - xL) * cellSize);
+        const dhdx = (posAttr.getY(gz * stride + xR) - posAttr.getY(gz * stride + xL)) / dx;
+        const dhdz = (posAttr.getY(zD * stride + gx) - posAttr.getY(zU * stride + gx)) / dz;
+        const invLen = 1 / Math.hypot(dhdx, 1, dhdz);
+        normAttr.setXYZ(gz * stride + gx, -dhdx * invLen, invLen, -dhdz * invLen);
+      }
+    }
+    normAttr.needsUpdate = true;
+  }
+
+  _refreshSnowSurfaceOnly() {
     if (!this.snowMesh) return;
     const posAttr = this.snowMesh.geometry.attributes.position;
     const colAttr = this.snowMesh.geometry.attributes.color;
@@ -214,10 +543,107 @@ export class FrostwakeWorld3D {
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
     this.snowMesh.geometry.computeVertexNormals();
+    this._clearSnowLilies();
+    this.opposition?.reapplyPermafrostTint();
+  }
+
+  resetFreshSnow() {
+    this._refreshSnowSurfaceOnly();
+    this.opposition?.refreshIntactPods();
+  }
+
+  _buildSnowLilyPool() {
+    const lilyGeo = new THREE.ConeGeometry(0.24, 0.52, 5);
+    lilyGeo.rotateX(Math.PI);
+    const lilyMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0x3bf0c5,
+      emissiveIntensity: 0.65,
+      roughness: 0.22,
+    });
+    this.snowLilyMesh = new THREE.InstancedMesh(lilyGeo, lilyMat, MAX_SNOW_LILIES);
+    this.snowLilyMesh.frustumCulled = false;
+    this.snowLilies = [];
+    this.lilyCursor = 0;
+    this.activeLilyCount = 0;
+    this._lilyDistAccum = 0;
+
+    this._tmpScale.set(0, 0, 0);
+    this._tmpPos.set(0, -20, 0);
+    this._tmpQuat.identity();
+    this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+    const defaultCol = new THREE.Color(0x5ce1e6);
+    for (let i = 0; i < MAX_SNOW_LILIES; i++) {
+      this.snowLilyMesh.setMatrixAt(i, this._tmpMat4);
+      this.snowLilyMesh.setColorAt(i, defaultCol);
+      this.snowLilies.push({
+        active: false,
+        x: 0,
+        y: 0,
+        z: 0,
+        rotY: 0,
+        scale: 0,
+        targetScale: 1,
+      });
+    }
+    this.snowLilyMesh.instanceMatrix.needsUpdate = true;
+    if (this.snowLilyMesh.instanceColor) this.snowLilyMesh.instanceColor.needsUpdate = true;
+    this.scene.add(this.snowLilyMesh);
+  }
+
+  _clearSnowLilies() {
+    if (!this.snowLilyMesh) return;
+    this._tmpPos.set(0, -20, 0);
+    this._tmpQuat.identity();
+    this._tmpScale.set(0, 0, 0);
+    this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+    for (let i = 0; i < MAX_SNOW_LILIES; i++) {
+      this.snowLilies[i].active = false;
+      this.snowLilies[i].scale = 0;
+      this.snowLilyMesh.setMatrixAt(i, this._tmpMat4);
+    }
+    this.activeLilyCount = 0;
+    this.lilyCursor = 0;
+    this._lilyDistAccum = 0;
+    this.snowLilyMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  _spawnSnowLilyAt(wx, wy, wz, isBioluminescent = false, isPrism = false) {
+    if (!this.snowLilyMesh) return;
+    const idx = this.lilyCursor;
+    this.lilyCursor = (this.lilyCursor + 1) % MAX_SNOW_LILIES;
+    const rec = this.snowLilies[idx];
+    if (!rec.active) {
+      this.activeLilyCount = Math.min(MAX_SNOW_LILIES, this.activeLilyCount + 1);
+    }
+    rec.active = true;
+    rec.x = wx;
+    rec.y = wy;
+    rec.z = wz;
+    rec.rotY = (idx * 1.7) % (Math.PI * 2);
+    rec.scale = 0.08;
+    rec.targetScale = isBioluminescent ? 1.25 : isPrism ? 1.12 : 0.85;
+
+    const palette = isBioluminescent
+      ? [0x7ee081, 0x45f0df, 0xb8f2e6]
+      : isPrism
+      ? [0xffd166, 0x45f0df, 0xff9b71, 0x7ee081]
+      : [0xaee8ff, 0x62f5e4];
+    const col = new THREE.Color(palette[idx % palette.length]);
+    this.snowLilyMesh.setColorAt(idx, col);
+    if (this.snowLilyMesh.instanceColor) this.snowLilyMesh.instanceColor.needsUpdate = true;
+
+    this._tmpPos.set(wx, wy, wz);
+    this._tmpEuler.set(0, rec.rotY, 0);
+    this._tmpQuat.setFromEuler(this._tmpEuler);
+    this._tmpScale.setScalar(rec.scale);
+    this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+    this.snowLilyMesh.setMatrixAt(idx, this._tmpMat4);
+    this.snowLilyMesh.instanceMatrix.needsUpdate = true;
   }
 
   _carveSnowAt(wx, wz, radius) {
-    if (!this.snowMesh) return;
+    if (!this.snowMesh) return 0;
     const geo = this.snowMesh.geometry;
     const posAttr = geo.attributes.position;
     const colAttr = geo.attributes.color;
@@ -227,11 +653,20 @@ export class FrostwakeWorld3D {
     const cellSpan = Math.ceil((radius + 1.4) / cellSize);
 
     const hasPrism = this.rigState.upgrades.includes("prismatic_trail") || this.rigState.inSurge;
+    const isThermal = Boolean(this.opposition && this.opposition.rigThermalChargeSec > 0);
     let newlyCarved = 0;
     let dirty = false;
 
-    for (let gz = Math.max(0, gzCenter - cellSpan); gz <= Math.min(GRID_SEGMENTS, gzCenter + cellSpan); gz++) {
-      for (let gx = Math.max(0, gxCenter - cellSpan); gx <= Math.min(GRID_SEGMENTS, gxCenter + cellSpan); gx++) {
+    for (
+      let gz = Math.max(0, gzCenter - cellSpan);
+      gz <= Math.min(GRID_SEGMENTS, gzCenter + cellSpan);
+      gz++
+    ) {
+      for (
+        let gx = Math.max(0, gxCenter - cellSpan);
+        gx <= Math.min(GRID_SEGMENTS, gxCenter + cellSpan);
+        gx++
+      ) {
         const idx = gz * (GRID_SEGMENTS + 1) + gx;
         const vx = posAttr.getX(idx);
         const vz = posAttr.getZ(idx);
@@ -239,12 +674,19 @@ export class FrostwakeWorld3D {
 
         if (dist < radius) {
           const strength = Math.min(1, (1 - dist / radius) * 1.45);
-          if (strength > this.snowCarve[idx]) {
+          if (strength > this.snowCarve[idx] || isThermal) {
             if (this.snowCarve[idx] < 0.35 && strength >= 0.35) newlyCarved += 1;
-            this.snowCarve[idx] = strength;
-            posAttr.setY(idx, this.snowBaseY[idx] + 0.42 * (1 - strength * 0.95));
+            this.snowCarve[idx] = Math.max(this.snowCarve[idx], strength);
+            posAttr.setY(idx, this.snowBaseY[idx] + 0.42 * (1 - this.snowCarve[idx] * 0.95));
 
-            if (hasPrism) {
+            if (isThermal) {
+              colAttr.setXYZ(
+                idx,
+                0.98,
+                0.52 + 0.22 * (1 - strength),
+                0.22 * (1 - strength * 0.6)
+              );
+            } else if (hasPrism) {
               const hueWave = 0.5 + 0.5 * Math.sin(vx * 0.22 + vz * 0.22);
               colAttr.setXYZ(
                 idx,
@@ -253,7 +695,6 @@ export class FrostwakeWorld3D {
                 0.82 + (1 - hueWave) * 0.16
               );
             } else {
-              // Glowing glacial turquoise stream beneath carved snow
               colAttr.setXYZ(
                 idx,
                 0.86 * (1 - strength) + 0.16 * strength,
@@ -264,8 +705,7 @@ export class FrostwakeWorld3D {
             dirty = true;
           }
         } else if (dist < radius + 1.1 && this.snowCarve[idx] < 0.12) {
-          // Raised snowbank ridge pushed out by plow edges!
-          const ridge = Math.sin(((dist - radius) / 1.1) * Math.PI) * 0.22;
+          const ridge = Math.sin(((dist - radius) / 1.1) * Math.PI) * 0.24;
           const curY = posAttr.getY(idx);
           const targetRidgeY = this.snowBaseY[idx] + 0.42 + ridge;
           if (targetRidgeY > curY) {
@@ -279,6 +719,7 @@ export class FrostwakeWorld3D {
     if (dirty) {
       posAttr.needsUpdate = true;
       colAttr.needsUpdate = true;
+      this._recomputeSnowNormalsWindow(gxCenter, gzCenter, cellSpan);
     }
 
     if (newlyCarved > 0) {
@@ -287,13 +728,13 @@ export class FrostwakeWorld3D {
       if (this.carvedCountAccum >= 18) {
         const chunks = Math.floor(this.carvedCountAccum / 18);
         this.carvedCountAccum -= chunks * 18;
-        this.onSnowCleared(chunks * 18, chunks);
+        this._emitWorldActivity(chunks * 18, chunks, "snowClearedM2");
       }
     }
+    return newlyCarved;
   }
 
   _buildMoonSanctuaryAndObservatory() {
-    // Unspoken Mystery at (0, 0): Silver Moon Ring etched in ice
     const ringGeo = new THREE.RingGeometry(4.2, 5.1, 40);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
@@ -316,7 +757,6 @@ export class FrostwakeWorld3D {
     this.moonTotem.position.set(0, 2.4, 0);
     this.scene.add(this.moonTotem);
 
-    // Great Northern Observatory Spire on the North Ridge (co-op household wonder!)
     this.observatoryGroup = new THREE.Group();
     const obsZ = -60;
     const obsY = this._baseHeight(0, obsZ);
@@ -351,63 +791,295 @@ export class FrostwakeWorld3D {
       this.observatoryGroup.add(rMesh);
       this.observatoryRings.push(rMesh);
     }
+
+    this.observatorySummitCrystal = new THREE.Mesh(
+      new THREE.OctahedronGeometry(1.15, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0xffd166,
+        emissive: 0x45f0df,
+        emissiveIntensity: 0.85,
+      })
+    );
+    this.observatorySummitCrystal.position.y = 23.2;
+    this.observatoryGroup.add(this.observatorySummitCrystal);
+
     this.scene.add(this.observatoryGroup);
   }
 
   setObservatoryTier(tier = 1) {
-    this.rigState.observatoryTier = tier;
+    const clamped = clampFinite(tier, 0, 6, 0);
+    this.rigState.observatoryTier = clamped;
     if (!this.observatoryRings) return;
     this.observatoryRings.forEach((ring, idx) => {
-      const lit = idx < tier;
+      const lit = idx < clamped;
       ring.material.color.setHex(lit ? 0xffd166 : 0x33506e);
       ring.material.emissive.setHex(lit ? 0x3bf0c5 : 0x102030);
       ring.material.emissiveIntensity = lit ? 0.95 : 0.1;
     });
+    if (this.observatorySummitCrystal) {
+      this.observatorySummitCrystal.material.emissiveIntensity = clamped >= 6 ? 1.35 : 0.55;
+    }
+  }
+
+  _buildFrostGuardian() {
+    const gx = -18;
+    const gz = -54;
+    const gy = this._baseHeight(gx, gz);
+
+    const g = new THREE.Group();
+    g.name = "frost_guardian_colossus";
+    g.position.set(gx, gy, gz);
+    g.rotation.y = 0.28;
+
+    const stoneMat = new THREE.MeshStandardMaterial({
+      color: 0x1b3350,
+      roughness: 0.45,
+      metalness: 0.25,
+    });
+    const armorMat = new THREE.MeshToonMaterial({
+      color: 0x2b5d8c,
+      gradientMap: this.toonRamp,
+    });
+
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(5.6, 7.0, 2.8, 8), stoneMat);
+    pedestal.position.y = 1.4;
+    const baseRingGeo = new THREE.RingGeometry(6.5, 7.4, 36);
+    baseRingGeo.rotateX(-Math.PI / 2);
+    const baseRing = new THREE.Mesh(
+      baseRingGeo,
+      new THREE.MeshBasicMaterial({ color: 0x45f0df, side: THREE.DoubleSide })
+    );
+    baseRing.position.y = 0.55;
+    g.add(pedestal, baseRing);
+
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 2.2, 6.8, 6), armorMat);
+    torso.position.y = 6.2;
+    g.add(torso);
+
+    for (const sx of [-3.8, 3.8]) {
+      const pauldron = new THREE.Mesh(new THREE.DodecahedronGeometry(2.05, 0), armorMat);
+      pauldron.position.set(sx, 8.6, 0);
+      g.add(pauldron);
+    }
+
+    this.guardianArms = [];
+    for (const sx of [-4.7, 4.7]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 4.2, 1.4), armorMat);
+      arm.position.set(sx, 5.4, 0.5);
+      g.add(arm);
+      this.guardianArms.push(arm);
+    }
+
+    const helm = new THREE.Mesh(new THREE.OctahedronGeometry(1.95, 0), armorMat);
+    helm.position.y = 11.4;
+    this.guardianVisorMat = new THREE.MeshBasicMaterial({ color: 0x45f0df });
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.28, 0.45), this.guardianVisorMat);
+    visor.position.set(0, 11.5, 1.55);
+    g.add(helm, visor);
+
+    for (const cx of [-0.9, 0, 0.9]) {
+      const spire = new THREE.Mesh(
+        new THREE.ConeGeometry(0.42, cx === 0 ? 2.8 : 2.1, 4),
+        new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xf4a62a, emissiveIntensity: 0.7 })
+      );
+      spire.position.set(cx, 13.4, 0);
+      g.add(spire);
+    }
+
+    this.guardianRunes = [];
+    for (const rx of [-1.8, -0.6, 0.6, 1.8]) {
+      const rMat = new THREE.MeshStandardMaterial({
+        color: 0x45f0df,
+        emissive: 0x2ec4b6,
+        emissiveIntensity: 0.85,
+      });
+      const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.58, 0), rMat);
+      rune.position.set(rx, 6.8, 2.75);
+      g.add(rune);
+      this.guardianRunes.push(rune);
+    }
+
+    this.guardianBeamMat = new THREE.MeshBasicMaterial({
+      color: 0x45f0df,
+      transparent: true,
+      opacity: 0.78,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.guardianBeam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, 3.6, 44, 16, 1, true),
+      this.guardianBeamMat
+    );
+    this.guardianBeam.position.y = 22;
+    this.guardianBeam.visible = false;
+    g.add(this.guardianBeam);
+
+    this.guardianGroup = g;
+    this.frostGuardian = g;
+    this.scene.add(g);
+  }
+
+  triggerGuardianAwakening(worldId = "W1") {
+    const hex = GUARDIAN_WORLD_COLORS[worldId] || 0x45f0df;
+    this.guardianAwakeTimer = 4.8;
+    this.guardianAwakeWorldId = worldId;
+    this.guardianAwakeningCount += 1;
+
+    if (this.guardianVisorMat) this.guardianVisorMat.color.setHex(hex);
+    if (this.guardianBeamMat) {
+      this.guardianBeamMat.color.setHex(hex);
+      this.guardianBeamMat.opacity = 0.85;
+    }
+    if (this.guardianBeam) this.guardianBeam.visible = true;
+    for (const r of this.guardianRunes || []) {
+      r.material.color.setHex(hex);
+      r.material.emissive.setHex(hex);
+      r.material.emissiveIntensity = 1.25;
+    }
+
+    const gy = this._baseHeight(-18, -54);
+    this._spawnCrystalBurst(-18, gy + 9.0, -54, 72);
+    this.triggerSkyWhale();
+    this.audio?.playGuardianAwakening?.();
+  }
+
+  _buildLiftGaragePad() {
+    const gx = -24;
+    const gz = 16;
+    const gy = this._baseHeight(gx, gz);
+
+    const g = new THREE.Group();
+    g.name = "open_air_lift_garage";
+    g.position.set(gx, gy, gz);
+    g.rotation.y = 0.55;
+
+    const steelMat = new THREE.MeshStandardMaterial({
+      color: 0x24344d,
+      roughness: 0.45,
+      metalness: 0.5,
+    });
+    const accentMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xf4a62a,
+      emissiveIntensity: 0.85,
+    });
+
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.3, 8.2), steelMat);
+    deck.position.y = 0.28;
+    g.add(deck);
+
+    for (const rz of [-4.7, 4.7]) {
+      const ramp = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.22, 1.8), steelMat);
+      ramp.position.set(0, 0.16, rz);
+      ramp.rotation.x = rz < 0 ? 0.14 : -0.14;
+      g.add(ramp);
+    }
+
+    const padRingGeo = new THREE.RingGeometry(4.5, 5.2, 32);
+    padRingGeo.rotateX(-Math.PI / 2);
+    const padRing = new THREE.Mesh(
+      padRingGeo,
+      new THREE.MeshBasicMaterial({ color: 0xffd166, side: THREE.DoubleSide })
+    );
+    padRing.position.y = 0.46;
+    g.add(padRing);
+
+    for (const px of [-3.6, 3.6]) {
+      for (const pz of [-3.2, 3.2]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 4.6, 8), steelMat);
+        post.position.set(px, 2.3, pz);
+        g.add(post);
+      }
+    }
+    const crossBeam = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.34, 0.46), steelMat);
+    crossBeam.position.set(0, 4.6, 0);
+    g.add(crossBeam);
+
+    const wrench = new THREE.Group();
+    wrench.name = "garage_holo_wrench";
+    wrench.position.set(0, 6.2, 0);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.7, 0.18), accentMat);
+    const jawTop = new THREE.Mesh(
+      new THREE.TorusGeometry(0.46, 0.15, 8, 16, Math.PI * 1.35),
+      accentMat
+    );
+    jawTop.position.y = 1.05;
+    jawTop.rotation.z = 0.45;
+    wrench.add(handle, jawTop);
+    g.add(wrench);
+
+    this.garageHoloWrench = wrench;
+    this.garageGroup = g;
+    this.garagePad = g;
+    this.scene.add(g);
   }
 
   _buildAlpinePines() {
     const trunkGeo = new THREE.CylinderGeometry(0.32, 0.48, 2.2, 6);
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4b382a, roughness: 0.9 });
     const coneGeo1 = new THREE.ConeGeometry(2.3, 4.4, 7);
     const coneGeo2 = new THREE.ConeGeometry(1.75, 3.6, 7);
     const snowCapGeo = new THREE.ConeGeometry(1.8, 1.5, 7);
+
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4b382a, roughness: 0.9 });
     const pineMat = new THREE.MeshStandardMaterial({ color: 0x1f5c4e, roughness: 0.75 });
     const capMat = new THREE.MeshStandardMaterial({ color: 0xeef8ff, roughness: 0.5 });
 
     this.pines = [];
-    for (let i = 0; i < 46; i++) {
-      const angle = (i / 46) * Math.PI * 2 + (i % 3) * 0.08;
-      const dist = 54 + (i % 4) * 5.2;
+    const placements = [];
+    for (let i = 0; i < 52; i++) {
+      const angle = (i / 52) * Math.PI * 2 + (i % 3) * 0.08;
+      const dist = 72 + (i % 4) * 4.5; // 72..85.5m outside MAX_VALLEY_RADIUS=68
       const px = Math.cos(angle) * dist;
       const pz = Math.sin(angle) * dist;
-      if (Math.abs(px) < 12 && pz < -46) continue; // Keep Northern Observatory vista clear!
-
-      const tree = new THREE.Group();
+      if (Math.abs(px) < 25 && pz < -52) continue; // Keep Northern Vista sightline clear!
       const s = 0.85 + (i % 5) * 0.14;
-      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = 1.1;
-      const c1 = new THREE.Mesh(coneGeo1, pineMat);
-      c1.position.y = 3.6;
-      const c2 = new THREE.Mesh(coneGeo2, pineMat);
-      c2.position.y = 5.6;
-      const cap = new THREE.Mesh(snowCapGeo, capMat);
-      cap.position.y = 6.7;
-
-      tree.add(trunk, c1, c2, cap);
-      tree.scale.setScalar(s);
-      tree.position.set(px, this._baseHeight(px, pz), pz);
-      this.scene.add(tree);
-      this.pines.push({ mesh: tree, phase: i * 0.7 });
+      const py = this._baseHeight(px, pz);
+      placements.push({ x: px, y: py, z: pz, scale: s, phase: i * 0.7 });
+      this.pines.push({ x: px, y: py, z: pz, scale: s, phase: i * 0.7 });
     }
+
+    const n = placements.length;
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, n);
+    const lowerCones = new THREE.InstancedMesh(coneGeo1, pineMat, n);
+    const upperCones = new THREE.InstancedMesh(coneGeo2, pineMat, n);
+    const snowCaps = new THREE.InstancedMesh(snowCapGeo, capMat, n);
+
+    placements.forEach((p, idx) => {
+      this._tmpQuat.identity();
+      this._tmpScale.setScalar(p.scale);
+
+      this._tmpPos.set(p.x, p.y + 1.1 * p.scale, p.z);
+      this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+      trunks.setMatrixAt(idx, this._tmpMat4);
+
+      this._tmpPos.set(p.x, p.y + 3.6 * p.scale, p.z);
+      this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+      lowerCones.setMatrixAt(idx, this._tmpMat4);
+
+      this._tmpPos.set(p.x, p.y + 5.6 * p.scale, p.z);
+      this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+      upperCones.setMatrixAt(idx, this._tmpMat4);
+
+      this._tmpPos.set(p.x, p.y + 6.7 * p.scale, p.z);
+      this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+      snowCaps.setMatrixAt(idx, this._tmpMat4);
+    });
+
+    for (const im of [trunks, lowerCones, upperCones, snowCaps]) {
+      im.instanceMatrix.needsUpdate = true;
+      this.scene.add(im);
+    }
+    this.pineMeshes = { trunks, lowerCones, upperCones, snowCaps };
   }
 
   _buildSnowfallParticles() {
     const count = 260;
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 120;
-      pos[i * 3 + 1] = Math.random() * 28 + 1;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 120;
+      pos[i * 3] = (((i * 733 + 19) % 1000) / 1000 - 0.5) * 136;
+      pos[i * 3 + 1] = (((i * 389 + 7) % 1000) / 1000) * 28 + 1;
+      pos[i * 3 + 2] = (((i * 571 + 31) % 1000) / 1000 - 0.5) * 136;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -422,36 +1094,73 @@ export class FrostwakeWorld3D {
   }
 
   _buildSprayAndShardPools() {
+    const sprayCount = 64;
+    const shardCount = 96;
+
     const sprayGeo = new THREE.DodecahedronGeometry(0.24, 0);
     const sprayMat = new THREE.MeshStandardMaterial({ color: 0xf2fbff, roughness: 0.45 });
-    this.sprayPool = [];
-    for (let i = 0; i < 64; i++) {
-      const m = new THREE.Mesh(sprayGeo, sprayMat);
-      m.visible = false;
-      this.scene.add(m);
-      this.sprayPool.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0 });
-    }
+    this.sprayInstMesh = new THREE.InstancedMesh(sprayGeo, sprayMat, sprayCount);
+    this.sprayInstMesh.frustumCulled = false;
 
     const shardGeo = new THREE.OctahedronGeometry(0.42, 0);
-    this.shardPool = [];
-    for (let i = 0; i < 96; i++) {
-      const m = new THREE.Mesh(
-        shardGeo,
-        new THREE.MeshStandardMaterial({
-          color: i % 2 === 0 ? 0x45f0df : 0xffd166,
-          emissive: i % 2 === 0 ? 0x1ea89c : 0xc98a18,
-          emissiveIntensity: 0.65,
-          roughness: 0.2,
-        })
-      );
-      m.visible = false;
-      this.scene.add(m);
-      this.shardPool.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0 });
+    const shardMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0x2ec4b6,
+      emissiveIntensity: 0.6,
+      roughness: 0.2,
+    });
+    this.shardInstMesh = new THREE.InstancedMesh(shardGeo, shardMat, shardCount);
+    this.shardInstMesh.frustumCulled = false;
+
+    this._tmpPos.set(0, -30, 0);
+    this._tmpQuat.identity();
+    this._tmpScale.set(0, 0, 0);
+    this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+
+    this.sprayPool = [];
+    for (let i = 0; i < sprayCount; i++) {
+      this.sprayInstMesh.setMatrixAt(i, this._tmpMat4);
+      this.sprayPool.push({
+        index: i,
+        x: 0,
+        y: -30,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        rx: 0,
+        ry: 0,
+        life: 0,
+      });
     }
+
+    const cyanCol = new THREE.Color(0x45f0df);
+    const goldCol = new THREE.Color(0xffd166);
+    this.shardPool = [];
+    for (let i = 0; i < shardCount; i++) {
+      this.shardInstMesh.setMatrixAt(i, this._tmpMat4);
+      this.shardInstMesh.setColorAt(i, i % 2 === 0 ? cyanCol : goldCol);
+      this.shardPool.push({
+        index: i,
+        x: 0,
+        y: -30,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        rx: 0,
+        ry: 0,
+        life: 0,
+      });
+    }
+
+    this.sprayInstMesh.instanceMatrix.needsUpdate = true;
+    this.shardInstMesh.instanceMatrix.needsUpdate = true;
+    if (this.shardInstMesh.instanceColor) this.shardInstMesh.instanceColor.needsUpdate = true;
+    this.scene.add(this.sprayInstMesh, this.shardInstMesh);
   }
 
   _buildSkyWhale() {
-    // Majestic translucent Aurora Sky-Whale that breaches across the sky on 3x Overdrive!
     const g = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({
       color: 0x62f5e4,
@@ -480,39 +1189,209 @@ export class FrostwakeWorld3D {
   triggerSkyWhale() {
     this.whaleTimer = 11.0;
     if (this.skyWhale) this.skyWhale.visible = true;
-    this.audio.playWhaleSong();
+    this.audio?.playWhaleSong?.();
   }
 
-  rebuildRig(chassisId = "terra_dozer", upgrades = []) {
-    this.rigState.chassisId = chassisId;
-    this.rigState.upgrades = [...upgrades];
+  triggerOverdriveStreakWonder() {
+    this.triggerSkyWhale();
+  }
+
+  setSurgeMode(inSurge) {
+    this.rigState.inSurge = Boolean(inSurge);
+    for (const r of this.auroraRibbons || []) {
+      r.mat.opacity = this.rigState.inSurge ? Math.min(0.42, r.baseOpacity * 1.9) : r.baseOpacity;
+    }
+  }
+
+  setEncounterDockOpen(isOpen) {
+    this.encounterDockOpen = Boolean(isOpen);
+    if (this.opposition) {
+      this.opposition.setPaused(this.isOppositionPaused());
+    }
+  }
+
+  isOppositionPaused() {
+    return this.encounterDockOpen === true || this.activeGateSlot !== null;
+  }
+
+  applyLoadout(progress = {}, crossRealmUnlocks = {}, borrowedToy = null) {
+    this._boundProgressRef = progress || null;
+    const baseChassis =
+      progress?.games?.frostwake?.equippedChassis ||
+      progress?.equippedChassis ||
+      "terra_dozer";
+    const baseUpgrades = Array.isArray(progress?.ownedUpgrades)
+      ? [...progress.ownedUpgrades]
+      : [];
+
+    const borrowedRig =
+      borrowedToy?.frostwakeRig ||
+      (borrowedToy && (borrowedToy.chassisId || borrowedToy.equippedChassis)
+        ? {
+            chassisId: borrowedToy.chassisId || borrowedToy.equippedChassis,
+            upgrades: Array.isArray(borrowedToy.upgrades)
+              ? borrowedToy.upgrades
+              : Array.isArray(borrowedToy.ownedUpgrades)
+              ? borrowedToy.ownedUpgrades
+              : [],
+          }
+        : null);
+
+    const effectiveChassis = borrowedRig?.chassisId || baseChassis;
+    const borrowedUpgrades = Array.isArray(borrowedRig?.upgrades) ? borrowedRig.upgrades : [];
+    const effectiveUpgrades = borrowedRig
+      ? Array.from(new Set([...baseUpgrades, ...borrowedUpgrades]))
+      : baseUpgrades;
+
+    const cru = crossRealmUnlocks && typeof crossRealmUnlocks === "object" ? crossRealmUnlocks : {};
+    const oddCreatures = Array.isArray(progress?.games?.oddroot?.hatchedCreatures)
+      ? progress.games.oddroot.hatchedCreatures
+      : [];
+    const discoveredMysteries = Array.isArray(progress?.discoveredMysteries)
+      ? progress.discoveredMysteries
+      : [];
+    const resolvedCrossRealm = {
+      astroToadCabMascot: Boolean(
+        cru.astroToadCabMascot ||
+          cru.cryoToadMascot ||
+          cru.astroToadUnlocked ||
+          oddCreatures.includes("zero_g_toad") ||
+          oddCreatures.includes("astro_toad")
+      ),
+      cryoBuoyancyTrim: Boolean(
+        cru.cryoBuoyancyTrim ||
+          cru.astroToadCabMascot ||
+          cru.astroToadUnlocked ||
+          (progress?.nodes?.["W1.3"]?.stage || 0) >= 2
+      ),
+      bioluminescentSnowLilies: Boolean(
+        cru.bioluminescentSnowLilies ||
+          cru.snowLiliesUnlocked ||
+          oddCreatures.length >= 3 ||
+          (progress?.nodes?.["W2.1"]?.stage || 0) >= 2
+      ),
+      goldenMosaicPlowTrim: Boolean(
+        cru.goldenMosaicPlowTrim ||
+          cru.goldenMosaicTrimUnlocked ||
+          cru.goldenMosaicTrim ||
+          cru.mosaicUnlocked ||
+          cru.frostwakePlowTrim === "golden_mosaic" ||
+          progress?.games?.oddroot?.mosaicForged ||
+          (progress?.nodes?.["W6.3"]?.stage || 0) >= 2
+      ),
+      silverMoonLantern: Boolean(
+        cru.silverMoonLantern || discoveredMysteries.includes("moon_center")
+      ),
+    };
+
+    const borrowedMeta = borrowedRig
+      ? {
+          active: true,
+          owner: borrowedToy.owner || borrowedToy.ownerName || "sibling",
+          displayName:
+            borrowedToy.displayName || borrowedToy.ownerName || borrowedToy.owner || "Sibling",
+        }
+      : { active: false, owner: null, displayName: null };
+
+    this.crossRealmState = resolvedCrossRealm;
+    this.borrowedToyState = borrowedMeta;
+    this.rigState.crossRealm = resolvedCrossRealm;
+    this.rigState.borrowedMeta = borrowedMeta;
+
+    this.rebuildRig(effectiveChassis, effectiveUpgrades, resolvedCrossRealm, borrowedMeta);
+    if (this.ghostController) {
+      this.ghostController.loadFromProgress(progress);
+      this.ghostController.setChassisAppearance(effectiveChassis);
+    }
+  }
+
+  _createStarlightWinchMesh() {
+    const turret = new THREE.Group();
+    turret.name = "titan_harpoon_turret";
+    turret.userData = { upgrade: "titan_harpoon" };
+
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xf4a62a,
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+      metalness: 0.55,
+    });
+    const cyanMat = new THREE.MeshStandardMaterial({
+      color: 0x45f0df,
+      emissive: 0x2ec4b6,
+      emissiveIntensity: 0.85,
+    });
+
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.26, 10), goldMat);
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.52, 10), goldMat);
+    drum.rotation.z = Math.PI / 2;
+    drum.position.y = 0.24;
+    const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.55, 8), cyanMat);
+    spear.rotation.x = Math.PI / 2;
+    spear.position.set(0, 0.32, -0.45);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.46, 5), goldMat);
+    tip.rotation.x = -Math.PI / 2;
+    tip.position.set(0, 0.32, -1.28);
+
+    turret.add(base, drum, spear, tip);
+    return turret;
+  }
+
+  rebuildRig(
+    chassisId = "terra_dozer",
+    upgrades = [],
+    crossRealm = this.crossRealmState || {},
+    borrowedMeta = this.borrowedToyState || { active: false }
+  ) {
+    const cleanChassis = chassisId === "aurora_sled" ? "aurora_sled" : "terra_dozer";
+    this.rigState.chassisId = cleanChassis;
+    this.rigState.upgrades = Array.isArray(upgrades) ? [...upgrades] : [];
+    this.crossRealmState = crossRealm || {};
+    this.borrowedToyState = borrowedMeta || { active: false };
     if (!this.scene) return;
 
     if (this.rigGroup) {
       this.scene.remove(this.rigGroup);
     }
 
-    const spec = RIG_CHASSIS.find((c) => c.id === chassisId) || RIG_CHASSIS[0];
-    const hasWide = upgrades.includes("wide_blade");
-    const hasBoost = upgrades.includes("ion_boosters");
-    const hasCrown = upgrades.includes("celestial_crown");
-    const hasFox = upgrades.includes("spirit_fox");
+    const spec =
+      FROSTWAKE_CHASSIS_SPECS.find((c) => c.id === cleanChassis) || FROSTWAKE_CHASSIS_SPECS[0];
+    const hasWide = this.rigState.upgrades.includes("wide_blade");
+    const hasBoost = this.rigState.upgrades.includes("ion_boosters");
+    const hasCrown = this.rigState.upgrades.includes("celestial_crown");
+    const hasFox = this.rigState.upgrades.includes("spirit_fox");
+    const hasHarpoon = this.rigState.upgrades.includes("titan_harpoon");
 
     const g = new THREE.Group();
+    g.rotation.order = "YXZ";
     this.rigWheels = [];
 
     const primaryColor = hasCrown ? 0xffd86b : spec.primaryHex;
-    const bodyMat = new THREE.MeshStandardMaterial({ color: primaryColor, roughness: 0.32, metalness: 0.35 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: spec.secondaryHex, roughness: 0.55, metalness: 0.25 });
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: primaryColor,
+      roughness: 0.32,
+      metalness: 0.35,
+    });
+    const darkMat = new THREE.MeshStandardMaterial({
+      color: spec.secondaryHex,
+      roughness: 0.55,
+      metalness: 0.25,
+    });
     const glowMat = new THREE.MeshStandardMaterial({
       color: spec.glowHex,
       emissive: spec.glowHex,
       emissiveIntensity: 0.9,
       roughness: 0.2,
     });
+    const magmaMat = new THREE.MeshStandardMaterial({
+      color: 0xff8c42,
+      emissive: 0xff6b2b,
+      emissiveIntensity: 1.25,
+      roughness: 0.18,
+    });
 
-    if (chassisId === "aurora_sled") {
-      // Sarah's Sleek Aurora Crystal Hover-Skiff
+    if (cleanChassis === "aurora_sled") {
       const hull = new THREE.Mesh(new THREE.ConeGeometry(1.35, 4.4, 6), bodyMat);
       hull.rotation.x = -Math.PI / 2;
       hull.position.set(0, 1.05, 0);
@@ -520,13 +1399,17 @@ export class FrostwakeWorld3D {
 
       const canopy = new THREE.Mesh(
         new THREE.SphereGeometry(0.82, 16, 12),
-        new THREE.MeshStandardMaterial({ color: 0xbaf7ff, emissive: 0x2ec4b6, emissiveIntensity: 0.35, roughness: 0.1 })
+        new THREE.MeshStandardMaterial({
+          color: 0xbaf7ff,
+          emissive: 0x2ec4b6,
+          emissiveIntensity: 0.35,
+          roughness: 0.1,
+        })
       );
       canopy.scale.set(0.9, 0.68, 1.45);
       canopy.position.set(0, 1.48, 0.25);
       g.add(canopy);
 
-      // Swept crystal wings + levitating plasma skids
       const wingSpan = hasWide ? 4.8 : 3.5;
       const wings = new THREE.Mesh(new THREE.BoxGeometry(wingSpan, 0.16, 1.5), glowMat);
       wings.position.set(0, 0.85, 0.35);
@@ -538,15 +1421,16 @@ export class FrostwakeWorld3D {
         g.add(skid);
       }
 
-      // Crescent snow-parting wave prow
       const prowW = hasWide ? 4.5 : 3.1;
-      const prow = new THREE.Mesh(new THREE.TorusGeometry(prowW * 0.42, 0.2, 10, 24, Math.PI), glowMat);
+      const prow = new THREE.Mesh(
+        new THREE.TorusGeometry(prowW * 0.42, 0.2, 10, 24, Math.PI),
+        hasWide ? magmaMat : glowMat
+      );
       prow.rotation.x = Math.PI / 2;
       prow.rotation.z = Math.PI;
       prow.position.set(0, 0.55, -1.55);
       g.add(prow);
     } else {
-      // David's Chunky 6x6 Thermal Terra-Dozer
       const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.25, 1.05, 3.6), bodyMat);
       chassis.position.set(0, 1.05, 0.2);
       g.add(chassis);
@@ -559,40 +1443,68 @@ export class FrostwakeWorld3D {
       lightBar.position.set(0, 2.55, -0.35);
       g.add(lightBar);
 
-      // 6 Heavy Chunky Wheels
       const wheelGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.48, 14);
       wheelGeo.rotateZ(Math.PI / 2);
       const wheelMat = new THREE.MeshStandardMaterial({ color: 0x182232, roughness: 0.85 });
+      let wIdx = 0;
       for (const wx of [-1.25, 1.25]) {
         for (const wz of [-1.05, 0.2, 1.45]) {
           const w = new THREE.Mesh(wheelGeo, wheelMat);
           w.position.set(wx, 0.56, wz);
           g.add(w);
-          this.rigWheels.push(w);
+          this.rigWheels.push({
+            mesh: w,
+            lx: wx,
+            lz: wz,
+            baseY: 0.56,
+            springY: 0,
+            springVel: 0,
+            phase: wIdx * 1.15,
+            get position() {
+              return w.position;
+            },
+            get rotation() {
+              return w.rotation;
+            },
+          });
+          wIdx += 1;
         }
       }
 
-      // Angled Molten-Edge V-Plow Blade up front!
       const bladeW = (hasWide ? 4.7 : 3.2) * 0.55;
       const bladeGeo = new THREE.BoxGeometry(bladeW, 1.05, 0.28);
-      const bladeL = new THREE.Mesh(bladeGeo, bodyMat);
+      const bladeL = new THREE.Mesh(bladeGeo, hasWide ? magmaMat : bodyMat);
       bladeL.position.set(-bladeW * 0.44, 0.68, -1.95);
       bladeL.rotation.y = 0.28;
-      const bladeR = new THREE.Mesh(bladeGeo, bodyMat);
+      const bladeR = new THREE.Mesh(bladeGeo, hasWide ? magmaMat : bodyMat);
       bladeR.position.set(bladeW * 0.44, 0.68, -1.95);
       bladeR.rotation.y = -0.28;
-      const magmaStrip = new THREE.Mesh(new THREE.BoxGeometry(bladeW * 1.85, 0.22, 0.34), glowMat);
+      const magmaStrip = new THREE.Mesh(
+        new THREE.BoxGeometry(bladeW * 1.85, 0.22, 0.34),
+        hasWide ? magmaMat : glowMat
+      );
       magmaStrip.position.set(0, 0.26, -2.02);
       g.add(bladeL, bladeR, magmaStrip);
     }
 
     if (hasBoost) {
       for (const tx of [-0.65, 0.65]) {
-        const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.34, 0.7, 10), glowMat);
+        const thruster = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.24, 0.34, 0.7, 10),
+          glowMat
+        );
         thruster.rotation.x = Math.PI / 2;
         thruster.position.set(tx, 0.95, 2.15);
         g.add(thruster);
       }
+    }
+
+    if (hasHarpoon) {
+      this.harpoonTurret = this._createStarlightWinchMesh();
+      this.harpoonTurret.position.set(0, cleanChassis === "aurora_sled" ? 1.88 : 2.65, 0.25);
+      g.add(this.harpoonTurret);
+    } else {
+      this.harpoonTurret = null;
     }
 
     if (hasCrown) {
@@ -610,10 +1522,95 @@ export class FrostwakeWorld3D {
       this.companionFox = null;
     }
 
+    // Oddroot Cross-Realm Visual Unlocks
+    if (this.crossRealmState.astroToadCabMascot) {
+      const mascot = new THREE.Group();
+      mascot.name = "astro_toad_mascot";
+      mascot.userData = { crossRealm: "astro_toad_mascot" };
+      const bubble = new THREE.Mesh(
+        new THREE.SphereGeometry(0.42, 12, 10),
+        new THREE.MeshBasicMaterial({ color: 0x90f1ef, transparent: true, opacity: 0.34 })
+      );
+      const toadBody = new THREE.Mesh(
+        new THREE.SphereGeometry(0.24, 10, 8),
+        new THREE.MeshStandardMaterial({ color: 0x7ee081, emissive: 0x2ec4b6, emissiveIntensity: 0.6 })
+      );
+      toadBody.rotation.z = Math.PI; // Floating upside-down Zero-G Astro-Toad!
+      mascot.add(bubble, toadBody);
+      mascot.position.set(-0.62, cleanChassis === "aurora_sled" ? 2.25 : 2.95, 0.45);
+      g.add(mascot);
+      this.astroToadMascot = mascot;
+    } else {
+      this.astroToadMascot = null;
+    }
+
+    if (this.crossRealmState.cryoBuoyancyTrim) {
+      const buoy = new THREE.Group();
+      buoy.name = "cryo_buoyancy_trim";
+      buoy.userData = { crossRealm: "cryo_buoyancy_trim" };
+      const railMat = new THREE.MeshStandardMaterial({
+        color: 0xc084fc,
+        emissive: 0x7c3aed,
+        emissiveIntensity: 0.75,
+      });
+      for (const bx of [-1.32, 1.32]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 2.5), railMat);
+        rail.position.set(bx, 0.88, 0.1);
+        buoy.add(rail);
+      }
+      g.add(buoy);
+    }
+
+    if (this.crossRealmState.goldenMosaicPlowTrim) {
+      const mosaic = new THREE.Group();
+      mosaic.name = "golden_mosaic_trim";
+      mosaic.userData = { crossRealm: "golden_mosaic_plow_trim" };
+      const tileMat = new THREE.MeshStandardMaterial({
+        color: 0xffd166,
+        emissive: 0xf4a62a,
+        emissiveIntensity: 0.95,
+      });
+      for (let t = 0; t < 4; t++) {
+        const tile = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.22, 0.12), tileMat);
+        tile.position.set((t - 1.5) * 0.55, 0.92, -1.98);
+        mosaic.add(tile);
+      }
+      g.add(mosaic);
+    }
+
+    if (this.crossRealmState.silverMoonLantern) {
+      const lantern = new THREE.Mesh(
+        new THREE.TorusGeometry(0.28, 0.05, 8, 16, Math.PI * 1.4),
+        new THREE.MeshBasicMaterial({ color: 0xaee8ff })
+      );
+      lantern.name = "silver_moon_lantern";
+      lantern.position.set(0, 1.65, 2.05);
+      g.add(lantern);
+    }
+
+    if (this.borrowedToyState && this.borrowedToyState.active) {
+      const pennant = new THREE.Group();
+      pennant.name = "sibling_borrow_pennant";
+      pennant.userData = { tag: "sibling_borrow_badge", owner: this.borrowedToyState.owner };
+      const mast = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 1.35, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      mast.position.y = 0.68;
+      const star = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.28, 0),
+        new THREE.MeshBasicMaterial({ color: 0xffd166 })
+      );
+      star.position.y = 1.42;
+      pennant.add(mast, star);
+      pennant.position.set(0.88, 1.85, 1.55);
+      g.add(pennant);
+    }
+
     this.rigGroup = g;
     const groundY = this._baseHeight(this.rigState.x, this.rigState.z);
     this.rigGroup.position.set(this.rigState.x, groundY + 0.15, this.rigState.z);
-    this.rigGroup.rotation.y = this.rigState.heading;
+    this.rigGroup.rotation.set(this.rigState.pitch, this.rigState.heading, this.rigState.roll);
     this.scene.add(this.rigGroup);
   }
 
@@ -640,25 +1637,53 @@ export class FrostwakeWorld3D {
     return fox;
   }
 
-  /**
-   * Populates 3 glowing 3D encounters around the valley!
-   */
-  populateEncounters(encounters) {
-    // Clear existing gate meshes
+  populateEncounters(encounters = []) {
     for (const slot of this.gateSlots) {
       if (slot.group && this.scene) this.scene.remove(slot.group);
     }
     this.gateSlots = [];
+    for (const f of this.wokenFoxes) {
+      if (f.mesh && this.scene) this.scene.remove(f.mesh);
+    }
+    this.wokenFoxes = [];
+    for (const b of this.laserBeams) {
+      if (b.mesh && this.scene) this.scene.remove(b.mesh);
+    }
+    this.laserBeams = [];
     this.activeGateSlot = null;
+    if (this.opposition) {
+      this.opposition.setPaused(this.isOppositionPaused());
+    }
 
     const coords = [
-      { x: 0, z: -8, rotY: 0 },
-      { x: -26, z: -26, rotY: 0.42 },
-      { x: 26, z: -24, rotY: -0.42 },
+      { x: 0, z: -11, rotY: 0 },
+      { x: -27, z: -26, rotY: 0.42 },
+      { x: 27, z: -24, rotY: -0.42 },
+      { x: 0, z: -36, rotY: 0 },
     ];
 
-    encounters.slice(0, 3).forEach((enc, idx) => {
-      const pos = coords[idx % coords.length];
+    const validWave = (Array.isArray(encounters) ? encounters : [])
+      .filter((enc) => enc && typeof enc === "object")
+      .slice(0, 4);
+
+    let activeCoords = coords;
+    if (
+      validWave.length === 3 &&
+      Math.hypot(coords[0].x - this.rigState.x, coords[0].z + 6.0 - this.rigState.z) >= 10.5
+    ) {
+      const nonOverlapping = coords.filter((c, i) => {
+        if (i === 0) return true;
+        const appX = c.x + Math.sin(c.rotY) * 6.0;
+        const appZ = c.z + Math.cos(c.rotY) * 6.0;
+        return Math.hypot(appX - this.rigState.x, appZ - this.rigState.z) >= 10.5;
+      });
+      if (nonOverlapping.length >= 3) {
+        activeCoords = nonOverlapping;
+      }
+    }
+
+    validWave.forEach((enc, idx) => {
+      const pos = activeCoords[idx % activeCoords.length];
       const slot = {
         index: idx,
         encounter: enc,
@@ -670,291 +1695,61 @@ export class FrostwakeWorld3D {
         group: null,
       };
       if (this.scene) {
-        slot.group = this._buildEncounter3DGroup(slot);
+        slot.group = buildEncounter3DGroup(slot);
         this.scene.add(slot.group);
       }
       this.gateSlots.push(slot);
     });
+
+    if (this.ghostController) {
+      this.ghostController.startWave(this.rigState);
+    }
+  }
+
+  areAllEncountersCleared() {
+    return this.gateSlots.length > 0 && this.gateSlots.every((s) => Boolean(s.cleared));
   }
 
   refreshActiveEncounterVisual(updatedEncounter) {
-    if (!this.activeGateSlot) return;
-    this.activeGateSlot.encounter = updatedEncounter;
-    if (!this.scene) return;
-    if (this.activeGateSlot.group) this.scene.remove(this.activeGateSlot.group);
-    this.activeGateSlot.group = this._buildEncounter3DGroup(this.activeGateSlot);
-    this.scene.add(this.activeGateSlot.group);
-    this.updateDialPreview(this.dialPreviewValue);
-  }
-
-  _buildEncounter3DGroup(slot) {
-    const enc = slot.encounter;
-    const g = new THREE.Group();
-    g.position.set(slot.x, slot.y, slot.z);
-    g.rotation.y = slot.rotY;
-
-    // Glowing Approach Pad Ring on the snow
-    const padRing = new THREE.Mesh(
-      new THREE.RingGeometry(5.6, 6.4, 36),
-      new THREE.MeshBasicMaterial({ color: 0x3bf0c5, transparent: true, opacity: 0.65, side: THREE.DoubleSide })
-    );
-    padRing.rotation.x = -Math.PI / 2;
-    padRing.position.set(0, 0.52, 6.5);
-    g.add(padRing);
-
-    // Tall Beacon Light Pillar so you can see every gate across the valley
-    const beacon = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.55, 26, 12, 1, true),
-      new THREE.MeshBasicMaterial({
-        color: enc.encounterType === "holo_ramp" || enc.encounterType === "rainbow_arch" ? 0xffd166 : 0x45f0df,
-        transparent: true,
-        opacity: 0.24,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      })
-    );
-    beacon.position.set(0, 13, 0);
-    g.add(beacon);
-
-    if (enc.encounterType === "holo_ramp" || enc.encounterType === "rainbow_arch") {
-      this._populateRampOrArchMesh(g, enc, slot);
-    } else if (enc.encounterType === "astrolabe_shrine") {
-      this._populateAstrolabeMesh(g, enc, slot);
-    } else if (enc.encounterType === "harpoon_cliff") {
-      this._populateHarpoonCliffMesh(g, enc, slot);
-    } else {
-      this._populateCryoTowersMesh(g, enc, slot);
+    const validEnc =
+      updatedEncounter && typeof updatedEncounter === "object" ? updatedEncounter : null;
+    let slot = this.activeGateSlot;
+    if (!slot && validEnc) {
+      slot =
+        this.gateSlots.find(
+          (s) => s.encounter === validEnc || (validEnc.uid && s.encounter?.uid === validEnc.uid)
+        ) || this.gateSlots[0];
     }
-
-    return g;
-  }
-
-  _populateCryoTowersMesh(g, enc, slot) {
-    const goldMat = new THREE.MeshStandardMaterial({
-      color: 0xffcf56,
-      emissive: 0xd98a16,
-      emissiveIntensity: 0.55,
-      roughness: 0.25,
-    });
-    const iceMat = new THREE.MeshStandardMaterial({
-      color: 0x48b8ff,
-      emissive: 0x1665c1,
-      emissiveIntensity: 0.55,
-      roughness: 0.2,
-    });
-    const coreMat = new THREE.MeshStandardMaterial({
-      color: 0x45f0df,
-      emissive: 0x1cb5a3,
-      emissiveIntensity: 0.85,
-      roughness: 0.15,
-    });
-
-    const towers = enc.towers || { leftA: 1, leftB: 4, rightA: 0, rightB: 10 };
-    const buildStack = (xPos, varCount, constVal) => {
-      const ped = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.6, 1.9, 0.8, 8),
-        new THREE.MeshStandardMaterial({ color: 0x1d3554, roughness: 0.5 })
-      );
-      ped.position.set(xPos, 0.5, 0);
-      g.add(ped);
-
-      let curY = 1.25;
-      const vVis = Math.min(6, Math.abs(varCount || 0));
-      for (let i = 0; i < vVis; i++) {
-        const oct = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), varCount < 0 ? iceMat : coreMat);
-        oct.position.set(xPos, curY + i * 1.15, 0);
-        g.add(oct);
-      }
-      curY += vVis * 1.15;
-
-      const cVis = Math.min(7, Math.max(1, Math.round(Math.abs(constVal || 0) / (Math.abs(constVal) >= 40 ? 25 : 3))));
-      if (constVal !== 0) {
-        for (let j = 0; j < cVis; j++) {
-          const blk = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.72, 1.15), constVal > 0 ? goldMat : iceMat);
-          blk.position.set(xPos, curY + j * 0.82, 0);
-          g.add(blk);
-        }
-      }
-    };
-
-    buildStack(-4.2, towers.leftA, towers.leftB);
-    buildStack(4.2, towers.rightA, towers.rightB);
-
-    // Translucent Cryo-Barrier Wall between the twin towers (shatters on hit!)
-    const barrier = new THREE.Mesh(
-      new THREE.BoxGeometry(6.4, 5.2, 0.45),
-      new THREE.MeshStandardMaterial({
-        color: 0x7ceeff,
-        emissive: 0x1f8ea8,
-        emissiveIntensity: 0.45,
-        transparent: true,
-        opacity: 0.62,
-        roughness: 0.12,
-      })
-    );
-    barrier.position.set(0, 3.0, 0);
-    g.add(barrier);
-    slot.barrierMesh = barrier;
-
-    // Gold Caliper Bar for physical off-target height cue
-    const caliper = new THREE.Mesh(
-      new THREE.BoxGeometry(6.8, 0.22, 0.62),
-      new THREE.MeshBasicMaterial({ color: 0xffd166 })
-    );
-    caliper.position.set(0, 3.0, 0.35);
-    caliper.visible = false;
-    g.add(caliper);
-    slot.caliperMesh = caliper;
-  }
-
-  _populateRampOrArchMesh(g, enc, slot) {
-    // Launch emitter pad + 15% Near-Field Tangent Stub (Adversarial Anti-Scrub Rule!)
-    const pad = new THREE.Mesh(
-      new THREE.BoxGeometry(4.8, 0.5, 4.4),
-      new THREE.MeshStandardMaterial({ color: 0x1e3858, emissive: 0x164c6b, emissiveIntensity: 0.5 })
-    );
-    pad.position.set(0, 0.55, 2.5);
-    g.add(pad);
-
-    // 15% Near-Field Origin Tangent Stub (3 short neon chevrons right at the lip!)
-    const stubGroup = new THREE.Group();
-    stubGroup.position.set(0, 0.9, 0.2);
-    for (let i = 0; i < 3; i++) {
-      const strip = new THREE.Mesh(
-        new THREE.BoxGeometry(3.4 - i * 0.35, 0.14, 0.72),
-        new THREE.MeshBasicMaterial({
-          color: 0x45f0df,
-          transparent: true,
-          opacity: 0.88 - i * 0.22,
-        })
-      );
-      strip.position.set(0, 0, -i * 1.05);
-      stubGroup.add(strip);
-    }
-    g.add(stubGroup);
-    slot.tangentStub = stubGroup;
-
-    // Target Spinning Gold Crystal Ring suspended across chasm!
-    const ringH = enc.encounterType === "rainbow_arch" ? 7.2 : 6.2;
-    const targetRing = new THREE.Mesh(
-      new THREE.TorusGeometry(2.35, 0.28, 12, 32),
-      new THREE.MeshStandardMaterial({
-        color: 0xffd166,
-        emissive: 0xf4a62a,
-        emissiveIntensity: 0.85,
-        roughness: 0.2,
-      })
-    );
-    targetRing.position.set(0, ringH, -13.5);
-    g.add(targetRing);
-    slot.targetRing = targetRing;
-
-    // Extruded Full 3D Curve Bridge (HIDDEN until Commit Launch — strict Anti-Scrub!)
-    const curveGroup = new THREE.Group();
-    curveGroup.visible = false;
-    for (let s = 0; s < 16; s++) {
-      const t = s / 15;
-      const zPos = -t * 16.5;
-      const yPos =
-        enc.encounterType === "rainbow_arch"
-          ? 0.9 + Math.sin(t * Math.PI) * (ringH + 1.1)
-          : 0.9 + t * ringH;
-      const seg = new THREE.Mesh(
-        new THREE.BoxGeometry(3.6, 0.18, 1.15),
-        new THREE.MeshBasicMaterial({
-          color: enc.encounterType === "rainbow_arch" ? 0xffb36b : 0x45f0df,
-          transparent: true,
-          opacity: 0.78,
-        })
-      );
-      seg.position.set(0, yPos, zPos);
-      curveGroup.add(seg);
-    }
-    g.add(curveGroup);
-    slot.extrudedBridge = curveGroup;
-  }
-
-  _populateAstrolabeMesh(g, enc, slot) {
-    // Giant Rotating 3D Brass & Starlight Astrolabe Gimbal Rings!
-    const brassMat = new THREE.MeshStandardMaterial({
-      color: 0xf5c451,
-      emissive: 0x9e6f14,
-      emissiveIntensity: 0.45,
-      metalness: 0.65,
-      roughness: 0.25,
-    });
-    const starMat = new THREE.MeshStandardMaterial({
-      color: 0x5ce1e6,
-      emissive: 0x2ec4b6,
-      emissiveIntensity: 0.8,
-    });
-
-    const outer = new THREE.Mesh(new THREE.TorusGeometry(4.2, 0.24, 12, 40), brassMat);
-    outer.position.set(0, 5.2, 0);
-    const mid = new THREE.Mesh(new THREE.TorusGeometry(3.15, 0.2, 12, 36), brassMat);
-    mid.position.set(0, 5.2, 0);
-    const inner = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.18, 10, 32), starMat);
-    inner.position.set(0, 5.2, 0);
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.85, 0), starMat);
-    core.position.set(0, 5.2, 0);
-
-    g.add(outer, mid, inner, core);
-    slot.astrolabeRings = { outer, mid, inner, core };
-  }
-
-  _populateHarpoonCliffMesh(g, enc, slot) {
-    // Sheer Crystal Glacier Spire + Golden Anchor Ring at Summit
-    const spire = new THREE.Mesh(
-      new THREE.ConeGeometry(3.2, 12.5, 6),
-      new THREE.MeshStandardMaterial({ color: 0x2b5d8c, roughness: 0.3, metalness: 0.25 })
-    );
-    spire.position.set(0, 6.25, -3.5);
-    g.add(spire);
-
-    const anchor = new THREE.Mesh(
-      new THREE.TorusGeometry(1.35, 0.24, 10, 24),
-      new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xf4a62a, emissiveIntensity: 0.9 })
-    );
-    anchor.position.set(0, 12.2, -3.5);
-    g.add(anchor);
-    slot.harpoonAnchor = anchor;
-  }
-
-  /**
-   * Updates ONLY the Near-Field Tangent Stub / Astrolabe gimbal tilt when player dials!
-   * Strictly obeys Anti-Scrub: never draws the full chasm trajectory prior to commit.
-   */
-  updateDialPreview(val) {
-    this.dialPreviewValue = Number(val) || 0;
-    const slot = this.activeGateSlot;
     if (!slot) return;
-
-    if (slot.tangentStub) {
-      const clampedAngle = Math.max(-0.65, Math.min(0.75, this.dialPreviewValue * 0.14));
-      slot.tangentStub.rotation.x = clampedAngle;
-    }
-    if (slot.astrolabeRings) {
-      const rad = (this.dialPreviewValue * Math.PI) / 180;
-      slot.astrolabeRings.mid.rotation.z = rad;
-      slot.astrolabeRings.inner.rotation.y = rad * 1.3;
-    }
+    if (validEnc) slot.encounter = validEnc;
+    if (!this.scene) return;
+    if (slot.group) this.scene.remove(slot.group);
+    slot.group = buildEncounter3DGroup(slot);
+    this.scene.add(slot.group);
+    updateEncounterDialPreview(slot, this.dialPreviewValue);
   }
 
-  /**
-   * Steers rig automatically to the nearest uncleared 3D encounter!
-   */
+  updateDialPreview(val) {
+    this.dialPreviewValue = clampFinite(val, -10000, 10000, 0);
+    const slot = this.activeGateSlot || this.gateSlots.find((s) => !s.cleared) || this.gateSlots[0];
+    if (!slot) return;
+    updateEncounterDialPreview(slot, this.dialPreviewValue);
+  }
+
   engageAutopilotToNextGate() {
     const openSlots = this.gateSlots.filter((s) => !s.cleared);
     if (!openSlots.length) return null;
     let best = openSlots[0];
-    let bestD = Infinity;
-    for (const s of openSlots) {
-      const approachX = s.x + Math.sin(s.rotY) * 6.5;
-      const approachZ = s.z + Math.cos(s.rotY) * 6.5;
-      const d = Math.hypot(approachX - this.rigState.x, approachZ - this.rigState.z);
-      if (d < bestD) {
-        bestD = d;
-        best = s;
+    if (best.encounter?.worldId !== "W0") {
+      let bestD = Infinity;
+      for (const s of openSlots) {
+        const approachX = s.x + Math.sin(s.rotY) * 6.5;
+        const approachZ = s.z + Math.cos(s.rotY) * 6.5;
+        const d = Math.hypot(approachX - this.rigState.x, approachZ - this.rigState.z);
+        if (d < bestD) {
+          bestD = d;
+          best = s;
+        }
       }
     }
     this.autopilotTarget = {
@@ -966,26 +1761,96 @@ export class FrostwakeWorld3D {
   }
 
   setDriveInputs(steer, throttle, boosting = false) {
-    if (Math.abs(steer) > 0.05 || Math.abs(throttle) > 0.05) {
-      this.autopilotTarget = null; // Manual thumbstick/keys immediately take control!
+    const cleanSteer = clampFinite(steer, -1, 1, 0);
+    const cleanThrottle = clampFinite(throttle, -1, 1, 0);
+    if (Math.abs(cleanSteer) > 0.05 || Math.abs(cleanThrottle) > 0.05) {
+      this.autopilotTarget = null;
     }
-    this.rigState.steerInput = Math.max(-1, Math.min(1, steer));
-    this.rigState.throttleInput = Math.max(-1, Math.min(1, throttle));
+    this.rigState.steerInput = cleanSteer;
+    this.rigState.throttleInput = cleanThrottle;
     this.rigState.boosting = Boolean(boosting);
   }
 
-  /**
-   * Fires Twin Cyan/Gold Headlight Beams into both 3D Cryo-Towers on a symmetric step!
-   */
+  grappleNearestIcePod() {
+    if (!this.opposition) return { grappled: false, podId: null };
+    const hasHarpoon = this.rigState.upgrades.includes("titan_harpoon");
+    return this.opposition.grappleNearestIcePod(
+      this.rigState.x,
+      this.rigState.y,
+      this.rigState.z,
+      hasHarpoon
+    );
+  }
+
+  triggerRealmQuickAction() {
+    const hasHarpoon = this.rigState.upgrades.includes("titan_harpoon");
+    if (hasHarpoon && this.opposition) {
+      const nearPod = this.opposition.findNearestGrapplePod(
+        this.rigState.x,
+        this.rigState.z,
+        HARPOON_GRAPPLE_RANGE,
+        false
+      );
+      if (nearPod) {
+        const res = this.grappleNearestIcePod();
+        this._refreshSnowSurfaceOnly();
+        return res;
+      }
+    }
+    if (!hasHarpoon && this.opposition) {
+      this.opposition.grappleNearestIcePod(
+        this.rigState.x,
+        this.rigState.y,
+        this.rigState.z,
+        false
+      );
+    }
+    this.resetFreshSnow();
+    return true;
+  }
+
+  // Live 2-Player Multiplayer Co-Op Adapter Methods (F21)
+  getLocalMultiplayerPose() {
+    return {
+      x: round3(this.rigState.x),
+      y: round3(this.rigState.y),
+      z: round3(this.rigState.z),
+      heading: round3(this.rigState.heading),
+      speed: round3(this.rigState.speed),
+      chassisOrMount: this.rigState.chassisId,
+    };
+  }
+
+  syncRemotePartners(peersArray) {
+    this.coop?.syncRemotePartners(peersArray);
+  }
+
+  playPartnerCoopEvent(event) {
+    return this.coop?.playPartnerCoopEvent(event) || null;
+  }
+
+  playLocalFlare() {
+    return this.coop?.playLocalFlare(this.rigState) || null;
+  }
+
+  syncSharedCoins(coinStatesMap) {
+    this.coop?.syncSharedCoins(coinStatesMap);
+  }
+
   playTwinBeamVisual(isRepel = false) {
-    const slot = this.activeGateSlot;
+    const slot =
+      this.activeGateSlot || this.gateSlots.find((s) => !s.cleared) || this.gateSlots[0];
     if (!slot || !this.scene) return;
     const color = isRepel ? 0xffae42 : 0x45f0df;
 
     for (const offset of [-3.8, 3.8]) {
       const start = new THREE.Vector3(this.rigState.x, this.rigState.y + 1.3, this.rigState.z);
-      const end = new THREE.Vector3(slot.x + offset * Math.cos(slot.rotY), slot.y + 3.2, slot.z - offset * Math.sin(slot.rotY));
-      const dist = start.distanceTo(end);
+      const end = new THREE.Vector3(
+        slot.x + offset * Math.cos(slot.rotY),
+        slot.y + 3.2,
+        slot.z - offset * Math.sin(slot.rotY)
+      );
+      const dist = Math.max(0.2, start.distanceTo(end));
       const cyl = new THREE.Mesh(
         new THREE.CylinderGeometry(0.14, 0.14, dist, 8),
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 })
@@ -998,103 +1863,77 @@ export class FrostwakeWorld3D {
     }
 
     if (isRepel) {
+      triggerTwinBeamEncounterFX(slot, true);
       this._spawnCrystalBurst(slot.x, slot.y + 3.2, slot.z, 18);
     }
   }
 
-  /**
-   * Plays physical 3D commit consequence:
-   * - clear -> Ram shatter / Surf extruded 3D ramp / Fire golden harpoon + wake Fox!
-   * - nudge -> Physical 3D Ice-Jack / Δy Caliper offset!
-   * - warm_reveal -> Friendly Spirit-Fox bounds in with glowing golden shards!
-   */
-  playCommitVisual(result) {
-    const slot = this.activeGateSlot;
+  playCommitVisual(result = {}, enc = null) {
+    const safeRes = result && typeof result === "object" ? result : {};
+    const safeEnc = enc && typeof enc === "object" ? enc : null;
+    let slot = null;
+    if (safeEnc) {
+      slot =
+        this.gateSlots.find(
+          (s) => s.encounter === safeEnc || (safeEnc.uid && s.encounter?.uid === safeEnc.uid)
+        ) || null;
+    }
+    if (!slot) {
+      slot = this.activeGateSlot || this.gateSlots.find((s) => !s.cleared) || this.gateSlots[0];
+    }
     if (!slot) return;
 
-    if (result.outcome === "clear" || result.outcome === "warm_reveal") {
-      slot.cleared = true;
-      const enc = slot.encounter;
+    applyEncounterCommitFX(this, slot, safeRes, safeEnc);
 
-      if (slot.extrudedBridge) {
-        slot.extrudedBridge.visible = true;
-        // Surf the rig physically along the extruded 3D Holo-Ramp / Rainbow Arch!
-        this.rigAnim = {
-          kind: "surf_ramp",
-          t: 0,
-          dur: 1.15,
-          startX: this.rigState.x,
-          startZ: this.rigState.z,
-          slot,
-          peakH: enc.encounterType === "rainbow_arch" ? 8.0 : 6.4,
-        };
-      } else {
-        // Surge rig through the Cryo-Gate / Shrine and shatter barrier into 3D shards!
-        if (slot.barrierMesh) slot.barrierMesh.visible = false;
-        this._spawnCrystalBurst(slot.x, slot.y + 3.0, slot.z, result.overdrive ? 72 : 42);
-        this.rigAnim = {
-          kind: "ram_surge",
-          t: 0,
-          dur: 0.65,
-          startX: this.rigState.x,
-          startZ: this.rigState.z,
-          endX: slot.x - Math.sin(slot.rotY) * 3.5,
-          endZ: slot.z - Math.cos(slot.rotY) * 3.5,
-        };
-      }
-
+    if (safeRes.outcome === "clear" || safeRes.outcome === "warm_reveal") {
       if (this.scene) {
         const fox = this._createSpiritFoxMesh();
         fox.position.set(slot.x + 2.6, slot.y, slot.z + 1.8);
         this.scene.add(fox);
-        this.wokenFoxes.push({ mesh: fox, baseY: slot.y, phase: Math.random() * 6 });
+        if (this.wokenFoxes.length >= MAX_WOKEN_FOXES) {
+          const oldest = this.wokenFoxes.shift();
+          if (oldest?.mesh && this.scene) this.scene.remove(oldest.mesh);
+        }
+        this.wokenFoxes.push({ mesh: fox, baseY: slot.y, phase: this.wokenFoxes.length * 1.4 });
       }
-      return;
+      this.opposition?.triggerRimeBlast(slot.x, slot.z, 18.0);
+      if (this.areAllEncountersCleared() && this.ghostController?.waveActive) {
+        this.lastGhostWaveResult = this.ghostController.completeWave(this._boundProgressRef);
+      }
     }
-
-    // Nudge path: deterministic 3D physical caliper offset!
-    if (slot.caliperMesh) {
-      slot.caliperMesh.visible = true;
-      const offsetClamped = Math.max(-2.2, Math.min(2.6, (result.delta || 1) * 0.18));
-      slot.caliperMesh.position.y = 3.0 + offsetClamped;
-    }
-    this.rigAnim = {
-      kind: "recoil_jack",
-      t: 0,
-      dur: 0.48,
-      baseY: this.rigState.y,
-      deltaSign: (result.delta || 1) >= 0 ? 1 : -1,
-    };
   }
 
   _spawnCrystalBurst(cx, cy, cz, count = 48) {
-    if (!this.shardPool) return;
+    if (!this.shardPool || !this.shardInstMesh) return;
     let spawned = 0;
     for (const p of this.shardPool) {
       if (p.life > 0) continue;
-      p.life = 1.1 + Math.random() * 0.45;
-      p.mesh.visible = true;
-      p.mesh.position.set(cx + (Math.random() - 0.5) * 3.2, cy + (Math.random() - 0.5) * 2.2, cz + (Math.random() - 0.5) * 1.2);
-      const ang = Math.random() * Math.PI * 2;
-      const spd = 5 + Math.random() * 11;
+      p.life = 1.1 + (p.index % 5) * 0.08;
+      p.x = cx + ((p.index % 7) - 3) * 0.45;
+      p.y = cy + ((p.index % 5) - 2) * 0.35;
+      p.z = cz + ((p.index % 3) - 1) * 0.45;
+      const ang = (p.index / 12) * Math.PI * 2;
+      const spd = 5.5 + (p.index % 8) * 1.25;
       p.vx = Math.cos(ang) * spd;
-      p.vy = 4 + Math.random() * 9;
+      p.vy = 4.5 + (p.index % 6) * 1.35;
       p.vz = Math.sin(ang) * spd;
       spawned += 1;
       if (spawned >= count) break;
     }
   }
 
-  _spawnSnowSpray(lx, ly, lz, intensity) {
-    if (!this.sprayPool) return;
+  _spawnSnowSpray(lx, ly, lz, intensity = 1) {
+    if (!this.sprayPool || !this.sprayInstMesh) return;
     for (const s of this.sprayPool) {
       if (s.life > 0) continue;
-      s.life = 0.48 + Math.random() * 0.25;
-      s.mesh.visible = true;
-      s.mesh.position.set(lx, ly + 0.35, lz);
-      s.vx = (Math.random() - 0.5) * 6 * intensity;
-      s.vy = 2.8 + Math.random() * 4.2 * intensity;
-      s.vz = (Math.random() - 0.5) * 6 * intensity;
+      s.life = 0.48 + (s.index % 4) * 0.06;
+      s.x = lx;
+      s.y = ly + 0.35;
+      s.z = lz;
+      const ang = (s.index / 8) * Math.PI * 2;
+      s.vx = Math.cos(ang) * 3.5 * intensity;
+      s.vy = 2.8 + (s.index % 4) * 1.1 * intensity;
+      s.vz = Math.sin(ang) * 3.5 * intensity;
       break;
     }
   }
@@ -1103,52 +1942,150 @@ export class FrostwakeWorld3D {
     if (this.running) return;
     this.running = true;
     this.clock.getDelta();
-    const tick = () => {
+    const initMs = typeof performance !== "undefined" ? performance.now() : Date.now();
+    this._lastPerfMs = initMs;
+    this._lastTickWallMs = initMs;
+    const raf =
+      typeof globalThis.requestAnimationFrame === "function"
+        ? globalThis.requestAnimationFrame.bind(globalThis)
+        : (cb) => setTimeout(cb, 16);
+
+    const runFrame = () => {
       if (!this.running) return;
-      const dt = Math.min(0.05, this.clock.getDelta());
-      this._update(dt);
+      const nowMs = typeof performance !== "undefined" ? performance.now() : Date.now();
+      this._lastTickWallMs = nowMs;
+      const rawDt = Math.max(0.001, (nowMs - this._lastPerfMs) / 1000);
+      this._lastPerfMs = nowMs;
+      this._recordFrameSample(rawDt);
+
+      const clockDt = this.clock.getDelta();
+      const wallDt = Math.min(0.45, Math.max(1 / 120, clockDt || rawDt));
+      const substeps = Math.max(1, Math.ceil(wallDt / 0.05));
+      const subDt = wallDt / substeps;
+      for (let i = 0; i < substeps; i++) {
+        this._update(subDt);
+      }
       if (this.webglAvailable && this.renderer) {
         this.renderer.render(this.scene, this.camera);
       }
-      requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+
+    const tick = () => {
+      if (!this.running) return;
+      runFrame();
+      this._rafId = raf(tick);
+    };
+    this._rafId = raf(tick);
+
+    if (typeof window !== "undefined" && !window.__E2E_3D__) {
+      if (this._bgFallbackTimer) clearInterval(this._bgFallbackTimer);
+      this._bgFallbackTimer = setInterval(() => {
+        if (!this.running) return;
+        const nowMs = typeof performance !== "undefined" ? performance.now() : Date.now();
+        if (nowMs - this._lastTickWallMs > 90) {
+          runFrame();
+        }
+      }, 40);
+    }
   }
 
   stop() {
     this.running = false;
-    this.audio.stopHum();
+    if (this._bgFallbackTimer) {
+      clearInterval(this._bgFallbackTimer);
+      this._bgFallbackTimer = null;
+    }
+    if (this._rafId !== null) {
+      if (typeof globalThis.cancelAnimationFrame === "function") {
+        globalThis.cancelAnimationFrame(this._rafId);
+      } else {
+        clearTimeout(this._rafId);
+      }
+      this._rafId = null;
+    }
+    this.audio?.stopHum?.();
+  }
+
+  step(dt = 1 / 60) {
+    const totalDt = clampFinite(dt, 0, 10.0, 0);
+    if (totalDt > 0) {
+      const substeps = Math.max(1, Math.ceil(totalDt / 0.05));
+      const subDt = totalDt / substeps;
+      for (let i = 0; i < substeps; i++) {
+        this._update(subDt);
+      }
+    }
+    this.scene?.updateMatrixWorld?.(false);
   }
 
   _update(dt) {
-    const elapsed = this.clock.elapsedTime;
-    const spec = RIG_CHASSIS.find((c) => c.id === this.rigState.chassisId) || RIG_CHASSIS[0];
+    if (!Number.isFinite(dt) || !(dt > 0)) return;
+    this.simElapsed += dt;
+    const elapsed = this.simElapsed;
+
+    const spec =
+      FROSTWAKE_CHASSIS_SPECS.find((c) => c.id === this.rigState.chassisId) ||
+      FROSTWAKE_CHASSIS_SPECS[0];
     const hasWide = this.rigState.upgrades.includes("wide_blade");
     const hasBoost = this.rigState.upgrades.includes("ion_boosters");
+    const hasHarpoon = this.rigState.upgrades.includes("titan_harpoon");
 
-    // 1. Update Rig Motion (either special commit animation or smooth driving)
+    // 1. Update Rig Motion (commit animations vs tactile driving physics)
     if (this.rigAnim) {
       this.rigAnim.t += dt;
       const p = Math.min(1, this.rigAnim.t / this.rigAnim.dur);
 
-      if (this.rigAnim.kind === "surf_ramp") {
+      if (this.rigAnim.kind === "surf_ramp" || this.rigAnim.kind === "surf_dual_system") {
         const { slot, startX, startZ, peakH } = this.rigAnim;
         const endX = slot.x - Math.sin(slot.rotY) * 15;
         const endZ = slot.z - Math.cos(slot.rotY) * 15;
         this.rigState.x = startX + (endX - startX) * p;
         this.rigState.z = startZ + (endZ - startZ) * p;
         const ground = this._baseHeight(this.rigState.x, this.rigState.z);
-        this.rigState.y = ground + Math.sin(p * Math.PI) * peakH;
-        if (p >= 0.52 && p <= 0.62) {
+        const curveOffset = slot.evalTrueY ? slot.evalTrueY(p) : Math.sin(p * Math.PI) * peakH;
+        this.rigState.y = ground + curveOffset;
+
+        if (this.rigAnim.kind === "surf_dual_system" && slot.companionRig) {
+          const zLocal = 2.2 - p * 17.5;
+          const xLocal = 2.4 * (1 - Math.min(1, p / 0.84));
+          const yLocal = slot.evalTrueY ? slot.evalTrueY(p) : 3.5;
+          slot.companionRig.position.set(xLocal, yLocal + 0.35, zLocal);
+          if (p >= 0.72 && slot.megaGeode && slot.megaGeode.visible) {
+            slot.megaGeode.visible = false;
+            this._spawnCrystalBurst(slot.x, slot.y + peakH, slot.z - 13.5, 64);
+            this.audio?.playCrystalShatter?.(true);
+          }
+        } else if (p >= 0.52 && p <= 0.62) {
           this._spawnCrystalBurst(this.rigState.x, this.rigState.y + 1, this.rigState.z, 16);
+        }
+      } else if (this.rigAnim.kind === "winch_harpoon") {
+        const { slot, startX, startZ, startY, summitH } = this.rigAnim;
+        const targetX = slot.x - Math.sin(slot.rotY) * 3.5;
+        const targetZ = slot.z - Math.cos(slot.rotY) * 3.5;
+        this.rigState.x = startX + (targetX - startX) * p;
+        this.rigState.z = startZ + (targetZ - startZ) * p;
+        if (p <= 0.72) {
+          const u = p / 0.72;
+          this.rigState.y = startY + u * summitH;
+        } else {
+          const u = (p - 0.72) / 0.28;
+          const ground = this._baseHeight(this.rigState.x, this.rigState.z) + 0.16;
+          this.rigState.y = (startY + summitH) * (1 - u) + ground * u;
         }
       } else if (this.rigAnim.kind === "ram_surge") {
         this.rigState.x = this.rigAnim.startX + (this.rigAnim.endX - this.rigAnim.startX) * p;
         this.rigState.z = this.rigAnim.startZ + (this.rigAnim.endZ - this.rigAnim.startZ) * p;
         this.rigState.y = this._baseHeight(this.rigState.x, this.rigState.z) + 0.15;
+      } else if (this.rigAnim.kind === "sign_pillar_jack") {
+        const arch = Math.sin(Math.min(1, p) * Math.PI);
+        this.rigState.y = this.rigAnim.baseY + arch * this.rigAnim.peakH;
+        if (p >= 1 && this.signPillarMesh) {
+          this.signPillarMesh.visible = false;
+        }
       } else if (this.rigAnim.kind === "recoil_jack") {
         const lift = Math.sin(p * Math.PI) * 1.35 * this.rigAnim.deltaSign;
-        this.rigState.y = this._baseHeight(this.rigState.x, this.rigState.z) + Math.max(0, 0.25 + lift);
+        this.rigState.y =
+          this._baseHeight(this.rigState.x, this.rigState.z) + Math.max(0, 0.25 + lift);
       }
 
       if (p >= 1) {
@@ -1164,27 +2101,43 @@ export class FrostwakeWorld3D {
         const dz = this.autopilotTarget.z - this.rigState.z;
         const dist = Math.hypot(dx, dz);
         if (dist < 2.2) {
-          this.rigState.heading = this.autopilotTarget.slot.rotY + Math.PI;
+          this.rigState.heading = this.autopilotTarget.slot.rotY;
           this.rigState.speed = 0;
+          this.rigState.vx = 0;
+          this.rigState.vz = 0;
           this.autopilotTarget = null;
           throttle = 0;
         } else {
-          // Forward vector for heading h in Three.js rig space is (-sin(h), -cos(h))
           const desiredHeading = Math.atan2(-dx, -dz);
-          let diff = desiredHeading - this.rigState.heading;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          steer = Math.max(-1, Math.min(1, diff * 1.9));
-          throttle = dist > 7 ? 1.0 : 0.55;
-          boostMul = 1.2;
+          const diff = wrapAngleDiff(desiredHeading, this.rigState.heading);
+          steer = Math.max(-1, Math.min(1, -diff * 2.6));
+          throttle = Math.abs(diff) > 0.9 ? 0.35 : dist > 6.5 ? 1.0 : 0.6;
+          boostMul = 1.38;
         }
       }
 
-      const maxSpd = spec.topSpeed * (hasBoost ? 1.28 : 1.0) * boostMul;
-      const targetSpd = throttle * maxSpd;
-      const accel = Math.abs(targetSpd) > Math.abs(this.rigState.speed) ? 6.5 : 8.5;
-      this.rigState.speed += (targetSpd - this.rigState.speed) * Math.min(1, accel * dt);
+      const permafrostFactor = this.opposition
+        ? this.opposition.getPermafrostSpeedFactor(this.rigState.x, this.rigState.z, hasWide)
+        : 1.0;
+      this.rigState.inPermafrost = this.opposition
+        ? this.opposition.isInsideIntactPermafrost(this.rigState.x, this.rigState.z)
+        : false;
 
+      const maxSpd = spec.topSpeed * (hasBoost ? 1.28 : 1.0) * boostMul * permafrostFactor;
+      const targetSpd = throttle * maxSpd;
+      const prevSpd = this.rigState.speed;
+      const accel =
+        permafrostFactor < 1 && Math.abs(prevSpd) > Math.abs(targetSpd)
+          ? 14.0
+          : Math.abs(targetSpd) > Math.abs(prevSpd)
+          ? 6.8
+          : 8.8;
+      this.rigState.speed += (targetSpd - prevSpd) * Math.min(1, accel * dt);
+      const lonAccel = (this.rigState.speed - prevSpd) / Math.max(dt, 0.001);
+
+      if (!Number.isFinite(this.rigState.heading)) {
+        this.rigState.heading = 0;
+      }
       if (Math.abs(this.rigState.speed) > 0.25) {
         const dirSign = this.rigState.speed >= 0 ? 1 : -1;
         this.rigState.heading -= steer * spec.turnRate * dt * dirSign;
@@ -1192,51 +2145,209 @@ export class FrostwakeWorld3D {
 
       const fwdX = -Math.sin(this.rigState.heading);
       const fwdZ = -Math.cos(this.rigState.heading);
-      this.rigState.x += fwdX * this.rigState.speed * dt;
-      this.rigState.z += fwdZ * this.rigState.speed * dt;
+      const rightX = Math.cos(this.rigState.heading);
+      const rightZ = -Math.sin(this.rigState.heading);
 
-      // Soft valley boundary cushion
-      const radial = Math.hypot(this.rigState.x, this.rigState.z);
-      if (radial > 52) {
-        const pull = 52 / radial;
-        this.rigState.x *= pull;
-        this.rigState.z *= pull;
-        this.rigState.speed *= 0.6;
-      }
+      const isAirborne = this.opposition
+        ? this.opposition.updateChasmJump(dt, this.rigState, hasBoost)
+        : false;
 
-      const hoverBob = this.rigState.chassisId === "aurora_sled" ? Math.sin(elapsed * 4.5) * 0.12 + 0.18 : 0.14;
-      this.rigState.y = this._baseHeight(this.rigState.x, this.rigState.z) + hoverBob;
+      if (!isAirborne) {
+        const isSled = this.rigState.chassisId === "aurora_sled";
+        const gripRate = isSled ? 4.6 : 14.0;
+        const gripAlpha = Math.min(1, gripRate * dt);
+        const desVx = fwdX * this.rigState.speed;
+        const desVz = fwdZ * this.rigState.speed;
+        this.rigState.vx += (desVx - this.rigState.vx) * gripAlpha;
+        this.rigState.vz += (desVz - this.rigState.vz) * gripAlpha;
 
-      // Carve deformable snow + spray snow chunks off the plow blade!
-      if (Math.abs(this.rigState.speed) > 1.1) {
-        const plowX = this.rigState.x + fwdX * 1.9;
-        const plowZ = this.rigState.z + fwdZ * 1.9;
-        const carveRadius = spec.plowWidth * (hasWide ? 1.5 : 1.0) * 0.62;
-        this._carveSnowAt(plowX, plowZ, carveRadius);
+        this.rigState.x += this.rigState.vx * dt;
+        this.rigState.z += this.rigState.vz * dt;
+        this.rigState.lateralSlip = this.rigState.vx * rightX + this.rigState.vz * rightZ;
+        this.rigState.distTraveled += Math.hypot(this.rigState.vx, this.rigState.vz) * dt;
 
-        if (Math.random() < 0.7) {
-          const sideX = Math.cos(this.rigState.heading) * (Math.random() < 0.5 ? -1.6 : 1.6);
-          const sideZ = -Math.sin(this.rigState.heading) * (Math.random() < 0.5 ? -1.6 : 1.6);
-          this._spawnSnowSpray(plowX + sideX, this.rigState.y, plowZ + sideZ, Math.abs(this.rigState.speed) / maxSpd);
+        // Expanded radial fence r <= 68 reaches z = -60 Northern Observatory!
+        const radial = Math.hypot(this.rigState.x, this.rigState.z);
+        if (radial > MAX_VALLEY_RADIUS) {
+          const pull = MAX_VALLEY_RADIUS / radial;
+          this.rigState.x *= pull;
+          this.rigState.z *= pull;
+          this.rigState.speed *= 0.6;
+          this.rigState.vx *= 0.6;
+          this.rigState.vz *= 0.6;
+        }
+
+        const hoverBob = isSled ? Math.sin(elapsed * 4.5) * 0.12 + 0.18 : 0.14;
+        const baseSurf = this._baseHeight(this.rigState.x, this.rigState.z);
+        const surfY = this.opposition
+          ? this.opposition.computeChasmSurfaceY(this.rigState.x, this.rigState.z, baseSurf)
+          : baseSurf;
+        this.rigState.y = surfY + hoverBob;
+
+        // Terrain-slope pitch/roll + hover-sled banking
+        const eps = 0.65;
+        const gradX =
+          (this._baseHeight(this.rigState.x + eps, this.rigState.z) -
+            this._baseHeight(this.rigState.x - eps, this.rigState.z)) /
+          (2 * eps);
+        const gradZ =
+          (this._baseHeight(this.rigState.x, this.rigState.z + eps) -
+            this._baseHeight(this.rigState.x, this.rigState.z - eps)) /
+          (2 * eps);
+        const slopeFwd = gradX * fwdX + gradZ * fwdZ;
+        const slopeRight = gradX * rightX + gradZ * rightZ;
+
+        const squatPitch = Math.max(-0.08, Math.min(0.08, lonAccel * 0.0045));
+        const targetPitch = Math.max(-0.42, Math.min(0.42, Math.atan(slopeFwd) + squatPitch));
+        const speedNorm = Math.min(1, Math.abs(this.rigState.speed) / Math.max(1, spec.topSpeed));
+        const sledBank = isSled ? -steer * speedNorm * 0.34 : -steer * speedNorm * 0.06;
+        const targetRoll = Math.max(-0.42, Math.min(0.42, Math.atan(slopeRight) + sledBank));
+
+        const tiltBlend = 1 - Math.exp(-10.5 * dt);
+        this.rigState.pitch += (targetPitch - this.rigState.pitch) * tiltBlend;
+        this.rigState.roll += (targetRoll - this.rigState.roll) * tiltBlend;
+
+        // Carve deformable snow + bloom Snow-Lilies + spray snow chunks!
+        if (Math.abs(this.rigState.speed) > 1.1) {
+          const plowX = this.rigState.x + fwdX * 1.9;
+          const plowZ = this.rigState.z + fwdZ * 1.9;
+          const carveRadius = spec.plowWidth * (hasWide ? 1.5 : 1.0) * 0.62;
+          const newlyCarved = this._carveSnowAt(plowX, plowZ, carveRadius);
+
+          if (newlyCarved > 0) {
+            this._lilyDistAccum += Math.abs(this.rigState.speed) * dt;
+            const hasBioLilies = Boolean(this.crossRealmState?.bioluminescentSnowLilies);
+            const hasPrism =
+              this.rigState.upgrades.includes("prismatic_trail") || this.rigState.inSurge;
+            const lilyInterval = hasBioLilies ? 1.05 : hasPrism ? 1.35 : 3.2;
+            if (this._lilyDistAccum >= lilyInterval) {
+              this._lilyDistAccum = 0;
+              const ridgeOffset = carveRadius + 0.35;
+              this._spawnSnowLilyAt(
+                plowX + rightX * ridgeOffset,
+                surfY + 0.32,
+                plowZ + rightZ * ridgeOffset,
+                hasBioLilies,
+                hasPrism
+              );
+              if (hasBioLilies || hasPrism) {
+                this._spawnSnowLilyAt(
+                  plowX - rightX * ridgeOffset,
+                  surfY + 0.32,
+                  plowZ - rightZ * ridgeOffset,
+                  hasBioLilies,
+                  hasPrism
+                );
+              }
+            }
+          }
+
+          this._spawnSnowSpray(
+            plowX + rightX * 1.6,
+            this.rigState.y,
+            plowZ + rightZ * 1.6,
+            Math.min(1.4, Math.abs(this.rigState.speed) / Math.max(1, maxSpd))
+          );
         }
       }
 
-      this.audio.updateRigHum(Math.abs(this.rigState.speed) / maxSpd, this.rigState.chassisId);
+      const normSpd = Math.abs(this.rigState.speed) / Math.max(1, spec.topSpeed);
+      this.audio?.updateRigHum?.(normSpd, this.rigState.chassisId);
+      this.audio?.updateSnowHiss?.(normSpd, this.rigState.inPermafrost, hasWide);
     }
 
+    // Apply Rig Transform + 6-Wheel Independent Vertical Spring Suspension
     if (this.rigGroup) {
       this.rigGroup.position.set(this.rigState.x, this.rigState.y, this.rigState.z);
       this.rigGroup.rotation.y = this.rigState.heading;
+      this.rigGroup.rotation.x = this.rigState.pitch;
+      this.rigGroup.rotation.z = this.rigState.roll;
+
+      const cosH = Math.cos(this.rigState.heading);
+      const sinH = Math.sin(this.rigState.heading);
+      const centerBaseY = this._baseHeight(this.rigState.x, this.rigState.z);
       for (const w of this.rigWheels || []) {
-        w.rotation.x -= this.rigState.speed * dt * 1.4;
+        w.mesh.rotation.x -= this.rigState.speed * dt * 1.4;
+        const worldWx = this.rigState.x + w.lx * cosH + w.lz * sinH;
+        const worldWz = this.rigState.z - w.lx * sinH + w.lz * cosH;
+        const localGroundDelta =
+          this._baseHeight(worldWx, worldWz) -
+          centerBaseY -
+          (-w.lz * this.rigState.pitch + w.lx * this.rigState.roll);
+        const treadRumble =
+          Math.sin(this.rigState.distTraveled * 3.6 + w.phase) *
+          0.055 *
+          Math.min(1, Math.abs(this.rigState.speed) / 8);
+        const targetDeflect = Math.max(-0.2, Math.min(0.24, localGroundDelta + treadRumble));
+        const springAcc = 95 * (targetDeflect - w.springY) - 14 * w.springVel;
+        w.springVel += springAcc * dt;
+        w.springY = Math.max(-0.2, Math.min(0.24, w.springY + w.springVel * dt));
+        w.mesh.position.y = w.baseY + w.springY;
       }
+
       if (this.companionFox) {
         this.companionFox.position.y = Math.abs(Math.sin(elapsed * 7.5)) * 0.35;
       }
+      if (this.astroToadMascot) {
+        this.astroToadMascot.position.y =
+          (this.rigState.chassisId === "aurora_sled" ? 2.25 : 2.95) +
+          Math.sin(elapsed * 3.2) * 0.1;
+      }
     }
 
-    // 2. Check Unspoken Moon-in-the-Middle Mystery at (0, 0)
-    if (Math.hypot(this.rigState.x, this.rigState.z) < 4.6 && Math.abs(this.rigState.speed) < 2.5) {
+    // 2. Open-Air 3D Lift Garage Pad (-24, 16) with Spatial Hysteresis
+    if (this.garageHoloWrench) {
+      this.garageHoloWrench.rotation.y = elapsed * 1.6;
+      this.garageHoloWrench.position.y = 6.2 + Math.sin(elapsed * 2.8) * 0.28;
+    }
+    if (this.garagePadCooldown > 0) {
+      this.garagePadCooldown = Math.max(0, this.garagePadCooldown - dt);
+    }
+    const dGarage = Math.hypot(this.rigState.x - -24, this.rigState.z - 16);
+    if (!this.garagePadArmed && dGarage > 8.5) {
+      this.garagePadArmed = true;
+    }
+    if (
+      dGarage < 4.6 &&
+      this.garagePadArmed &&
+      this.garagePadCooldown <= 0 &&
+      !this.encounterDockOpen &&
+      !this.rigAnim
+    ) {
+      this.garagePadArmed = false;
+      this.garagePadCooldown = 4.0;
+      this.rigState.speed *= 0.25;
+      this.autopilotTarget = null;
+      this.audio?.playGarageLift?.();
+      this.onGaragePadEntered();
+    }
+
+    // 3. Frost Guardian Colossus Idle & Awakening Animation
+    if (this.guardianArms) {
+      const armLift =
+        this.guardianAwakeTimer > 0
+          ? Math.min(2.5, (4.8 - Math.abs(this.guardianAwakeTimer - 2.4)) * 1.2)
+          : Math.sin(elapsed * 1.6) * 0.22;
+      this.guardianArms.forEach((arm, idx) => {
+        arm.position.y = 5.4 + armLift + (idx === 1 ? 0.08 : 0);
+      });
+    }
+    if (this.guardianAwakeTimer > 0) {
+      this.guardianAwakeTimer = Math.max(0, this.guardianAwakeTimer - dt);
+      if (this.guardianBeam) {
+        this.guardianBeam.rotation.y = elapsed * 2.1;
+        this.guardianBeamMat.opacity = Math.min(0.85, this.guardianAwakeTimer * 0.45);
+        if (this.guardianAwakeTimer <= 0) {
+          this.guardianBeam.visible = false;
+        }
+      }
+    }
+
+    // 4. Moon Sanctuary Mystery (0, 0) & Quadrant Sky-Whale Beacons (±34, ±34)
+    if (
+      Math.hypot(this.rigState.x, this.rigState.z) < 4.6 &&
+      Math.abs(this.rigState.speed) < 2.5
+    ) {
       this.moonDwellSec += dt;
       if (this.moonDwellSec > 1.4) {
         this.onMysteryFound("moon_center");
@@ -1244,8 +2355,9 @@ export class FrostwakeWorld3D {
     } else {
       this.moonDwellSec = 0;
     }
+    updateQuadrantWhaleBeacons(this, dt, elapsed);
 
-    // 3. Check proximity to 3D Encounter Gates
+    // 5. Check Proximity to 3D Encounter Gates BEFORE Opposition Step (Mandatory Math-Pause!)
     let nearest = null;
     let nearestDist = Infinity;
     for (const slot of this.gateSlots) {
@@ -1264,14 +2376,43 @@ export class FrostwakeWorld3D {
     if (nearest && nearestDist < 9.2) {
       if (this.activeGateSlot !== nearest) {
         this.activeGateSlot = nearest;
+        this.opposition?.setPaused(this.isOppositionPaused());
         this.onApproachGate(nearest.encounter, nearest);
       }
-    } else if (this.activeGateSlot && nearestDist > 12.0 && !this.rigAnim) {
+    } else if (
+      this.activeGateSlot &&
+      (nearestDist > 12.0 || this.activeGateSlot.cleared) &&
+      !this.rigAnim
+    ) {
       this.activeGateSlot = null;
+      this.opposition?.setPaused(this.isOppositionPaused());
       this.onLeaveGate();
     }
 
-    // 4. Smooth Chase Camera (frames gate tower overhead when in Approach Zone!)
+    // 6. Step Active Spatial Opposition, Self-Ghost Rig, Encounters & Live 2-Player Co-Op!
+    const pausedForMath = this.isOppositionPaused();
+    const plowX = this.rigState.x - Math.sin(this.rigState.heading) * 2.0;
+    const plowZ = this.rigState.z - Math.cos(this.rigState.heading) * 2.0;
+    if (this.opposition) {
+      this.opposition.update(dt, {
+        paused: pausedForMath,
+        rigState: this.rigState,
+        plowX,
+        plowZ,
+        hasWideBlade: hasWide,
+        hasIonBoosters: hasBoost,
+        hasTitanHarpoon: hasHarpoon,
+      });
+    }
+    if (this.ghostController) {
+      this.ghostController.update(dt, this.rigState, pausedForMath);
+    }
+    updateEncounterAnimations(this, dt, elapsed);
+    if (this.coop) {
+      this.coop.update(dt, this.rigState, Boolean(this.rigAnim));
+    }
+
+    // 7. Smooth Chase Camera
     if (this.camera) {
       const fwdX = -Math.sin(this.rigState.heading);
       const fwdZ = -Math.cos(this.rigState.heading);
@@ -1284,7 +2425,8 @@ export class FrostwakeWorld3D {
 
       if (this.activeGateSlot) {
         const s = this.activeGateSlot;
-        desiredCamX = this.rigState.x - fwdX * 11.5 + Math.cos(this.rigState.heading) * 2.2;
+        desiredCamX =
+          this.rigState.x - fwdX * 11.5 + Math.cos(this.rigState.heading) * 2.2;
         desiredCamY = this.rigState.y + 6.6;
         desiredCamZ = this.rigState.z - fwdZ * 11.5;
         lookX = (this.rigState.x + s.x) * 0.5;
@@ -1292,11 +2434,29 @@ export class FrostwakeWorld3D {
         lookZ = (this.rigState.z + s.z) * 0.5;
       }
 
-      this.camera.position.lerp(new THREE.Vector3(desiredCamX, desiredCamY, desiredCamZ), Math.min(1, dt * 4.8));
+      this._camTargetVec.set(desiredCamX, desiredCamY, desiredCamZ);
+      this.camera.position.lerp(this._camTargetVec, Math.min(1, dt * 4.8));
       this.camera.lookAt(lookX, lookY, lookZ);
     }
 
-    // 5. Animate Aurora, Snowfall, Particles, Lasers, Foxes & Sky-Whale
+    // 8. Animate Snow-Lilies, Aurora, Snowfall, Instanced Particles, Lasers, Foxes & Sky-Whale
+    if (this.snowLilyMesh && this.activeLilyCount > 0) {
+      let lilyDirty = false;
+      for (let i = 0; i < MAX_SNOW_LILIES; i++) {
+        const rec = this.snowLilies[i];
+        if (!rec.active || rec.scale >= rec.targetScale) continue;
+        rec.scale = Math.min(rec.targetScale, rec.scale + dt * 2.8);
+        this._tmpPos.set(rec.x, rec.y, rec.z);
+        this._tmpEuler.set(0, rec.rotY, 0);
+        this._tmpQuat.setFromEuler(this._tmpEuler);
+        this._tmpScale.setScalar(rec.scale);
+        this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+        this.snowLilyMesh.setMatrixAt(i, this._tmpMat4);
+        lilyDirty = true;
+      }
+      if (lilyDirty) this.snowLilyMesh.instanceMatrix.needsUpdate = true;
+    }
+
     if (this.moonTotem) this.moonTotem.rotation.y = elapsed * 0.8;
 
     for (const r of this.auroraRibbons || []) {
@@ -1318,20 +2478,38 @@ export class FrostwakeWorld3D {
       sp.needsUpdate = true;
     }
 
-    for (const p of [...(this.sprayPool || []), ...(this.shardPool || [])]) {
-      if (p.life <= 0) continue;
-      p.life -= dt;
-      if (p.life <= 0) {
-        p.mesh.visible = false;
-        continue;
+    const stepInstPool = (pool, instMesh) => {
+      if (!pool || !instMesh) return;
+      let dirty = false;
+      for (const p of pool) {
+        if (p.life <= 0) continue;
+        p.life -= dt;
+        dirty = true;
+        if (p.life <= 0) {
+          this._tmpPos.set(0, -30, 0);
+          this._tmpQuat.identity();
+          this._tmpScale.set(0, 0, 0);
+          this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+          instMesh.setMatrixAt(p.index, this._tmpMat4);
+          continue;
+        }
+        p.vy -= 18 * dt;
+        p.x += p.vx * dt;
+        p.y = Math.max(0.2, p.y + p.vy * dt);
+        p.z += p.vz * dt;
+        p.rx += dt * 4;
+        p.ry += dt * 5;
+        this._tmpPos.set(p.x, p.y, p.z);
+        this._tmpEuler.set(p.rx, p.ry, 0);
+        this._tmpQuat.setFromEuler(this._tmpEuler);
+        this._tmpScale.setScalar(Math.min(1, p.life * 2.2));
+        this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+        instMesh.setMatrixAt(p.index, this._tmpMat4);
       }
-      p.vy -= 18 * dt;
-      p.mesh.position.x += p.vx * dt;
-      p.mesh.position.y = Math.max(0.2, p.mesh.position.y + p.vy * dt);
-      p.mesh.position.z += p.vz * dt;
-      p.mesh.rotation.x += dt * 4;
-      p.mesh.rotation.y += dt * 5;
-    }
+      if (dirty) instMesh.instanceMatrix.needsUpdate = true;
+    };
+    stepInstPool(this.sprayPool, this.sprayInstMesh);
+    stepInstPool(this.shardPool, this.shardInstMesh);
 
     for (let i = this.laserBeams.length - 1; i >= 0; i--) {
       const b = this.laserBeams[i];

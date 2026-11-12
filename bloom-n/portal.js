@@ -1,17 +1,29 @@
 /**
- * Bloom N — Universe Portal Controller & Frostwake 3D Gameplay Coordinator
+ * Bloom N — Universe Portal Controller & Dual-Realm 3D Gameplay Coordinator
+ * Coordinates Frostwake: Flux Terra-Rigs (#1) and Oddroot Wilds: Alchemy Sanctuary (#2),
+ * shared adaptive engine, 2-beat Fox Trick Holo-Projector, Sanctuary Evolution Journal,
+ * 1-Tap Sibling Toy Borrow, and Live 2-Player Household WebSocket + BroadcastChannel Co-Op.
  */
 
 import {
   SUB_GAMES,
   RIG_CHASSIS,
   RIG_UPGRADES,
+  ODDROOT_MOUNTS,
+  ODDROOT_UPGRADES,
   MYSTERIES,
   WORLDS,
+  GROWN_UPS_CURRICULUM,
   createSessionState,
   pickNextEncounter,
   applyBeamAction,
   evaluateCommit,
+  queueOverdriveSurge,
+  getTrickCardSpec,
+  computeWorldProgress,
+  computeArchitectLevel,
+  recordWeeklySunshine,
+  getCrossRealmUnlocks,
   unlockMystery,
 } from "./core/engine.js";
 
@@ -24,24 +36,45 @@ import {
   bootstrapYompleSession,
   pullPlayerCloud,
   buildYompleHubReturnUrl,
+  borrowSiblingToy,
+  updateHouseholdLocalHero,
   onSyncUpdate,
 } from "./core/sync.js";
 
+import {
+  createMultiplayerClient,
+  SHARED_COIN_REWARD_SHARDS,
+} from "./core/multiplayer.js";
+
 import { FrostwakeAudio } from "./frostwake/audio.js";
 import { FrostwakeWorld3D } from "./frostwake/frostwake-3d.js";
+import { OddrootAudio } from "./oddroot/audio.js";
+import { OddrootWorld3D, getSanctuaryJournalEntries } from "./oddroot/oddroot-3d.js";
 
 const store = loadStore();
 const session = createSessionState();
-const audio = new FrostwakeAudio();
-audio.setMuted(store.muted);
 
-let world3d = null;
+const frostwakeAudio = new FrostwakeAudio();
+const oddrootAudio = new OddrootAudio();
+frostwakeAudio.setMuted(store.muted);
+oddrootAudio.setMuted(store.muted);
+
+let activeRealmId = "portal";
+let frostwakeWorld = null;
+let oddrootWorld = null;
+let activeBorrowedToy = null;
+
+let mpClient = null;
+let mpStateTimer = null;
+
 let currentEncounter = null;
+let trickCardOpen = false;
 let encounterOpenedAt = 0;
 let firstInputAt = 0;
 let toastTimer = null;
+let waveReplenishTimer = null;
 
-// Keyboard state for desktop driving
+// Keyboard & virtual thumbstick state
 const keys = { up: false, down: false, left: false, right: false, boost: false };
 let joySteer = 0;
 let joyThrottle = 0;
@@ -49,6 +82,22 @@ let holdBoostBtn = false;
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function getActiveAudio() {
+  return activeRealmId === "oddroot" ? oddrootAudio : frostwakeAudio;
+}
+
+function getActiveWorld() {
+  if (activeRealmId === "frostwake") return frostwakeWorld;
+  if (activeRealmId === "oddroot") return oddrootWorld;
+  return null;
+}
+
+function getActiveScreenEl() {
+  if (activeRealmId === "oddroot") return $("screen-oddroot");
+  if (activeRealmId === "frostwake") return $("screen-frostwake");
+  return $("screen-portal");
 }
 
 function showToast(msg, duration = 2300) {
@@ -65,6 +114,111 @@ function isWorldUnlocked(prog, worldId) {
   return (prog.unlockedWorlds || []).includes(worldId);
 }
 
+function syncSurgeBanners() {
+  const on = Boolean(session.inSurge);
+  for (const id of ["surge-banner", "oddroot-surge-banner"]) {
+    const el = $(id);
+    if (!el) continue;
+    el.classList.toggle("on", on);
+    el.classList.toggle("active", on);
+  }
+}
+
+function updateAllShardAndZoneDisplays() {
+  const prog = getActiveProgress(store);
+  const shards = String(prog.fluxShards || 0);
+  if ($("portal-shards")) $("portal-shards").textContent = shards;
+  if ($("hud-shards")) $("hud-shards").textContent = shards;
+  if ($("oddroot-shards")) $("oddroot-shards").textContent = shards;
+  if ($("garage-shards")) $("garage-shards").textContent = shards;
+
+  const streak = String(session.overdriveStreak || 0);
+  if ($("hud-streak")) $("hud-streak").textContent = streak;
+  if ($("oddroot-streak")) $("oddroot-streak").textContent = streak;
+
+  const arch = computeArchitectLevel(prog);
+  if ($("portal-architect-pill")) {
+    $("portal-architect-pill").textContent = `✦ Lv. ${arch.level} · ${arch.title}`;
+  }
+
+  const sun = recordWeeklySunshine(prog);
+  if ($("portal-sunshine-pill")) {
+    $("portal-sunshine-pill").textContent = `☀️ ${sun.suns}/${sun.maxSuns}`;
+  }
+
+  const wp = computeWorldProgress(prog, prog.activeWorld);
+  renderPortalZoneProgress(wp);
+  renderHudZonePill("fw-zone-bar", wp);
+  renderHudZonePill("or-zone-bar", wp);
+
+  const worldLabel = `${wp.rankLabel} · ${wp.worldName}`;
+  if ($("portal-active-world-label")) {
+    $("portal-active-world-label").textContent = `Active Frontier: ${worldLabel}`;
+  }
+  if ($("portal-oddroot-world-label")) {
+    $("portal-oddroot-world-label").textContent = `Sanctuary Frontier: ${worldLabel}`;
+  }
+  if ($("hud-world-btn")) $("hud-world-btn").textContent = `${worldLabel} ▾`;
+  if ($("oddroot-world-btn")) $("oddroot-world-btn").textContent = `${worldLabel} ▾`;
+
+  if (oddrootWorld && oddrootWorld.rigState?.siphonOrbs) {
+    const orbs = oddrootWorld.rigState.siphonOrbs;
+    if ($("orb-sun-count")) $("orb-sun-count").textContent = String(orbs.sun_orb || 0);
+    if ($("orb-frost-count")) $("orb-frost-count").textContent = String(orbs.frost_spore || 0);
+    if ($("orb-pod-count")) $("orb-pod-count").textContent = String(orbs.rune_pod || 0);
+    if ($("orb-puff-count")) $("orb-puff-count").textContent = String(orbs.helium_puff || 0);
+  }
+
+  const eqMount = prog.games?.oddroot?.equippedMount || "bramble_boar";
+  const mountSpec = ODDROOT_MOUNTS.find((m) => m.id === eqMount) || ODDROOT_MOUNTS[0];
+  const mountBtn = $("oddroot-mount-btn");
+  if (mountBtn) {
+    mountBtn.textContent = `${mountSpec.icon} ${mountSpec.name}`;
+    mountBtn.classList.toggle("is-boar", mountSpec.id === "bramble_boar");
+    mountBtn.classList.toggle("is-glider", mountSpec.id === "starlight_glider");
+  }
+}
+
+function renderPortalZoneProgress(wp) {
+  const box = $("portal-zone-progress");
+  if (!box) return;
+  const pct = Math.max(0, Math.min(100, Math.round((wp.beaconsLit / Math.max(1, wp.beaconsNeededForUnlock)) * 100)));
+  const statusCopy = wp.guardianAwakened
+    ? wp.nextWorldName
+      ? `✨ ${wp.guardianName} Awakened! Next Rank Open: ${wp.nextWorldRankLabel} · ${wp.nextWorldName}`
+      : `👑 ${wp.guardianName} Awakened · Crown Frontier Radiant!`
+    : `🛡️ ${wp.beaconsLit} / ${wp.beaconsNeededForUnlock} Solid Beacons to Wake ${wp.guardianName}`;
+
+  const chipsHtml = wp.nodeStatuses
+    .map((ns) => {
+      const stars = ns.stars > 0 ? "★".repeat(ns.stars) + "☆".repeat(3 - ns.stars) : "☆☆☆";
+      return `<span class="zone-node-chip${ns.stage >= 2 ? " lit" : ""}">${ns.name} ${stars}</span>`;
+    })
+    .join("");
+
+  box.innerHTML = `
+    <div class="zone-progress-top">
+      <span>🧭 ${wp.rankLabel} · <strong>${wp.worldName}</strong> (${wp.starsEarned}/${wp.starsMax}★)</span>
+      <span style="color:var(--amber)">${statusCopy}</span>
+    </div>
+    <div class="zone-bar-track">
+      <div class="zone-bar-fill" style="width:${pct}%"></div>
+    </div>
+    <div class="zone-node-stars">${chipsHtml}</div>
+  `;
+}
+
+function renderHudZonePill(elId, wp) {
+  const el = $(elId);
+  if (!el) return;
+  const pct = Math.max(0, Math.min(100, Math.round((wp.beaconsLit / Math.max(1, wp.beaconsNeededForUnlock)) * 100)));
+  const badge = wp.guardianAwakened ? "✨ Awake" : `${wp.beaconsLit}/${wp.beaconsNeededForUnlock} 🛡️`;
+  el.innerHTML = `
+    <span>${badge} · ${wp.starsEarned}★</span>
+    <span class="hud-zone-mini-track"><span class="hud-zone-mini-fill" style="display:block;width:${pct}%"></span></span>
+  `;
+}
+
 /* ==================== RENDER PORTAL HUB ==================== */
 function renderPortal() {
   const prof = getActiveProfile(store);
@@ -72,19 +226,15 @@ function renderPortal() {
 
   $("yomple-back-link").href = buildYompleHubReturnUrl(store);
   $("portal-who-btn").textContent = prof ? `${prof.avatar} ${prof.name}` : "❄️ Explorer";
-  $("portal-shards").textContent = String(prog.fluxShards || 0);
-  $("hud-shards").textContent = String(prog.fluxShards || 0);
-  $("garage-shards").textContent = String(prog.fluxShards || 0);
 
   const muteIcon = store.muted ? "🔇" : "🔊";
   $("portal-mute-btn").textContent = muteIcon;
   $("hud-mute-btn").textContent = muteIcon;
+  if ($("oddroot-mute-btn")) $("oddroot-mute-btn").textContent = muteIcon;
 
-  const activeWorldObj = WORLDS.find((w) => w.id === prog.activeWorld) || WORLDS[1];
-  $("portal-active-world-label").textContent = `Active Frontier: ${activeWorldObj.id} · ${activeWorldObj.name}`;
-  $("hud-world-btn").textContent = `${activeWorldObj.id} · ${activeWorldObj.name} ▾`;
+  updateAllShardAndZoneDisplays();
 
-  // Rig Quick Picker
+  // Frostwake Rig Quick Picker
   const rigRow = $("portal-rig-picker");
   rigRow.innerHTML = "";
   for (const ch of RIG_CHASSIS) {
@@ -93,19 +243,49 @@ function renderPortal() {
     btn.className = `rig-chip${prog.equippedChassis === ch.id ? " selected" : ""}`;
     btn.textContent = `${ch.icon} ${ch.name}`;
     btn.onclick = () => {
-      audio.playDetentClick(12);
+      frostwakeAudio.playDetentClick(12);
       prog.equippedChassis = ch.id;
+      if (prog.games?.frostwake) prog.games.frostwake.equippedChassis = ch.id;
+      activeBorrowedToy = null;
       saveStore(store);
-      if (world3d) world3d.rebuildRig(prog.equippedChassis, prog.ownedUpgrades);
+      if (frostwakeWorld) {
+        frostwakeWorld.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+      }
       renderPortal();
     };
     rigRow.appendChild(btn);
   }
 
-  // Sister Sub-Games (#2 Oddroot, #3 Stardrift + Astrolabes, #4 Arc Bastion)
+  // Oddroot Mount Quick Picker
+  const mountRow = $("portal-mount-picker");
+  if (mountRow) {
+    mountRow.innerHTML = "";
+    const curMount = prog.games?.oddroot?.equippedMount || "bramble_boar";
+    for (const m of ODDROOT_MOUNTS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `rig-chip${curMount === m.id ? " selected" : ""}`;
+      btn.textContent = `${m.icon} ${m.name}`;
+      btn.onclick = () => {
+        oddrootAudio.playDetentClick?.(14);
+        prog.games = prog.games || {};
+        prog.games.oddroot = prog.games.oddroot || {};
+        prog.games.oddroot.equippedMount = m.id;
+        activeBorrowedToy = null;
+        saveStore(store);
+        if (oddrootWorld) {
+          oddrootWorld.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+        }
+        renderPortal();
+      };
+      mountRow.appendChild(btn);
+    }
+  }
+
+  // Sister Sub-Games (#3 Stardrift + Astrolabes, #4 Arc Bastion)
   const sisGrid = $("sister-realms-grid");
   sisGrid.innerHTML = "";
-  for (const sg of SUB_GAMES.slice(1)) {
+  for (const sg of SUB_GAMES.slice(2)) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "realm-card";
@@ -119,10 +299,11 @@ function renderPortal() {
     sisGrid.appendChild(btn);
   }
 
-  // 3-Strand World Constellation
+  // 3-Strand World Constellation (Rank labels + stars, zero school labels!)
   renderWorldsGrid($("worlds-constellation"), false);
 
   // Household Northern Observatory Co-Op Wonder
+  updateHouseholdLocalHero(store);
   const wonder = store.householdWonder || { totalFlux: 0, observatoryTier: 1, heroes: {} };
   $("portal-obs-tier").textContent = String(wonder.observatoryTier || 1);
   const tierTargets = [0, 180, 500, 1200, 2500, 5000];
@@ -134,13 +315,13 @@ function renderPortal() {
   heroList.innerHTML = "";
   const heroes = Object.values(wonder.heroes || {});
   if (heroes.length === 0 && prof) {
-    heroes.push({ display_name: prof.name, avatar: prof.avatar, hero_title: "Frostwake Pioneer", world_max: 2 });
+    heroes.push({ display_name: prof.name, avatar: prof.avatar, hero_title: "Frostwake Pioneer", world_max: 1 });
   }
   for (const h of heroes) {
     const row = document.createElement("div");
     row.className = "hero-row";
     row.innerHTML = `
-      <span>${h.avatar || "❄️"} ${h.display_name} · W${h.world_max || 1}</span>
+      <span>${h.avatar || "❄️"} ${h.display_name} · Rank ${h.world_max || 1}</span>
       <span class="hero-title-tag">✦ ${h.hero_title}</span>
     `;
     heroList.appendChild(row);
@@ -148,10 +329,11 @@ function renderPortal() {
 
   // Monotonic Expedition Plaques
   const rec = prog.records || {};
+  const hatchedCount = (prog.games?.oddroot?.hatchedCreatures || []).length;
   $("rec-overdrive").textContent = `${rec.bestOverdriveStreak || 0}×`;
   $("rec-ramp").textContent = `${rec.longestRampM || 0}m`;
   $("rec-subzero").textContent = rec.deepestSubZero ? `-${rec.deepestSubZero}` : "0";
-  $("rec-foxes").textContent = String(rec.foxesWoken || 0);
+  $("rec-foxes").textContent = String((rec.foxesWoken || 0) + hatchedCount);
 
   // Mysteries Strip
   const mystEl = $("mysteries-strip");
@@ -166,6 +348,7 @@ function renderPortal() {
 }
 
 function renderWorldsGrid(container, launchOnSelect = false) {
+  if (!container) return;
   const prog = getActiveProgress(store);
   container.innerHTML = "";
   for (const w of WORLDS) {
@@ -179,36 +362,210 @@ function renderWorldsGrid(container, launchOnSelect = false) {
         return `<span class="world-dot ${st > 0 ? "s" + st : ""}"></span>`;
       })
       .join("");
+    const starsEarned = w.nodes.reduce((s, n) => s + Math.min(3, prog.nodes?.[n.id]?.stage || 0), 0);
     tile.innerHTML = `
       <div class="world-top">
-        <span>${w.id} · ${w.gradeSpan}</span>
-        <span>${open ? "OPEN" : "🔒"}</span>
+        <span>${w.id} · ${w.rankLabel}</span>
+        <span>${open ? `${starsEarned}★` : "🔒"}</span>
       </div>
       <strong>${w.name}</strong>
+      <div style="font-size:0.74rem;color:var(--ink-soft);margin-top:2px">🛡️ ${w.guardianName}</div>
       <div class="world-dots">${dotsHtml}</div>
     `;
     tile.onclick = () => {
       if (!open) {
-        showToast("Clear 2 nodes in prior world (or open in For Grown-Ups)");
+        showToast(`Wake the prior Guardian with 2 solid beacons first!`);
         return;
       }
-      audio.playDetentClick(18);
+      getActiveAudio().playDetentClick?.(18);
       prog.activeWorld = w.id;
       saveStore(store);
       renderPortal();
       if (launchOnSelect) {
         closeModal("modal-worlds");
-        spawnValleyWave();
-        showToast(`Valley tuned to ${w.id} · ${w.name}`);
+        spawnActiveWave();
+        showToast(`Frontier tuned to ${w.rankLabel} · ${w.name}`);
       }
     };
     container.appendChild(tile);
   }
 }
 
-/* ==================== LAUNCH & RUN 3D FROSTWAKE ==================== */
+/* ==================== LIVE 2-PLAYER CO-OP WIRING ==================== */
+function disconnectMultiplayer() {
+  if (mpStateTimer) {
+    clearInterval(mpStateTimer);
+    mpStateTimer = null;
+  }
+  if (mpClient) {
+    mpClient.disconnect();
+    mpClient = null;
+  }
+  renderPartnerPill("frostwake", []);
+  renderPartnerPill("oddroot", []);
+}
+
+function getLocalCoopStatus() {
+  if (currentEncounter) return "thinking";
+  if (session.inSurge) return "surge";
+  if (session.overdriveStreak >= 2) return "overdrive";
+  return "roaming";
+}
+
+function publishImmediateMultiplayerState(overrideStatus = null) {
+  if (!mpClient || !mpClient.isConnected()) return;
+  const world = getActiveWorld();
+  if (!world) return;
+  const prog = getActiveProgress(store);
+  const wp = computeWorldProgress(prog, prog.activeWorld);
+  const pose = world.getLocalMultiplayerPose ? world.getLocalMultiplayerPose() : {};
+  mpClient.publishLocalState({
+    ...pose,
+    status: overrideStatus || getLocalCoopStatus(),
+    zoneProgressPct: wp.completionPct,
+    streakActive: session.overdriveStreak >= 2,
+  });
+}
+
+function renderPartnerPill(realmId, peers = []) {
+  const pill = $(realmId === "oddroot" ? "or-partner-pill" : "fw-partner-pill");
+  if (!pill) return;
+  if (!Array.isArray(peers) || peers.length === 0) {
+    pill.style.display = "none";
+    pill.innerHTML = "";
+    return;
+  }
+  const p = peers[0];
+  const pct = Math.max(0, Math.min(100, Math.round(Number(p.zoneProgressPct) || 0)));
+  const statusLabel =
+    p.status === "thinking"
+      ? "💭 Thinking"
+      : p.status === "surge" || p.status === "overdrive"
+      ? "⚡ Surge"
+      : "🧭 Exploring";
+  const streakSpark = p.streakActive ? `<span class="partner-streak-flame">🔥</span>` : "";
+
+  pill.style.display = "inline-flex";
+  pill.innerHTML = `
+    <svg class="partner-zone-ring" viewBox="0 0 36 36" aria-hidden="true">
+      <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="3.2"></circle>
+      <circle cx="18" cy="18" r="15.9" fill="none" stroke-width="3.4" stroke-linecap="round"
+        stroke-dasharray="${pct}, 100" transform="rotate(-90 18 18)"></circle>
+    </svg>
+    <span>${p.avatar || "❄️"} ${p.displayName || p.userId} · ${statusLabel}</span>
+    ${streakSpark}
+  `;
+}
+
+function connectRealmMultiplayer(realmId) {
+  disconnectMultiplayer();
+  const prof = getActiveProfile(store);
+  const world = realmId === "oddroot" ? oddrootWorld : frostwakeWorld;
+  if (!world) return;
+
+  mpClient = createMultiplayerClient({
+    realmId,
+    familyCode: store.familyCode || "OPEN-HOUSE",
+    userId: store.activeUsername || "explorer",
+    displayName: prof?.name || store.activeUsername || "Explorer",
+    avatar: prof?.avatar || "❄️",
+    onPeersChanged: (peers) => {
+      world.syncRemotePartners?.(peers);
+      renderPartnerPill(realmId, peers);
+    },
+    onCoinStateChanged: (coins) => {
+      world.syncSharedCoins?.(coins);
+    },
+    onRemoteEvent: (ev) => {
+      world.playPartnerCoopEvent?.(ev);
+      if (ev?.type === "friendly_flare") {
+        showToast(`${ev.byAvatar || "🎆"} ${ev.byName || "Partner"} sent a Sky-Flare!`);
+      } else if (ev?.type === "coin_grab" && ev.bannerText) {
+        showToast(ev.bannerText);
+      } else if (ev?.type === "gate_burst") {
+        showToast(`✨ ${ev.byAvatar || "🌟"} ${ev.byName || "Partner"} lit a Sky-Beacon!`);
+      }
+    },
+  });
+
+  mpClient.connect();
+  world.syncSharedCoins?.(mpClient.getCoinStates());
+  publishImmediateMultiplayerState();
+
+  mpStateTimer = setInterval(() => {
+    publishImmediateMultiplayerState();
+  }, 85);
+}
+
+function triggerFriendlyFlare() {
+  const world = getActiveWorld();
+  if (!world) return;
+  getActiveAudio().unlock?.();
+  const pose = world.getLocalMultiplayerPose ? world.getLocalMultiplayerPose() : { x: 0, y: 1, z: 0 };
+  mpClient?.sendFriendlyFlare(pose);
+  world.playPartnerCoopEvent?.({ type: "friendly_flare", ...pose });
+  getActiveAudio().playClear?.(false);
+  showToast("🎆 Sky-Flare launched!");
+}
+
+/* ==================== MOUNT SHARED DOCK INTO ACTIVE REALM ==================== */
+function attachSharedOverlaysToScreen(screenEl) {
+  if (!screenEl) return;
+  const dock = $("encounter-dock");
+  const toast = $("hud-toast");
+  if (toast && toast.parentElement !== screenEl) screenEl.appendChild(toast);
+  if (dock && dock.parentElement !== screenEl) screenEl.appendChild(dock);
+}
+
+/* ==================== LAUNCH & SWITCH 3D REALMS ==================== */
+function handleSharedCoinGrabbed(coinId) {
+  const world = getActiveWorld();
+  const pose = world?.getLocalMultiplayerPose?.() || {};
+  const claimed = !mpClient || mpClient.tryGrabSharedCoin(coinId, pose);
+  if (!claimed) return;
+  const p = getActiveProgress(store);
+  p.fluxShards = (p.fluxShards || 0) + SHARED_COIN_REWARD_SHARDS;
+  p.unsyncedFlux = (p.unsyncedFlux || 0) + SHARED_COIN_REWARD_SHARDS;
+  getActiveAudio().playSnowShardTick?.();
+  updateAllShardAndZoneDisplays();
+  saveStore(store);
+  showToast(`⭐ Grabbed Shared Star-Coin! +${SHARED_COIN_REWARD_SHARDS}💎`);
+}
+
+function handleMysteryFound(mysteryId) {
+  const p = getActiveProgress(store);
+  if (unlockMystery(p, mysteryId)) {
+    p.fluxShards += 25;
+    p.unsyncedFlux = (p.unsyncedFlux || 0) + 25;
+    getActiveAudio().playClear?.(true);
+    const myst = MYSTERIES.find((m) => m.id === mysteryId);
+    showToast(`✦ Mystery Woken: ${myst ? myst.title : "Hidden Wonder"}! +25💎`, 3400);
+    const w = getActiveWorld();
+    w?.applyLoadout?.(p, getCrossRealmUnlocks(p), activeBorrowedToy);
+    updateAllShardAndZoneDisplays();
+    saveStore(store);
+  }
+}
+
+function handleOppositionEvent(ev) {
+  if (!ev) return;
+  const p = getActiveProgress(store);
+  if (Number(ev.shardsEarned) > 0) {
+    p.fluxShards += Number(ev.shardsEarned);
+    p.unsyncedFlux = (p.unsyncedFlux || 0) + Number(ev.shardsEarned);
+    updateAllShardAndZoneDisplays();
+    saveStore(store);
+  }
+  if (ev.message) {
+    showToast(ev.message, 2200);
+  }
+}
+
 function launchFrostwake(overrideWorldId = null) {
-  audio.unlock();
+  closeEncounterDock();
+  if (oddrootWorld) oddrootWorld.stop();
+  frostwakeAudio.unlock();
+
   const prog = getActiveProgress(store);
   if (overrideWorldId) {
     if (!prog.unlockedWorlds.includes(overrideWorldId)) prog.unlockedWorlds.push(overrideWorldId);
@@ -216,96 +573,287 @@ function launchFrostwake(overrideWorldId = null) {
     saveStore(store);
   }
 
+  activeRealmId = "frostwake";
   $("screen-portal").classList.remove("active");
+  $("screen-oddroot").classList.remove("active");
   $("screen-frostwake").classList.add("active");
+  attachSharedOverlaysToScreen($("screen-frostwake"));
 
-  if (!world3d) {
-    world3d = new FrostwakeWorld3D({
+  if (!frostwakeWorld) {
+    frostwakeWorld = new FrostwakeWorld3D({
       canvas: $("frostwake-canvas"),
-      audio,
-      onSnowCleared: (m2, bonusFlux) => {
+      audio: frostwakeAudio,
+      onWorldActivity: (amount, bonusFlux, metricKey) => {
         const p = getActiveProgress(store);
-        p.snowClearedM2 = Math.round((p.snowClearedM2 || 0) + m2);
-        p.fluxShards += bonusFlux;
-        p.unsyncedFlux = (p.unsyncedFlux || 0) + bonusFlux;
-        audio.playSnowShardTick();
-        $("hud-shards").textContent = String(p.fluxShards);
+        if (metricKey === "snowClearedM2" && amount > 0) {
+          p.snowClearedM2 = Math.round((p.snowClearedM2 || 0) + amount);
+          if (p.games?.frostwake) p.games.frostwake.snowClearedM2 = p.snowClearedM2;
+        } else if (metricKey === "rimeCreepsCleared" && p.games?.frostwake) {
+          p.games.frostwake.rimeCreepsCleared = (p.games.frostwake.rimeCreepsCleared || 0) + amount;
+        } else if (metricKey === "foxDensThawed" && p.games?.frostwake) {
+          p.games.frostwake.foxDensThawed = (p.games.frostwake.foxDensThawed || 0) + amount;
+        }
+        if (bonusFlux > 0) {
+          p.fluxShards += bonusFlux;
+          p.unsyncedFlux = (p.unsyncedFlux || 0) + bonusFlux;
+          frostwakeAudio.playSnowShardTick();
+        }
+        updateAllShardAndZoneDisplays();
         saveStore(store);
       },
       onApproachGate: (enc) => openEncounterDock(enc),
       onLeaveGate: () => closeEncounterDock(),
-      onMysteryFound: (mysteryId) => {
-        const p = getActiveProgress(store);
-        if (unlockMystery(p, mysteryId)) {
-          p.fluxShards += 25;
-          audio.playClear(true);
-          showToast("✦ Mystery Woken: The Moon in the Middle! +25💎", 3400);
-          $("hud-shards").textContent = String(p.fluxShards);
-          saveStore(store);
-        }
-      },
+      onMysteryFound: handleMysteryFound,
+      onGaragePadEntered: () => openGarageModal(),
+      onOppositionEvent: handleOppositionEvent,
+      onSharedCoinGrabbed: handleSharedCoinGrabbed,
     });
   }
 
-  world3d.rebuildRig(prog.equippedChassis, prog.ownedUpgrades);
-  world3d.setObservatoryTier(store.householdWonder?.observatoryTier || 1);
-  world3d.resize();
-  spawnValleyWave();
-  world3d.start();
+  frostwakeWorld.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+  frostwakeWorld.setObservatoryTier(store.householdWonder?.observatoryTier || 1);
+  frostwakeWorld.resize();
+  spawnActiveWave();
+  frostwakeWorld.start();
+  connectRealmMultiplayer("frostwake");
   renderPortal();
-  showToast("Carve snow or tap Cruise to Gate!");
+  showToast("Carve snow, smash Rime-Creeps, or tap Cruise to Gate!");
 }
 
-function exitFrostwakeToHub() {
+function launchOddroot(overrideWorldId = null) {
   closeEncounterDock();
-  if (world3d) world3d.stop();
+  if (frostwakeWorld) frostwakeWorld.stop();
+  oddrootAudio.unlock();
+
+  const prog = getActiveProgress(store);
+  if (overrideWorldId) {
+    if (!prog.unlockedWorlds.includes(overrideWorldId)) prog.unlockedWorlds.push(overrideWorldId);
+    prog.activeWorld = overrideWorldId;
+    saveStore(store);
+  }
+
+  activeRealmId = "oddroot";
+  $("screen-portal").classList.remove("active");
   $("screen-frostwake").classList.remove("active");
+  $("screen-oddroot").classList.add("active");
+  attachSharedOverlaysToScreen($("screen-oddroot"));
+
+  if (!oddrootWorld) {
+    oddrootWorld = new OddrootWorld3D({
+      canvas: $("oddroot-canvas"),
+      audio: oddrootAudio,
+      onWorldActivity: (amount, bonusFlux, metricKey) => {
+        const p = getActiveProgress(store);
+        p.games = p.games || {};
+        p.games.oddroot = p.games.oddroot || {};
+        if (metricKey === "blightClearedM2" && amount > 0) {
+          p.games.oddroot.blightClearedM2 = Math.round((p.games.oddroot.blightClearedM2 || 0) + amount);
+          p.games.oddroot.blightClearedCount = (p.games.oddroot.blightClearedCount || 0) + 1;
+        }
+        if (bonusFlux > 0) {
+          p.fluxShards += bonusFlux;
+          p.unsyncedFlux = (p.unsyncedFlux || 0) + bonusFlux;
+          oddrootAudio.playSnowShardTick?.();
+        }
+        updateAllShardAndZoneDisplays();
+        saveStore(store);
+      },
+      onOrbHarvested: () => {
+        updateAllShardAndZoneDisplays();
+      },
+      onApproachGate: (enc) => openEncounterDock(enc),
+      onLeaveGate: () => closeEncounterDock(),
+      onMysteryFound: handleMysteryFound,
+      onCreatureHatched: (hatchedSpec) => {
+        const p = getActiveProgress(store);
+        p.games = p.games || {};
+        p.games.oddroot = p.games.oddroot || {};
+        const list = Array.isArray(p.games.oddroot.hatchedCreatures) ? p.games.oddroot.hatchedCreatures : [];
+        if (hatchedSpec?.id && !list.includes(hatchedSpec.id)) {
+          list.push(hatchedSpec.id);
+        }
+        p.games.oddroot.hatchedCreatures = list;
+        p.games.oddroot.creatureStages = p.games.oddroot.creatureStages || {};
+        if (hatchedSpec?.id) {
+          p.games.oddroot.creatureStages[hatchedSpec.id] = Math.max(
+            Number(p.games.oddroot.creatureStages[hatchedSpec.id]) || 0,
+            Number(hatchedSpec.stage) || 1
+          );
+        }
+        p.records = p.records || {};
+        p.records.creaturesHatched = Math.max(p.records.creaturesHatched || 0, list.length);
+        saveStore(store);
+        if (hatchedSpec?.name) {
+          showToast(`🐾 Hatched in Sanctuary: ${hatchedSpec.icon || "✨"} ${hatchedSpec.name}!`, 3200);
+        }
+      },
+      onGaragePadEntered: () => openGarageModal(),
+      onOppositionEvent: handleOppositionEvent,
+      onSharedCoinGrabbed: handleSharedCoinGrabbed,
+    });
+  }
+
+  oddrootWorld.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+  oddrootWorld.setObservatoryTier(store.householdWonder?.observatoryTier || 1);
+  oddrootWorld.resize();
+  spawnActiveWave();
+  oddrootWorld.start();
+  connectRealmMultiplayer("oddroot");
+  renderPortal();
+  showToast("Harvest glowing orbs, clear Blight, or tap Cruise to Shrine!");
+}
+
+function exitRealmToHub() {
+  if (waveReplenishTimer) {
+    clearTimeout(waveReplenishTimer);
+    waveReplenishTimer = null;
+  }
+  closeEncounterDock();
+  disconnectMultiplayer();
+  if (frostwakeWorld) frostwakeWorld.stop();
+  if (oddrootWorld) oddrootWorld.stop();
+  activeRealmId = "portal";
+  $("screen-frostwake").classList.remove("active");
+  $("screen-oddroot").classList.remove("active");
   $("screen-portal").classList.add("active");
   renderPortal();
 }
 
-function spawnValleyWave() {
-  if (!world3d) return;
+function spawnActiveWave() {
+  if (waveReplenishTimer) {
+    clearTimeout(waveReplenishTimer);
+    waveReplenishTimer = null;
+  }
+  const world = getActiveWorld();
+  if (!world) return;
   const prog = getActiveProgress(store);
   const wave = [
     pickNextEncounter(prog, session, prog.activeWorld),
     pickNextEncounter(prog, session, prog.activeWorld),
     pickNextEncounter(prog, session, prog.activeWorld),
   ];
-  world3d.rigState.inSurge = session.inSurge;
-  $("surge-banner").classList.toggle("on", Boolean(session.inSurge));
-  world3d.populateEncounters(wave);
+  if (world.rigState) world.rigState.inSurge = Boolean(session.inSurge);
+  syncSurgeBanners();
+  world.populateEncounters(wave);
 }
 
-/* ==================== SPATIAL ENCOUNTER DOCK ==================== */
+/* ==================== SPATIAL ENCOUNTER DOCK & HOLO-TRICK ==================== */
 function openEncounterDock(enc) {
   currentEncounter = enc;
   encounterOpenedAt = performance.now();
   firstInputAt = 0;
 
-  $("screen-frostwake").classList.add("dock-open");
+  const prog = getActiveProgress(store);
+  prog.seenTrickFamilies = Array.isArray(prog.seenTrickFamilies) ? prog.seenTrickFamilies : [];
+  const spec = getTrickCardSpec(enc, prog);
+  if (spec?.familyId && !prog.seenTrickFamilies.includes(spec.familyId)) {
+    prog.seenTrickFamilies.push(spec.familyId);
+    trickCardOpen = true;
+    saveStore(store);
+  } else {
+    trickCardOpen = false;
+  }
+
+  const world = getActiveWorld();
+  world?.setEncounterDockOpen?.(true);
+
+  const screenEl = getActiveScreenEl();
+  screenEl?.classList.add("dock-open");
   $("encounter-dock").classList.add("open");
+
+  publishImmediateMultiplayerState("thinking");
   paintEncounterDock();
 }
 
 function closeEncounterDock() {
   currentEncounter = null;
-  $("screen-frostwake").classList.remove("dock-open");
-  $("encounter-dock").classList.remove("open");
+  trickCardOpen = false;
+
+  frostwakeWorld?.setEncounterDockOpen?.(false);
+  oddrootWorld?.setEncounterDockOpen?.(false);
+
+  $("screen-frostwake")?.classList.remove("dock-open");
+  $("screen-oddroot")?.classList.remove("dock-open");
+  $("encounter-dock")?.classList.remove("open");
+
+  publishImmediateMultiplayerState(session.inSurge ? "surge" : "roaming");
 }
 
 function markFirstInput() {
   if (!firstInputAt) firstInputAt = performance.now();
 }
 
+function renderVisualPatternClusters(enc) {
+  const box = $("enc-visual-clusters");
+  if (!box) return;
+  if (enc.kind !== "seq_linear" || !enc.patternMeta?.frames) {
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+  box.style.display = "grid";
+  box.innerHTML = enc.patternMeta.frames
+    .map((f) => {
+      const baseGems = "🟡".repeat(Math.min(7, f.base));
+      const groupClusters = Array.from({ length: f.groups }, () => "🔹".repeat(Math.min(6, f.perGroup))).join(" ");
+      return `
+        <div class="cluster-frame-card">
+          <div><strong>Frame ${f.step}</strong> (${f.total})</div>
+          <div class="cluster-dots">${baseGems}</div>
+          <div class="cluster-dots">${groupClusters}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderTrickHoloProjector(enc) {
+  const card = $("enc-trick-card");
+  const btn = $("btn-show-trick");
+  if (!card || !btn) return;
+  const prog = getActiveProgress(store);
+  const spec = getTrickCardSpec(enc, prog);
+  btn.textContent = trickCardOpen ? "🦊 Hide Trick" : "🦊 Show Trick";
+  if (!trickCardOpen || !spec) {
+    card.style.display = "none";
+    card.innerHTML = "";
+    return;
+  }
+  const twoBeats = (spec.beats || []).slice(0, 2);
+  card.style.display = "block";
+  card.innerHTML = `
+    <div class="trick-holo-title">
+      <span>🦊 ${spec.title}</span>
+      <span style="color:var(--turquoise);font-size:0.74rem">${spec.foxWhisper || ""}</span>
+    </div>
+    <div class="trick-beats-grid">
+      ${twoBeats
+        .map(
+          (b, idx) => `
+            <div class="trick-beat-box">
+              <div style="color:var(--amber);font-size:0.7rem;margin-bottom:2px">BEAT ${idx + 1}</div>
+              <div>${b.caption}</div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function paintEncounterDock() {
   if (!currentEncounter) return;
   const enc = currentEncounter;
+  const world = getActiveWorld();
+  const audio = getActiveAudio();
 
   $("enc-prompt").textContent = enc.promptShort;
   $("enc-node-tag").textContent = enc.nodeId;
   $("enc-equation").textContent = enc.equationText;
   $("enc-target-label").textContent = `Dial ${enc.targetLabel || "n"}`;
+
+  renderVisualPatternClusters(enc);
+  renderTrickHoloProjector(enc);
 
   const bp = $("enc-blueprint");
   bp.innerHTML = "";
@@ -318,29 +866,31 @@ function paintEncounterDock() {
     }
   }
 
-  // Voluntary Twin-Beam Slicer chips
+  // Voluntary Twin-Beam Slicer & Reset chips
   const beamRow = $("enc-beams");
   beamRow.innerHTML = "";
-  for (const act of enc.beamActions || []) {
+  const actionsToShow = [...(enc.beamActions || [])];
+  if ((enc.stepsUsed || 0) > 0 && !actionsToShow.some((a) => a.id === "reset_steps")) {
+    actionsToShow.push({ id: "reset_steps", label: "↺ Reset", kind: "reset" });
+  }
+  for (const act of actionsToShow) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "beam-chip";
-    b.textContent = `⚡ ${act.label}`;
+    b.textContent = act.id === "reset_steps" ? act.label : `⚡ ${act.label}`;
     b.onclick = () => {
       markFirstInput();
       const prog = getActiveProgress(store);
-      const res = applyBeamAction(currentEncounter, act.id, prog);
+      const res = applyBeamAction(currentEncounter, act.id, prog, session);
       currentEncounter = res.encounter;
       if (res.kind === "magnetic_repel") {
-        audio.playMagneticRepel();
-        if (world3d) world3d.playTwinBeamVisual(true);
+        audio.playMagneticRepel?.();
+        world?.playTwinBeamVisual?.(true);
         showToast(res.cue);
       } else {
-        audio.playTwinBeam();
-        if (world3d) {
-          world3d.playTwinBeamVisual(false);
-          world3d.refreshActiveEncounterVisual(currentEncounter);
-        }
+        audio.playTwinBeam?.();
+        world?.playTwinBeamVisual?.(false);
+        world?.refreshActiveEncounterVisual?.(currentEncounter);
         if (res.cue) showToast(res.cue);
       }
       paintEncounterDock();
@@ -349,12 +899,12 @@ function paintEncounterDock() {
     beamRow.appendChild(b);
   }
 
-  // Dial input & Rotary Detents
+  // Dial input & Rotary Detents (strictly discrete, zero range scrubbers!)
   const dialInput = $("enc-dial-input");
   if (document.activeElement !== dialInput) {
     dialInput.value = String(enc.currentDial ?? enc.startDial ?? 0);
   }
-  if (world3d) world3d.updateDialPreview(Number(dialInput.value));
+  world?.updateDialPreview?.(Number(dialInput.value));
 
   const detGrid = $("enc-detents");
   detGrid.innerHTML = "";
@@ -369,19 +919,29 @@ function paintEncounterDock() {
       const nextVal = (Number(dialInput.value) || 0) + step;
       enc.currentDial = nextVal;
       dialInput.value = String(nextVal);
-      audio.playDetentClick(nextVal);
-      if (world3d) world3d.updateDialPreview(nextVal);
+      audio.playDetentClick?.(nextVal);
+      if (activeRealmId === "oddroot") {
+        oddrootWorld?.fireSiphonOrb?.(step < 0 ? "frost_spore" : "sun_orb");
+      }
+      world?.updateDialPreview?.(nextVal);
     };
     detGrid.appendChild(btn);
   }
 
+  const isOddroot = activeRealmId === "oddroot";
   const commitVerb =
     enc.encounterType === "holo_ramp" || enc.encounterType === "rainbow_arch"
-      ? "🚀 Launch Across Curve"
+      ? isOddroot
+        ? "🌿 Grow Vine-Bridge"
+        : "🚀 Launch Across Curve"
       : enc.encounterType === "astrolabe_shrine"
       ? "✨ Lock Sky-Astrolabe"
       : enc.encounterType === "harpoon_cliff"
-      ? "🪝 Fire Cliff Harpoon"
+      ? isOddroot
+        ? "🌟 Cast Starlight Vine"
+        : "🪝 Fire Cliff Harpoon"
+      : isOddroot
+      ? "🧪 Brew Sanctuary Shrine"
       : "⚡ Ram Cryo-Gate";
   $("enc-commit-btn").textContent = commitVerb;
 }
@@ -391,11 +951,15 @@ function handleCommit() {
   const now = performance.now();
   const planMs = Math.max(250, (firstInputAt || now) - encounterOpenedAt);
   const execMs = firstInputAt ? Math.max(150, now - firstInputAt) : 350;
-  const val = Number($("enc-dial-input").value);
+  const rawInputStr = $("enc-dial-input").value;
+  const val = rawInputStr === "" ? NaN : Number(rawInputStr);
 
   const prog = getActiveProgress(store);
+  const prevUnlockedCount = (prog.unlockedWorlds || []).length;
+  const solvedEnc = currentEncounter;
+
   const res = evaluateCommit({
-    encounter: currentEncounter,
+    encounter: solvedEnc,
     committedValue: val,
     planMs,
     execMs,
@@ -403,60 +967,112 @@ function handleCommit() {
     session,
   });
 
-  $("hud-shards").textContent = String(prog.fluxShards);
-  $("hud-streak").textContent = String(session.overdriveStreak);
-  $("surge-banner").classList.toggle("on", Boolean(session.inSurge));
-  if (world3d) world3d.rigState.inSurge = session.inSurge;
+  // Live 3D 3-miss Friction Cushion trigger (activates 4-Item Surge Wave immediately on 3rd consecutive miss!)
+  if (
+    res.outcome === "nudge" &&
+    !res.invalidInput &&
+    solvedEnc.worldId !== "W0" &&
+    !session.inSurge &&
+    session.consecutiveMisses >= 3 &&
+    session.friction >= 2.8
+  ) {
+    queueOverdriveSurge(prog, session, solvedEnc.nodeId);
+    res.surgeTriggered = true;
+  }
 
-  if (world3d) world3d.playCommitVisual(res);
+  const world = getActiveWorld();
+  const audio = getActiveAudio();
+
+  if (world?.rigState) world.rigState.inSurge = Boolean(session.inSurge);
+  syncSurgeBanners();
+
+  world?.playCommitVisual?.(res, solvedEnc);
 
   if (res.outcome === "clear") {
-    audio.playClear(res.overdrive);
-    showToast(`${res.cue} +${res.shardsEarned}💎`);
-    if (session.overdriveStreak >= 3 && world3d) {
-      world3d.triggerSkyWhale();
+    if (activeRealmId === "oddroot") {
+      prog.games.oddroot.cauldronsBrewed = (prog.games.oddroot.cauldronsBrewed || 0) + 1;
     }
+    recordWeeklySunshine(prog);
+    audio.playClear?.(res.overdrive);
+    showToast(`${res.cue} +${res.shardsEarned}💎`);
+
+    if (session.overdriveStreak >= 3) {
+      world?.triggerSkyWhale?.();
+    }
+    if ((prog.unlockedWorlds || []).length > prevUnlockedCount) {
+      const newestWorldId = prog.unlockedWorlds[prog.unlockedWorlds.length - 1];
+      world?.triggerGuardianAwakening?.(newestWorldId);
+    }
+
+    const pose = world?.getLocalMultiplayerPose?.() || {};
+    mpClient?.sendGateBurst({
+      overdrive: Boolean(res.overdrive),
+      worldId: prog.activeWorld,
+      nodeId: solvedEnc.nodeId,
+      ...pose,
+    });
+
+    world?.applyLoadout?.(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
     finishGateAndReplenishIfDone(res);
   } else if (res.outcome === "warm_reveal") {
-    audio.playFoxReveal();
+    recordWeeklySunshine(prog);
+    audio.playFoxReveal?.();
     showToast(`${res.cue} · +${res.shardsEarned}💎`, 3200);
     finishGateAndReplenishIfDone(res);
   } else {
-    audio.playCaliperNudge();
+    audio.playCaliperNudge?.();
+    trickCardOpen = true;
+    paintEncounterDock();
     showToast(res.cue);
   }
 
+  updateAllShardAndZoneDisplays();
   saveStore(store);
 }
 
 function finishGateAndReplenishIfDone(res) {
   closeEncounterDock();
+  const world = getActiveWorld();
   if (res.calibrationFinished) {
     const prog = getActiveProgress(store);
-    showToast(`Frontier calibrated → ${prog.activeWorld}!`, 3200);
-    setTimeout(() => spawnValleyWave(), 950);
+    const wObj = WORLDS.find((w) => w.id === prog.activeWorld) || WORLDS[1];
+    showToast(`Frontier tuned → ${wObj.rankLabel} · ${wObj.name}!`, 3200);
+    if (waveReplenishTimer) clearTimeout(waveReplenishTimer);
+    waveReplenishTimer = setTimeout(() => {
+      waveReplenishTimer = null;
+      spawnActiveWave();
+    }, 140);
     return;
   }
   if (res.surgeTriggered) {
-    showToast("✨ Golden Thaw Overdrive Wave! ✨", 2800);
-    setTimeout(() => spawnValleyWave(), 900);
+    showToast("✨ Overdrive Surge Wave Ignited! ✨", 2800);
+    if (waveReplenishTimer) clearTimeout(waveReplenishTimer);
+    waveReplenishTimer = setTimeout(() => {
+      waveReplenishTimer = null;
+      spawnActiveWave();
+    }, 140);
     return;
   }
-  if (world3d && world3d.gateSlots.every((s) => s.cleared)) {
-    setTimeout(() => {
-      spawnValleyWave();
-      showToast("3 fresh beacons lit across the valley!");
-    }, 1050);
+  const allDone = world?.areAllEncountersCleared
+    ? world.areAllEncountersCleared()
+    : Boolean(world?.gateSlots?.every((s) => s.cleared));
+  if (allDone) {
+    if (waveReplenishTimer) clearTimeout(waveReplenishTimer);
+    waveReplenishTimer = setTimeout(() => {
+      waveReplenishTimer = null;
+      spawnActiveWave();
+      showToast("3 fresh beacons lit across the realm!");
+    }, 140);
   }
 }
 
 /* ==================== MODALS ==================== */
 function openModal(id) {
-  $(id).classList.add("open");
+  $(id)?.classList.add("open");
 }
 
 function closeModal(id) {
-  $(id).classList.remove("open");
+  $(id)?.classList.remove("open");
 }
 
 function openWhoModal() {
@@ -469,11 +1085,20 @@ function openWhoModal() {
     btn.textContent = `${p.avatar} ${p.name}`;
     btn.onclick = async () => {
       store.activeUsername = p.username;
+      activeBorrowedToy = null;
       saveStore(store, false);
       if (window.YompleStay) window.YompleStay.stamp(p.username, store.familyCode || "");
-      await pullPlayerCloud(store, p.username);
+      const localProg = getActiveProgress(store);
+      getActiveWorld()?.applyLoadout?.(localProg, getCrossRealmUnlocks(localProg), null);
+      if (activeRealmId !== "portal") {
+        connectRealmMultiplayer(activeRealmId);
+      }
       renderPortal();
       closeModal("modal-who");
+      await pullPlayerCloud(store, p.username);
+      const syncedProg = getActiveProgress(store);
+      getActiveWorld()?.applyLoadout?.(syncedProg, getCrossRealmUnlocks(syncedProg), activeBorrowedToy);
+      renderPortal();
     };
     box.appendChild(btn);
   }
@@ -484,6 +1109,7 @@ function openGarageModal() {
   const prog = getActiveProgress(store);
   $("garage-shards").textContent = String(prog.fluxShards || 0);
 
+  // Frostwake Chassis
   const chRow = $("garage-chassis-row");
   chRow.innerHTML = "";
   for (const ch of RIG_CHASSIS) {
@@ -493,15 +1119,41 @@ function openGarageModal() {
     b.textContent = `${ch.icon} ${ch.name} (${ch.tag})`;
     b.onclick = () => {
       prog.equippedChassis = ch.id;
-      audio.playDetentClick(15);
+      if (prog.games?.frostwake) prog.games.frostwake.equippedChassis = ch.id;
+      activeBorrowedToy = null;
+      getActiveAudio().playDetentClick?.(15);
       saveStore(store);
-      if (world3d) world3d.rebuildRig(prog.equippedChassis, prog.ownedUpgrades);
+      frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
       openGarageModal();
       renderPortal();
     };
     chRow.appendChild(b);
   }
 
+  // Oddroot Mounts
+  const mRow = $("garage-mounts-row");
+  if (mRow) {
+    mRow.innerHTML = "";
+    const curMount = prog.games?.oddroot?.equippedMount || "bramble_boar";
+    for (const m of ODDROOT_MOUNTS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `rig-chip${curMount === m.id ? " selected" : ""}`;
+      b.textContent = `${m.icon} ${m.name} (${m.tag})`;
+      b.onclick = () => {
+        prog.games.oddroot.equippedMount = m.id;
+        activeBorrowedToy = null;
+        getActiveAudio().playDetentClick?.(15);
+        saveStore(store);
+        oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+        openGarageModal();
+        renderPortal();
+      };
+      mRow.appendChild(b);
+    }
+  }
+
+  // Frostwake Upgrades
   const grid = $("garage-upgrades-grid");
   grid.innerHTML = "";
   for (const upg of RIG_UPGRADES) {
@@ -519,12 +1171,13 @@ function openGarageModal() {
     buyBtn.textContent = owned ? "✓ Installed on Rig" : `Install · 💎 ${upg.cost}`;
     buyBtn.disabled = owned || !canBuy;
     buyBtn.onclick = () => {
-      if (owned || prog.fluxShards < upg.cost) return;
+      if ((prog.ownedUpgrades || []).includes(upg.id) || prog.fluxShards < upg.cost) return;
       prog.fluxShards -= upg.cost;
       prog.ownedUpgrades.push(upg.id);
-      audio.playClear(true);
+      getActiveAudio().playClear?.(true);
       saveStore(store);
-      if (world3d) world3d.rebuildRig(prog.equippedChassis, prog.ownedUpgrades);
+      frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+      oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
       openGarageModal();
       renderPortal();
     };
@@ -532,7 +1185,107 @@ function openGarageModal() {
     grid.appendChild(card);
   }
 
+  // Oddroot Upgrades
+  const orGrid = $("garage-oddroot-upgrades-grid");
+  if (orGrid) {
+    orGrid.innerHTML = "";
+    const ownedSet = new Set([
+      ...(prog.ownedUpgrades || []),
+      ...(prog.games?.oddroot?.sanctuaryUpgrades || []),
+    ]);
+    for (const upg of ODDROOT_UPGRADES) {
+      const owned = ownedSet.has(upg.id);
+      const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
+      const card = document.createElement("div");
+      card.className = `upg-card${owned ? " owned" : ""}`;
+      card.innerHTML = `
+        <div style="font-weight:900">${upg.icon} ${upg.name}</div>
+        <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
+      `;
+      const buyBtn = document.createElement("button");
+      buyBtn.type = "button";
+      buyBtn.className = "upg-buy-btn";
+      buyBtn.textContent = owned ? "✓ Active in Sanctuary" : `Install · 💎 ${upg.cost}`;
+      buyBtn.disabled = owned || !canBuy;
+      buyBtn.onclick = () => {
+        if (ownedSet.has(upg.id) || prog.fluxShards < upg.cost) return;
+        prog.fluxShards -= upg.cost;
+        prog.ownedUpgrades.push(upg.id);
+        prog.games.oddroot.sanctuaryUpgrades = prog.games.oddroot.sanctuaryUpgrades || [];
+        if (!prog.games.oddroot.sanctuaryUpgrades.includes(upg.id)) {
+          prog.games.oddroot.sanctuaryUpgrades.push(upg.id);
+        }
+        getActiveAudio().playClear?.(true);
+        saveStore(store);
+        oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+        frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+        openGarageModal();
+        renderPortal();
+      };
+      card.appendChild(buyBtn);
+      orGrid.appendChild(card);
+    }
+  }
+
+  // 1-Tap Sibling Toy Borrow (+5💎 Gift to Sibling!)
+  const borrowBox = $("garage-borrow-box");
+  if (borrowBox) {
+    borrowBox.innerHTML = "";
+    const siblings = (store.profiles || []).filter((p) => p.username !== store.activeUsername);
+    const targetRealm = activeRealmId === "oddroot" ? "oddroot" : "frostwake";
+    for (const sib of siblings) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "borrow-cta-btn";
+      btn.textContent = `🤝 Borrow ${sib.avatar || "✨"} ${sib.name}'s Loadout (+5💎 Gift to ${sib.name})`;
+      btn.onclick = () => {
+        const res = borrowSiblingToy(store, store.activeUsername, sib.username, targetRealm);
+        if (res.ok) {
+          activeBorrowedToy = res.borrowedToy;
+          getActiveAudio().playClear?.(true);
+          frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+          oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+          renderPortal();
+          showToast(`🤝 Borrowed ${sib.name}'s loadout! Sent +5💎 gift!`, 3000);
+          openGarageModal();
+        }
+      };
+      borrowBox.appendChild(btn);
+    }
+  }
+
   openModal("modal-garage");
+}
+
+function openJournalModal() {
+  const prog = getActiveProgress(store);
+  const entries = getSanctuaryJournalEntries(prog);
+  const grid = $("journal-grid");
+  if (grid) {
+    grid.innerHTML = entries
+      .map((c) => {
+        const stageClass =
+          c.stage >= 3 ? "stage-astral" : c.stage === 2 ? "stage-luminous" : "stage-sprout";
+        const pipsHtml = (c.tierBadges || [])
+          .map(
+            (b) =>
+              `<span class="creature-evo-pip${b.unlocked ? " unlocked" : ""}" title="${b.name}"></span>`
+          )
+          .join("");
+        return `
+          <article class="creature-card ${c.hatched ? "hatched" : "unhatched"}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong style="font-size:1rem">${c.icon} ${c.name}</strong>
+              <div class="creature-evo-pips">${pipsHtml}</div>
+            </div>
+            <span class="creature-stage-pill ${stageClass}">${c.stageLabel} · ${c.habitat}</span>
+            <p class="creature-whisper">${c.whisper}</p>
+          </article>
+        `;
+      })
+      .join("");
+  }
+  openModal("modal-journal");
 }
 
 function openSisterRealmModal(sg) {
@@ -541,25 +1294,37 @@ function openSisterRealmModal(sg) {
   $("realm-modal-body").innerHTML = `
     <img src="${sg.banner}" alt="${sg.title}" style="width:100%;border-radius:18px;margin-bottom:12px" />
     <p style="margin:0 0 10px;color:var(--ink-soft);font-weight:700;line-height:1.45">
-      ${sg.blurb} Every node mastered in <strong>Frostwake</strong> shares one unified <code>Bloomⁿ</code> constellation,
-      so your Flux Shards, Hero Titles, and unlocked worlds carry straight across realms.
+      ${sg.blurb} Every beacon lit in <strong>Frostwake</strong> and <strong>Oddroot Wilds</strong> shares one unified
+      <code>Bloomⁿ</code> constellation, carrying your Flux Shards, Spirit Creatures, and Hero Titles across realms.
     </p>
     ${
       isAstrolabe
-        ? `<button type="button" id="btn-try-astrolabe-now" class="play-btn-giant" style="width:100%;margin-top:6px">
-             ✨ Play 3D Sky-Astrolabe Shrines in W5 Now
-           </button>`
+        ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+             <button type="button" id="btn-try-astrolabe-fw" class="play-btn-giant" style="flex:1">
+               ✨ Sky-Astrolabes in Frostwake (Rank V)
+             </button>
+             <button type="button" id="btn-try-astrolabe-or" class="play-btn-giant emerald-cta" style="flex:1">
+               🌙 Moonwell Astrolabes in Oddroot (Rank V)
+             </button>
+           </div>`
         : `<div style="padding:10px 14px;border-radius:14px;background:rgba(255,255,255,0.06);font-weight:800;font-size:0.88rem;color:var(--amber)">
-             Scheduled in Bloomⁿ Wave ${sg.order} — build your mastery constellation in Frostwake now!
+             Scheduled in Bloomⁿ Wave ${sg.order} — build your constellation in Frostwake &amp; Oddroot now!
            </div>`
     }
   `;
   openModal("modal-realm");
-  const tryBtn = $("btn-try-astrolabe-now");
-  if (tryBtn) {
-    tryBtn.onclick = () => {
+  const fwBtn = $("btn-try-astrolabe-fw");
+  if (fwBtn) {
+    fwBtn.onclick = () => {
       closeModal("modal-realm");
       launchFrostwake("W5");
+    };
+  }
+  const orBtn = $("btn-try-astrolabe-or");
+  if (orBtn) {
+    orBtn.onclick = () => {
+      closeModal("modal-realm");
+      launchOddroot("W5");
     };
   }
 }
@@ -570,13 +1335,19 @@ function openGrownUpsModal() {
   const stageNames = ["Exploring", "Structuring", "Consolidating", "Mastered"];
 
   const rowsHtml = WORLDS.map((w) => {
-    const states = w.nodes.map((n) => prog.nodes?.[n.id] || { stage: 0, attempts: 0, wins: 0, overdrives: 0, avgPlanMs: 0 });
+    const curMeta = GROWN_UPS_CURRICULUM.worlds[w.id] || {};
+    const states = w.nodes.map(
+      (n) => prog.nodes?.[n.id] || { stage: 0, attempts: 0, wins: 0, overdrives: 0, avgPlanMs: 0 }
+    );
     const mastered = states.filter((s) => s.stage >= 3).length;
     const solid = states.filter((s) => s.stage >= 2).length;
     const avgStage = Math.round(states.reduce((a, b) => a + (b.stage || 0), 0) / states.length);
     return `
       <tr>
-        <td><strong>${w.id}</strong> · ${w.name}<br><small style="color:var(--ink-muted)">${w.gradeSpan}</small></td>
+        <td>
+          <strong>${w.id} · ${w.name}</strong> (${w.rankLabel})<br>
+          <small style="color:var(--turquoise)">${curMeta.grownUpsStage || ""} — ${curMeta.academicStrand || ""}</small>
+        </td>
         <td>${stageNames[avgStage]}</td>
         <td>${solid}/${w.nodes.length} solid (${mastered}★)</td>
       </tr>
@@ -586,7 +1357,11 @@ function openGrownUpsModal() {
   const allNodes = Object.values(prog.nodes || {});
   const seenNodes = allNodes.filter((n) => n.attempts > 0);
   const avgPlan = seenNodes.length
-    ? (seenNodes.reduce((a, b) => a + (b.avgPlanMs || 0), 0) / seenNodes.length / 1000).toFixed(1)
+    ? (
+        seenNodes.reduce((a, b) => a + Math.min(12000, b.avgPlanMs || 0), 0) /
+        seenNodes.length /
+        1000
+      ).toFixed(1)
     : "—";
   const totalWins = allNodes.reduce((a, b) => a + (b.wins || 0), 0);
   const totalOverdrives = allNodes.reduce((a, b) => a + (b.overdrives || 0), 0);
@@ -605,16 +1380,20 @@ function openGrownUpsModal() {
       <div><strong>Sync:</strong> ${store.lastSyncStatus}</div>
     </div>
 
+    <div style="padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.04);margin-bottom:12px;font-size:0.8rem;color:var(--ink-soft)">
+      <strong>Academic Spine (Hidden from Kids):</strong> ${GROWN_UPS_CURRICULUM.progressionSummary}
+    </div>
+
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
       <div class="rec-box"><span>Avg Plan Time</span><strong>${avgPlan}s</strong></div>
       <div class="rec-box"><span>1-Shot Overdrive</span><strong>${overdrivePct}%</strong></div>
-      <div class="rec-box"><span>Snow Cleared</span><strong>${prog.snowClearedM2 || 0}m²</strong></div>
+      <div class="rec-box"><span>World Cleared</span><strong>${(prog.snowClearedM2 || 0) + (prog.games?.oddroot?.blightClearedM2 || 0)}m²</strong></div>
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border-radius:16px;background:hsla(172,78%,52%,0.12);margin-bottom:12px">
       <div>
-        <strong>Open All Worlds Sandbox (W0–W7)</strong>
-        <div style="font-size:0.8rem;color:var(--ink-soft)">Jump straight into Algebra 1 Ramps, W5 Astrolabes, or W6–W7 Algebra 2</div>
+        <strong>Open All Ranks Sandbox (W0–W7)</strong>
+        <div style="font-size:0.8rem;color:var(--ink-soft)">Jump straight into Pre-Algebra, Algebra 1 Ramps, Geometry Astrolabes, or Algebra 2</div>
       </div>
       <button type="button" id="btn-toggle-sandbox" class="pill-btn">
         ${prog.sandboxAllUnlocked ? "✓ All Open" : "Unlock All"}
@@ -622,7 +1401,7 @@ function openGrownUpsModal() {
     </div>
 
     <table class="parent-table">
-      <thead><tr><th>World</th><th>Stage</th><th>Nodes</th></tr></thead>
+      <thead><tr><th>Realm Rank &amp; Curriculum Topic</th><th>Stage</th><th>Nodes</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
 
@@ -644,26 +1423,28 @@ function openGrownUpsModal() {
   };
 }
 
-/* ==================== INPUT WIRING (JOYSTICK + KEYBOARD) ==================== */
+/* ==================== INPUT WIRING (DUAL JOYSTICKS + KEYBOARD) ==================== */
 function syncDriveVector() {
-  if (!world3d) return;
-  let kSteer = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-  let kThrot = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
+  const world = getActiveWorld();
+  if (!world) return;
+  const kSteer = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const kThrot = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
   const steer = Math.abs(joySteer) > 0.04 ? joySteer : kSteer;
   const throttle = Math.abs(joyThrottle) > 0.04 ? joyThrottle : kThrot;
-  world3d.setDriveInputs(steer, throttle, keys.boost || holdBoostBtn);
+  world.setDriveInputs(steer, throttle, keys.boost || holdBoostBtn);
 }
 
-function setupJoystickAndKeys() {
-  const zone = $("joy-zone");
-  const knob = $("joy-knob");
+function bindThumbstick(zoneId, knobId) {
+  const zone = $(zoneId);
+  const knob = $(knobId);
+  if (!zone || !knob) return;
   let activePointer = null;
 
   const updateKnob = (clientX, clientY) => {
     const rect = zone.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    const maxR = rect.width * 0.38;
+    const maxR = Math.max(24, rect.width * 0.38);
     let dx = clientX - cx;
     let dy = clientY - cy;
     const dist = Math.hypot(dx, dy);
@@ -686,9 +1467,9 @@ function setupJoystickAndKeys() {
   };
 
   zone.addEventListener("pointerdown", (e) => {
-    audio.unlock();
+    getActiveAudio().unlock?.();
     activePointer = e.pointerId;
-    zone.setPointerCapture(e.pointerId);
+    zone.setPointerCapture?.(e.pointerId);
     updateKnob(e.clientX, e.clientY);
   });
   zone.addEventListener("pointermove", (e) => {
@@ -697,6 +1478,11 @@ function setupJoystickAndKeys() {
   });
   zone.addEventListener("pointerup", resetKnob);
   zone.addEventListener("pointercancel", resetKnob);
+}
+
+function setupJoystickAndKeys() {
+  bindThumbstick("joy-zone", "joy-knob");
+  bindThumbstick("oddroot-joy-zone", "oddroot-joy-knob");
 
   window.addEventListener("keydown", (e) => {
     if (document.activeElement && document.activeElement.tagName === "INPUT") {
@@ -730,46 +1516,95 @@ async function init() {
   setupJoystickAndKeys();
 
   $("btn-launch-frostwake").onclick = () => launchFrostwake();
-  $("hud-exit-btn").onclick = () => exitFrostwakeToHub();
+  $("btn-launch-oddroot").onclick = () => launchOddroot();
+
+  $("hud-exit-btn").onclick = () => exitRealmToHub();
+  $("oddroot-exit-btn").onclick = () => exitRealmToHub();
+
   $("portal-who-btn").onclick = () => openWhoModal();
   $("portal-garage-btn").onclick = () => openGarageModal();
   $("hud-garage-btn").onclick = () => openGarageModal();
+  $("oddroot-workshop-btn").onclick = () => openGarageModal();
+
+  $("portal-journal-btn").onclick = () => openJournalModal();
+  $("oddroot-journal-btn").onclick = () => openJournalModal();
+
   $("btn-open-grownups").onclick = () => openGrownUpsModal();
 
-  $("hud-world-btn").onclick = () => {
+  const openWorldPicker = () => {
     renderWorldsGrid($("modal-worlds-grid"), true);
     openModal("modal-worlds");
   };
+  $("hud-world-btn").onclick = openWorldPicker;
+  $("oddroot-world-btn").onclick = openWorldPicker;
 
   $("hud-snow-btn").onclick = () => {
-    if (world3d) world3d.resetFreshSnow();
-    audio.playClear(false);
+    frostwakeWorld?.resetFreshSnow?.();
+    frostwakeAudio.playClear(false);
     showToast("❄️ Fresh powder blanketed the valley!");
   };
 
+  $("oddroot-siphon-btn").onclick = () => {
+    const res = oddrootWorld?.triggerRealmQuickAction?.();
+    const count = res?.purifiedSpores || 0;
+    showToast(count > 0 ? `🌀 Siphon purified ${count} Gloom-Spores!` : "🌀 Siphon vortex pulsed across the grove!");
+    updateAllShardAndZoneDisplays();
+  };
+
+  $("oddroot-mount-btn").onclick = () => {
+    const prog = getActiveProgress(store);
+    const cur = prog.games?.oddroot?.equippedMount || "bramble_boar";
+    const next = cur === "bramble_boar" ? "starlight_glider" : "bramble_boar";
+    prog.games.oddroot.equippedMount = next;
+    activeBorrowedToy = null;
+    oddrootAudio.playDetentClick?.(16);
+    saveStore(store);
+    oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+    updateAllShardAndZoneDisplays();
+  };
+
+  $("fw-flare-btn").onclick = () => triggerFriendlyFlare();
+  $("or-flare-btn").onclick = () => triggerFriendlyFlare();
+
   const toggleMute = () => {
     store.muted = !store.muted;
-    audio.setMuted(store.muted);
+    frostwakeAudio.setMuted(store.muted);
+    oddrootAudio.setMuted(store.muted);
     saveStore(store, false);
     renderPortal();
   };
   $("portal-mute-btn").onclick = toggleMute;
   $("hud-mute-btn").onclick = toggleMute;
+  $("oddroot-mute-btn").onclick = toggleMute;
 
-  $("btn-autopilot").onclick = () => {
-    audio.unlock();
-    if (!world3d) return;
-    const target = world3d.engageAutopilotToNextGate();
+  const triggerAutopilot = () => {
+    getActiveAudio().unlock?.();
+    const world = getActiveWorld();
+    if (!world) return;
+    if (waveReplenishTimer) {
+      clearTimeout(waveReplenishTimer);
+      waveReplenishTimer = null;
+      spawnActiveWave();
+    }
+    let target = world.engageAutopilotToNextGate();
+    if (!target) {
+      spawnActiveWave();
+      target = world.engageAutopilotToNextGate();
+    }
     if (target) showToast(`Cruising to ${target.encounter.title}!`);
-    else spawnValleyWave();
   };
+  $("btn-autopilot").onclick = triggerAutopilot;
+  $("oddroot-autopilot-btn").onclick = triggerAutopilot;
 
-  const boostBtn = $("btn-boost");
-  boostBtn.addEventListener("pointerdown", () => {
-    audio.unlock();
-    holdBoostBtn = true;
-    syncDriveVector();
-  });
+  for (const boostId of ["btn-boost", "oddroot-boost-btn"]) {
+    const b = $(boostId);
+    if (!b) continue;
+    b.addEventListener("pointerdown", () => {
+      getActiveAudio().unlock?.();
+      holdBoostBtn = true;
+      syncDriveVector();
+    });
+  }
   window.addEventListener("pointerup", () => {
     if (holdBoostBtn) {
       holdBoostBtn = false;
@@ -777,11 +1612,17 @@ async function init() {
     }
   });
 
+  $("btn-show-trick").onclick = () => {
+    trickCardOpen = !trickCardOpen;
+    getActiveAudio().playDetentClick?.(10);
+    if (currentEncounter) renderTrickHoloProjector(currentEncounter);
+  };
+
   $("enc-dial-input").addEventListener("input", (e) => {
     markFirstInput();
     const v = Number(e.target.value) || 0;
     if (currentEncounter) currentEncounter.currentDial = v;
-    if (world3d) world3d.updateDialPreview(v);
+    getActiveWorld()?.updateDialPreview?.(v);
   });
 
   $("enc-flip-sign").onclick = () => {
@@ -790,8 +1631,8 @@ async function init() {
     const flipped = -(Number(inp.value) || 0);
     inp.value = String(flipped);
     if (currentEncounter) currentEncounter.currentDial = flipped;
-    audio.playDetentClick(flipped);
-    if (world3d) world3d.updateDialPreview(flipped);
+    getActiveAudio().playDetentClick?.(flipped);
+    getActiveWorld()?.updateDialPreview?.(flipped);
   };
 
   $("enc-commit-btn").onclick = () => handleCommit();
@@ -801,6 +1642,7 @@ async function init() {
     if (!raw) return;
     const p = ensureProfile(store, { username: raw, name: raw });
     store.activeUsername = p.username;
+    activeBorrowedToy = null;
     $("who-add-input").value = "";
     await pullPlayerCloud(store, p.username);
     saveStore(store);
