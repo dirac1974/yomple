@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Bloom N · Yomple 3D Worlds</title>
+  <meta name="description" content="Bloom N — 3D adventure worlds for Pre-Algebra, Algebra 1, Geometry Astrolabes, and Algebra 2." />
+  <link rel="icon" href="../favicon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ==================== SCREEN 1: BLOOM N PORTAL HUB ==================== -->
+  <section id="screen-portal" class="screen active">
+    <div class="portal-wrap">
+      <header class="topbar">
+        <div class="brand-cluster">
+          <a id="yomple-back-link" class="pill-btn" href="/">← Yomple</a>
+          <div class="brand-badge">
+            <strong>Bloom<sup>n</sup></strong>
+            <span>3D Expedition Worlds</span>
+          </div>
+        </div>
+
+        <div class="status-cluster">
+          <button type="button" id="portal-who-btn" class="pill-btn">❄️ Explorer</button>
+          <div class="stat-pill amber" title="Flux Shards">💎 <span id="portal-shards">30</span></div>
+          <div class="stat-pill teal" title="Household Northern Observatory">🔭 Tier <span id="portal-obs-tier">1</span></div>
+          <button type="button" id="portal-garage-btn" class="pill-btn">🛠️ Garage</button>
+          <button type="button" id="portal-mute-btn" class="pill-btn" aria-label="Toggle sound">🔊</button>
+        </div>
+      </header>
+
+      <!-- Featured Sub-Game #1: Frostwake -->
+      <article class="hero-card" id="hero-frostwake" style="background-image: url('assets/realm1-frostwake.jpg')">
+        <span class="live-tag">REALM 1 · PLAY NOW · 60FPS 3D</span>
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <h1>Frostwake: Flux Terra-Rigs</h1>
+            <p>Carve real 3D snow rivers, shatter twin cryo-towers, align brass Sky-Astrolabes, and surf glowing holo-ramps.</p>
+            <div id="portal-rig-picker" class="rig-quick-row"></div>
+          </div>
+          <div class="hero-cta-box">
+            <button type="button" id="btn-launch-frostwake" class="play-btn-giant">▶ Drive Into Frostwake 3D</button>
+            <div id="portal-active-world-label" class="world-pill-sub">Active Frontier: W1 · Sub-Zero Core</div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Sister Sub-Games Inside Bloom N (#2 Oddroot, #3 Stardrift + Astrolabes, #4 Arc Bastion) -->
+      <div class="sec-head">
+        <h2>Worlds Inside Bloom<sup>n</sup></h2>
+        <span>One shared mastery brain across every realm</span>
+      </div>
+      <div id="sister-realms-grid" class="realms-grid"></div>
+
+      <!-- 3-Strand Mastery Constellation (W0 - W7) -->
+      <div class="sec-head">
+        <h2>Mastery Constellation</h2>
+        <span>Tap any open frontier to steer Frostwake's 3D gates</span>
+      </div>
+      <div id="worlds-constellation" class="worlds-strip"></div>
+
+      <!-- Household Co-Op Northern Observatory + Personal Best Plaques -->
+      <div class="coop-records-grid">
+        <div class="panel-card">
+          <h3>🔭 Great Northern Observatory</h3>
+          <p class="sub">Shared household beacon — every shard lights the northern sky together.</p>
+          <div class="obs-meter"><div id="obs-meter-fill" style="width: 18%"></div></div>
+          <div id="household-heroes-list" class="hero-roster"></div>
+        </div>
+
+        <div class="panel-card">
+          <h3>🏔️ Expedition Plaques</h3>
+          <p class="sub">Personal milestones only ever climb higher.</p>
+          <div class="records-grid">
+            <div class="rec-box">
+              <span>Mental Overdrive Chain</span>
+              <strong id="rec-overdrive">0</strong>
+            </div>
+            <div class="rec-box">
+              <span>Longest Holo-Jump</span>
+              <strong id="rec-ramp">0m</strong>
+            </div>
+            <div class="rec-box">
+              <span>Deepest Sub-Zero</span>
+              <strong id="rec-subzero">0</strong>
+            </div>
+            <div class="rec-box">
+              <span>Spirit-Foxes Woken</span>
+              <strong id="rec-foxes">0</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unspoken 3D Mysteries -->
+      <div class="sec-head">
+        <h2>Sanctuary Mysteries</h2>
+        <span>Hidden wonders woken inside the valley</span>
+      </div>
+      <div id="mysteries-strip" class="mysteries-row"></div>
+
+      <footer class="portal-footer">
+        <button type="button" id="btn-open-grownups" class="grownups-link">for grown-ups</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ==================== SCREEN 2: FROSTWAKE 60FPS 3D WORLD ==================== -->
+  <section id="screen-frostwake" class="screen">
+    <canvas id="frostwake-canvas"></canvas>
+
+    <div class="hud-top">
+      <div class="hud-group">
+        <button type="button" id="hud-exit-btn" class="hud-btn">← Bloomⁿ Hub</button>
+        <button type="button" id="hud-world-btn" class="hud-btn gold">W1 · Sub-Zero Core ▾</button>
+      </div>
+      <div class="hud-group">
+        <div class="hud-btn gold">💎 <span id="hud-shards">30</span></div>
+        <div class="hud-btn">⚡ <span id="hud-streak">0</span></div>
+        <button type="button" id="hud-garage-btn" class="hud-btn">🛠️ Garage</button>
+        <button type="button" id="hud-snow-btn" class="hud-btn">❄️ Fresh Snow</button>
+        <button type="button" id="hud-mute-btn" class="hud-btn" aria-label="Toggle sound">🔊</button>
+      </div>
+    </div>
+
+    <div id="surge-banner" class="surge-banner">✨ GOLDEN THAW OVERDRIVE · 1.5× FLUX ✨</div>
+    <div id="hud-toast" class="hud-toast"></div>
+
+    <!-- Bottom-Left Tactile Thumbstick & 1-Tap Autopilot -->
+    <div class="drive-cluster">
+      <div id="joy-zone" class="joy-zone" aria-label="Steering joystick">
+        <div id="joy-knob" class="joy-knob"></div>
+      </div>
+      <div class="drive-quick-col">
+        <button type="button" id="btn-autopilot" class="drive-pill">🧭 Cruise to Gate</button>
+        <button type="button" id="btn-boost" class="drive-pill boost">🔥 Hold Boost</button>
+      </div>
+    </div>
+
+    <!-- Bottom-Right Spatial 3D Encounter Dock -->
+    <aside id="encounter-dock" class="encounter-dock" aria-live="polite">
+      <div class="enc-header">
+        <span id="enc-prompt" class="enc-prompt">Balance both crystal towers</span>
+        <span id="enc-node-tag" class="enc-world-tag">W1.2</span>
+      </div>
+      <div id="enc-equation" class="enc-equation">n + 100 = 100 - 200</div>
+      <div id="enc-blueprint" class="blueprint-ribbon"></div>
+      <div id="enc-beams" class="beam-row"></div>
+
+      <div class="drum-box">
+        <div class="drum-readout-row">
+          <span id="enc-target-label" class="drum-label">Dial n</span>
+          <input id="enc-dial-input" class="drum-input" type="number" step="1" value="0" />
+          <button type="button" id="enc-flip-sign" class="drum-sign-btn">± Flip</button>
+        </div>
+        <div id="enc-detents" class="detents-grid"></div>
+      </div>
+
+      <button type="button" id="enc-commit-btn" class="commit-btn">⚡ Ram Cryo-Gate</button>
+    </aside>
+  </section>
+
+  <!-- ==================== MODAL: PLAYER SWITCHER ==================== -->
+  <div id="modal-who" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <h2>Who is exploring?</h2>
+        <button type="button" class="close-btn" data-close="modal-who">Done</button>
+      </div>
+      <p style="margin:0 0 8px;color:var(--ink-soft);font-size:0.9rem;font-weight:700">
+        Connected directly to your Yomple household.
+      </p>
+      <div id="who-roster" class="roster-faces"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <input
+          id="who-add-input"
+          type="text"
+          maxlength="18"
+          placeholder="Find Yomple player name"
+          style="flex:1;min-width:180px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.25)"
+        />
+        <button type="button" id="who-add-btn" class="pill-btn">Switch / Find</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: 3D RIG UPGRADE GARAGE ==================== -->
+  <div id="modal-garage" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <h2>🛠️ Terra-Rig Garage</h2>
+        <button type="button" class="close-btn" data-close="modal-garage">Close</button>
+      </div>
+      <p style="margin:0 0 10px;color:var(--ink-soft);font-size:0.88rem;font-weight:700">
+        Switch chassis anytime — upgrades apply to both rigs! Available: <strong style="color:var(--amber)">💎 <span id="garage-shards">30</span></strong>
+      </p>
+      <div id="garage-chassis-row" class="rig-quick-row" style="margin-bottom:14px"></div>
+      <div id="garage-upgrades-grid" class="upgrade-list"></div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: SISTER REALM PREVIEW ==================== -->
+  <div id="modal-realm" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <h2 id="realm-modal-title">Realm Preview</h2>
+        <button type="button" class="close-btn" data-close="modal-realm">Close</button>
+      </div>
+      <div id="realm-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: QUICK WORLD PICKER IN 3D ==================== -->
+  <div id="modal-worlds" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <h2>Choose Active Valley Frontier</h2>
+        <button type="button" class="close-btn" data-close="modal-worlds">Close</button>
+      </div>
+      <div id="modal-worlds-grid" class="worlds-strip"></div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: FOR GROWN-UPS (PARENT TELEMETRY) ==================== -->
+  <div id="modal-grownups" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <h2>For Grown-Ups · Learning & Household</h2>
+        <button type="button" class="close-btn" data-close="modal-grownups">Close</button>
+      </div>
+      <div id="grownups-content"></div>
+    </div>
+  </div>
+
+  <script src="../yomple-stay.js?v=stay1"></script>
+  <script src="../yomple-family.js?v=lock1"></script>
+  <script type="module" src="portal.js"></script>
+</body>
+</html>

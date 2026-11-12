@@ -14,7 +14,7 @@ function mintYompleFamilyCode(){
 function readSisterHousehold(){
   // Every app that keeps a household code on this origin. Star Map and Quiet Field were missing, so
   // a phone that had only ever used those two looked codeless to the hub and got asked again.
-  var keys = ["presidents-palace-v2","bloom.v1","word-garden-v1","star-map-v1","quiet-field-v1"];
+  var keys = ["presidents-palace-v2","bloom.v1","bloom-n-v1","word-garden-v1","star-map-v1","quiet-field-v1"];
   for (var i=0;i<keys.length;i++){
     try {
       var raw = JSON.parse(localStorage.getItem(keys[i]) || "null");
