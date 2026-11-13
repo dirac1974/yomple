@@ -240,6 +240,50 @@ export class FrostwakeAudio {
     });
   }
 
+  playSlipstreamBoost(overdrive = false) {
+    if (this.muted) return;
+    this.tone(168, 0.28, "sawtooth", overdrive ? 0.058 : 0.045, 0, overdrive ? 680 : 520);
+    const notes = overdrive
+      ? [587.33, 880.0, 1174.66, 1567.98, 2093.0]
+      : [523.25, 783.99, 1046.5, 1567.98];
+    notes.forEach((n, idx) => {
+      this.tone(
+        n,
+        0.22,
+        idx % 2 === 0 ? "triangle" : "sine",
+        overdrive ? 0.072 : 0.055,
+        0.03 + idx * 0.042
+      );
+    });
+    if (
+      !this.muted &&
+      this.ctx &&
+      this.noiseBuffer &&
+      typeof this.ctx.createBufferSource === "function"
+    ) {
+      try {
+        const t0 = this.ctx.currentTime || 0;
+        const src = this.ctx.createBufferSource();
+        const bp = this.ctx.createBiquadFilter();
+        const g = this.ctx.createGain();
+        src.buffer = this.noiseBuffer;
+        bp.type = "bandpass";
+        bp.frequency.value = overdrive ? 2200 : 1750;
+        if (bp.Q) bp.Q.value = 1.6;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.linearRampToValueAtTime(overdrive ? 0.048 : 0.036, t0 + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
+        src.connect(bp);
+        bp.connect(g);
+        g.connect(this.ctx.destination);
+        src.start(t0);
+        src.stop(t0 + 0.36);
+      } catch (_) {}
+    } else {
+      this.tone(1320, 0.16, "sine", 0.032, 0.04, overdrive ? 2640 : 2100);
+    }
+  }
+
   playCrystalShatter(overdrive = false) {
     const notes = [1046.5, 1318.5, 1567.98, 2093.0];
     notes.forEach((n, idx) => {

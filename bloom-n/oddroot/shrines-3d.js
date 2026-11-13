@@ -12,6 +12,10 @@
 
 import * as THREE from "../vendor/three.module.min.js";
 import * as CoreEngine from "../core/engine.js";
+import {
+  buildTempleSanctuaryFrame,
+  stepTempleSanctuaryFrame,
+} from "../core/vfx-3d.js";
 
 export const SHRINE_CHASM_SPAN_Z = 16.0;
 export const SHRINE_STUB_SPAN_Z = 2.0; // 2.0 / 16.0 = 0.125 <= 0.15 Anti-Scrub Law
@@ -742,6 +746,28 @@ export class OddrootShrineManager {
         opacity: 0.24,
         side: THREE.DoubleSide,
       }),
+      obsidianStar: createOddrootToonRimMaterial(g, {
+        color: 0x1a2238,
+        emissive: 0x0f172a,
+        emissiveIntensity: 0.36,
+        rimColor: 0x62f5e4,
+        rimIntensity: 0.62,
+      }),
+      blossomRose: createOddrootToonRimMaterial(g, {
+        color: 0xf9a8d4,
+        emissive: 0xdb2777,
+        emissiveIntensity: 0.56,
+        rimColor: 0xfff3b0,
+        rimIntensity: 0.52,
+      }),
+      hearthGlow: new THREE.MeshBasicMaterial({
+        color: 0xffb703,
+        transparent: true,
+        opacity: 0.42,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
     };
 
     this.geos = {
@@ -762,7 +788,7 @@ export class OddrootShrineManager {
       this.scene.add(this.poolGroup);
     }
 
-    for (let i = 0; i < 48; i++) {
+    for (let i = 0; i < 64; i++) {
       const mat = new THREE.MeshBasicMaterial({
         color: 0xf8fafc,
         transparent: true,
@@ -798,7 +824,7 @@ export class OddrootShrineManager {
       });
     }
 
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < 56; i++) {
       const mat = new THREE.MeshBasicMaterial({
         color: 0xffb74d,
         transparent: true,
@@ -837,6 +863,56 @@ export class OddrootShrineManager {
         mat,
       });
     }
+  }
+
+  _buildBlossomCluster(scale = 1.0) {
+    const grp = new THREE.Group();
+    const core = new THREE.Mesh(this.geos.orb, this.mats.sunGold);
+    core.scale.setScalar(0.46 * scale);
+    grp.add(core);
+    for (let p = 0; p < 5; p++) {
+      const ang = (p / 5) * Math.PI * 2;
+      const petal = new THREE.Mesh(this.geos.petal, this.mats.blossomRose);
+      petal.scale.set(0.85 * scale, 0.42 * scale, 0.85 * scale);
+      petal.position.set(Math.cos(ang) * 0.24 * scale, 0.03 * scale, Math.sin(ang) * 0.24 * scale);
+      petal.rotation.y = -ang;
+      grp.add(petal);
+    }
+    return grp;
+  }
+
+  _addBlossomGatepost(parent, x, baseY, z, height = 3.1) {
+    const postGrp = new THREE.Group();
+    postGrp.position.set(x, baseY, z);
+
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.28, height, 8),
+      this.mats.bronze
+    );
+    post.position.y = height * 0.5;
+    postGrp.add(post);
+
+    for (let c = 0; c < 3; c++) {
+      const coil = new THREE.Mesh(
+        new THREE.TorusGeometry(0.25 - c * 0.025, 0.045, 6, 16),
+        this.mats.runeEmerald
+      );
+      coil.rotation.x = Math.PI / 2 + (c % 2 === 0 ? 0.28 : -0.28);
+      coil.position.y = 0.65 + c * 0.82;
+      postGrp.add(coil);
+    }
+
+    const topBlossom = this._buildBlossomCluster(1.1);
+    topBlossom.position.set(0, height + 0.14, 0);
+    postGrp.add(topBlossom);
+
+    const sideBlossom = this._buildBlossomCluster(0.75);
+    sideBlossom.position.set(x < 0 ? 0.24 : -0.24, height * 0.62, 0.18);
+    sideBlossom.rotation.z = x < 0 ? -0.5 : 0.5;
+    postGrp.add(sideBlossom);
+
+    parent.add(postGrp);
+    return postGrp;
   }
 
   _spawnSteamPoofs(worldPos, count = 12) {
@@ -951,6 +1027,21 @@ export class OddrootShrineManager {
       group.position.set(anchor.x, y, anchor.z);
       group.rotation.y = safeNum(anchor.rotY, 0);
 
+      const templeAccent =
+        archetype === "vine_rail"
+          ? 0xffd166
+          : archetype === "moonwell_astrolabe"
+          ? 0x7ee8fa
+          : archetype === "mosaic_or_arch"
+          ? 0xffcf56
+          : null;
+      const templeFrame = buildTempleSanctuaryFrame({
+        theme: "oddroot",
+        archetype,
+        accentHex: templeAccent,
+      });
+      group.add(templeFrame.group);
+
       const approachRing = new THREE.Mesh(
         new THREE.TorusGeometry(2.3, 0.12, 8, 28),
         this.mats.runeEmerald
@@ -985,6 +1076,7 @@ export class OddrootShrineManager {
         rotY: safeNum(anchor.rotY, 0),
         cleared: false,
         group,
+        templeFrame,
         contentGroup,
         approachRing,
         beaconPillar,
@@ -1083,6 +1175,47 @@ export class OddrootShrineManager {
     pedestal.position.y = 0.25;
     cg.add(pedestal);
 
+    // Glowing rune hearth ring & ember crystal coals beneath the cauldron
+    const hearthRing = new THREE.Mesh(
+      new THREE.TorusGeometry(2.35, 0.085, 8, 32),
+      this.mats.brass
+    );
+    hearthRing.rotation.x = Math.PI / 2;
+    hearthRing.position.y = 0.52;
+    cg.add(hearthRing);
+
+    const hearthAura = new THREE.Mesh(
+      new THREE.RingGeometry(1.15, 2.28, 28),
+      this.mats.hearthGlow
+    );
+    hearthAura.rotation.x = -Math.PI / 2;
+    hearthAura.position.y = 0.53;
+    cg.add(hearthAura);
+
+    for (let e = 0; e < 6; e++) {
+      const ang = (e / 6) * Math.PI * 2;
+      const ember = new THREE.Mesh(
+        this.geos.petal,
+        e % 2 === 0 ? this.mats.sunGold : this.mats.frostCyan
+      );
+      ember.position.set(Math.cos(ang) * 1.92, 0.58, Math.sin(ang) * 1.92);
+      ember.rotation.set(0.3, ang, 0.2);
+      cg.add(ember);
+    }
+
+    // Three sculpted bronze claw-feet bracing cauldron to pedestal
+    for (let f = 0; f < 3; f++) {
+      const fAng = (f / 3) * Math.PI * 2 + Math.PI / 6;
+      const foot = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.28, 0.65, 8),
+        this.mats.brass
+      );
+      foot.position.set(Math.cos(fAng) * 1.52, 0.68, Math.sin(fAng) * 1.52);
+      foot.rotation.z = -Math.cos(fAng) * 0.24;
+      foot.rotation.x = Math.sin(fAng) * 0.24;
+      cg.add(foot);
+    }
+
     const cauldronPot = new THREE.Mesh(
       new THREE.CylinderGeometry(2.05, 1.55, 2.0, 16),
       this.mats.bronze
@@ -1090,10 +1223,34 @@ export class OddrootShrineManager {
     cauldronPot.position.set(0, 1.35, 0);
     cg.add(cauldronPot);
 
+    const bellyBand = new THREE.Mesh(
+      new THREE.TorusGeometry(1.84, 0.075, 8, 28),
+      this.mats.brass
+    );
+    bellyBand.rotation.x = Math.PI / 2;
+    bellyBand.position.set(0, 1.38, 0);
+    cg.add(bellyBand);
+
     const rim = new THREE.Mesh(new THREE.TorusGeometry(2.05, 0.18, 10, 28), this.mats.brass);
     rim.rotation.x = Math.PI / 2;
     rim.position.set(0, 2.35, 0);
     cg.add(rim);
+
+    // Ornate cauldron side bosses & hanging brass ring handles
+    for (const sx of [-1, 1]) {
+      const boss = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), this.mats.brass);
+      boss.position.set(sx * 1.98, 1.98, 0);
+      cg.add(boss);
+
+      const handleRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.36, 0.065, 8, 20),
+        this.mats.sunGold
+      );
+      handleRing.position.set(sx * 2.18, 1.76, 0);
+      handleRing.rotation.y = Math.PI / 2;
+      handleRing.rotation.x = sx * 0.22;
+      cg.add(handleRing);
+    }
 
     const subZeroShaft = new THREE.Mesh(
       new THREE.CylinderGeometry(0.62, 0.62, 4.6, 14),
@@ -1101,6 +1258,15 @@ export class OddrootShrineManager {
     );
     subZeroShaft.position.set(0, 2.5, -2.35);
     cg.add(subZeroShaft);
+
+    for (const capY of [0.25, 4.82]) {
+      const shaftCap = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.72, 0.72, 0.16, 14),
+        this.mats.brass
+      );
+      shaftCap.position.set(0, capY, -2.35);
+      cg.add(shaftCap);
+    }
 
     const zeroHorizonRing = new THREE.Mesh(
       new THREE.TorusGeometry(0.76, 0.08, 8, 24),
@@ -1256,12 +1422,34 @@ export class OddrootShrineManager {
     const meta = normalizeBalanceMeta(slot.encounter);
     const cg = slot.contentGroup;
 
+    const fulcrumPlinth = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.35, 1.65, 0.45, 8),
+      this.mats.mossStone
+    );
+    fulcrumPlinth.position.set(0, 0.22, 0);
+    cg.add(fulcrumPlinth);
+
     const fulcrumArch = new THREE.Mesh(
       new THREE.CylinderGeometry(0.45, 0.85, 4.2, 10),
       this.mats.mossStone
     );
     fulcrumArch.position.set(0, 2.1, 0);
     cg.add(fulcrumArch);
+
+    // Carved gothic/botanical fulcrum buttress arch & brass medallion
+    const buttressArch = new THREE.Mesh(
+      new THREE.TorusGeometry(1.35, 0.16, 8, 24, Math.PI),
+      this.mats.mossStone
+    );
+    buttressArch.position.set(0, 2.65, 0);
+    cg.add(buttressArch);
+
+    const pivotMedallion = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.42, 0),
+      this.mats.runeEmerald
+    );
+    pivotMedallion.position.set(0, 4.2, 0.28);
+    cg.add(pivotMedallion);
 
     const beamPivot = new THREE.Group();
     beamPivot.name = "BalanceBeamPivot";
@@ -1270,6 +1458,23 @@ export class OddrootShrineManager {
 
     const crossbar = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.28, 0.42), this.mats.brass);
     beamPivot.add(crossbar);
+
+    // Balance needle finial & ornate scroll beam tips
+    const needleFinial = new THREE.Mesh(
+      new THREE.ConeGeometry(0.18, 0.85, 6),
+      this.mats.sunGold
+    );
+    needleFinial.position.set(0, 0.56, 0);
+    beamPivot.add(needleFinial);
+
+    for (const sx of [-1, 1]) {
+      const tipScroll = new THREE.Mesh(
+        new THREE.TorusGeometry(0.24, 0.065, 8, 16),
+        this.mats.sunGold
+      );
+      tipScroll.position.set(sx * 4.42, 0.08, 0);
+      beamPivot.add(tipScroll);
+    }
 
     const buildPanContents = (panGroup, aCoeff, bConst, groupedSpec, isRepelTarget) => {
       const constCluster = new THREE.Group();
@@ -1364,6 +1569,35 @@ export class OddrootShrineManager {
         varCluster: rightPan.children[3] || new THREE.Group(),
       };
 
+    // Attach 3 angled golden suspension chains + engraved brass pan rim + crystal counterweight
+    for (const pan of [leftPan, rightPan]) {
+      const panDecor = new THREE.Group();
+      const trayRim = new THREE.Mesh(
+        new THREE.TorusGeometry(1.64, 0.07, 8, 24),
+        this.mats.brass
+      );
+      trayRim.rotation.x = Math.PI / 2;
+      trayRim.position.y = 0.1;
+      panDecor.add(trayRim);
+
+      const pendant = new THREE.Mesh(this.geos.petal, this.mats.sunGold);
+      pendant.position.y = -0.28;
+      panDecor.add(pendant);
+
+      for (let c = 0; c < 3; c++) {
+        const ang = (c / 3) * Math.PI * 2;
+        const rx = Math.cos(ang) * 1.48;
+        const rz = Math.sin(ang) * 1.48;
+        const chain = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.032, 0.032, 1.0, 6),
+          this.mats.sunGold
+        );
+        this._positionSegmentBetween(chain, rx, 0.1, rz, 0, 1.8, 0);
+        panDecor.add(chain);
+      }
+      pan.add(panDecor);
+    }
+
     const repelSparkRing = new THREE.Mesh(
       new THREE.TorusGeometry(0.95, 0.1, 8, 24),
       this.mats.caliperAmber
@@ -1442,6 +1676,15 @@ export class OddrootShrineManager {
         col.position.y = 0.45;
         pedRoot.add(col);
 
+        const pedCollar = new THREE.Mesh(
+          new THREE.TorusGeometry(1.38, 0.065, 8, 24),
+          this.mats.brass
+        );
+        pedCollar.rotation.x = Math.PI / 2;
+        pedCollar.position.y = 0.88;
+        pedRoot.add(pedCollar);
+
+        // STRICT INVARIANT: Keep baseStoneGroup.children strictly equal to absBase!
         const baseStoneGroup = new THREE.Group();
         baseStoneGroup.name = `Frame_${frameSpec.step}_BaseStones`;
         const absBase = Math.min(12, Math.abs(Math.round(frameSpec.base)));
@@ -1493,12 +1736,47 @@ export class OddrootShrineManager {
       );
       targetPedestal.position.set(0, 0.55, -3.5);
       cg.add(targetPedestal);
+
+      // Botanical crystal finial crowning the target pedestal
+      const targetFinial = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.46, 0),
+        this.mats.silverMoon
+      );
+      targetFinial.position.set(0, 1.65, -3.5);
+      const targetHalo = new THREE.Mesh(
+        new THREE.TorusGeometry(0.74, 0.055, 8, 22),
+        this.mats.sunGold
+      );
+      targetHalo.rotation.x = Math.PI / 2;
+      targetHalo.position.set(0, 1.22, -3.5);
+      cg.add(targetFinial, targetHalo);
+
       state.targetPedestal = targetPedestal;
     } else if (meta.mode === "crystal_loom") {
-      // W2.2 Distributive Crystal Loom: a(n ± b) -> an ± ab
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(6.8, 4.6, 0.35), this.mats.bronze);
-      frame.position.set(0, 2.4, -0.4);
+      // W2.2 Distributive Crystal Loom: a(n ± b) -> an ± ab with carved posts & crystal finials
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(6.8, 4.6, 0.28), this.mats.bronze);
+      frame.position.set(0, 2.4, -0.45);
       cg.add(frame);
+
+      const topBeam = new THREE.Mesh(new THREE.BoxGeometry(7.35, 0.26, 0.48), this.mats.brass);
+      topBeam.position.set(0, 4.72, -0.42);
+      const botBeam = new THREE.Mesh(new THREE.BoxGeometry(7.35, 0.26, 0.48), this.mats.brass);
+      botBeam.position.set(0, 0.22, -0.42);
+      cg.add(topBeam, botBeam);
+
+      for (const sx of [-1, 1]) {
+        const post = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.22, 0.28, 4.8, 10),
+          this.mats.brass
+        );
+        post.position.set(sx * 3.45, 2.48, -0.36);
+        const finial = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.38, 0),
+          this.mats.runeEmerald
+        );
+        finial.position.set(sx * 3.45, 5.22, -0.36);
+        cg.add(post, finial);
+      }
 
       const loomPodGroup = new THREE.Group();
       const loomOrbGroup = new THREE.Group();
@@ -1508,6 +1786,14 @@ export class OddrootShrineManager {
 
       for (let r = 0; r < rows; r++) {
         const yRow = 1.1 + r * 0.62;
+        const warpThread = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.025, 0.025, 6.4, 6),
+          this.mats.brass
+        );
+        warpThread.rotation.z = Math.PI / 2;
+        warpThread.position.set(0, yRow, -0.1);
+        cg.add(warpThread);
+
         const pod = new THREE.Mesh(this.geos.runePod, this.mats.runeEmerald);
         pod.position.set(0, yRow, 0.15);
         loomPodGroup.add(pod);
@@ -1526,13 +1812,31 @@ export class OddrootShrineManager {
       state.loomPodGroup = loomPodGroup;
       state.loomOrbGroup = loomOrbGroup;
     } else if (meta.mode === "power_tree") {
-      // W2.3 InstancedMesh base^exp Lumina Tree
+      // W2.3 InstancedMesh base^exp Lumina Tree with buttress roots & crystal crown finial
       const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.35, 0.65, 2.4, 10),
+        new THREE.CylinderGeometry(0.35, 0.68, 2.4, 10),
         this.mats.bronze
       );
       trunk.position.y = 1.2;
       cg.add(trunk);
+
+      for (let b = 0; b < 4; b++) {
+        const bAng = (b / 4) * Math.PI * 2 + Math.PI / 4;
+        const rootArc = new THREE.Mesh(
+          new THREE.TorusGeometry(0.72, 0.11, 6, 14, Math.PI * 0.6),
+          this.mats.bronze
+        );
+        rootArc.position.set(Math.cos(bAng) * 0.45, 0.25, Math.sin(bAng) * 0.45);
+        rootArc.rotation.y = -bAng;
+        cg.add(rootArc);
+      }
+
+      const crownFinial = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.42, 0),
+        this.mats.sunGold
+      );
+      crownFinial.position.set(0, 2.75 + Math.max(1, meta.exp) * 1.15, 0);
+      cg.add(crownFinial);
 
       const totalBuds = Math.min(125, Math.max(4, Math.round(safeNum(Math.pow(meta.base, meta.exp), 27))));
       const inst = new THREE.InstancedMesh(this.geos.petal, this.mats.runeEmerald, totalBuds);
@@ -1550,7 +1854,7 @@ export class OddrootShrineManager {
       cg.add(inst);
       state.treeInstancedMesh = inst;
     } else if (meta.mode === "dew_mirrors") {
-      // W2.4 Parallel Dew-Mirrors & Starlight Transversal
+      // W2.4 Parallel Dew-Mirrors & Starlight Transversal with crystal end finials
       for (const my of [2.0, 4.6]) {
         const mirror = new THREE.Mesh(
           new THREE.BoxGeometry(7.2, 0.14, 0.9),
@@ -1558,6 +1862,15 @@ export class OddrootShrineManager {
         );
         mirror.position.set(0, my, 0);
         cg.add(mirror);
+
+        for (const sx of [-1, 1]) {
+          const cap = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.28, 0),
+            this.mats.brass
+          );
+          cap.position.set(sx * 3.72, my + 0.08, 0);
+          cg.add(cap);
+        }
       }
       const trans = new THREE.Mesh(
         new THREE.CylinderGeometry(0.08, 0.08, 5.6, 8),
@@ -1575,7 +1888,14 @@ export class OddrootShrineManager {
       cg.add(protractorPrism);
       state.protractorPrism = protractorPrism;
     } else {
-      // W3.4 k x k (k^2) Scale-Canopy InstancedMesh
+      // W3.4 k x k (k^2) Scale-Canopy InstancedMesh with botanical reference stand
+      const refStand = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.55, 0.72, 1.28, 10),
+        this.mats.mossStone
+      );
+      refStand.position.set(-4.2, 0.64, 0);
+      cg.add(refStand);
+
       const refTile = new THREE.Mesh(
         new THREE.BoxGeometry(0.85, 0.16, 0.85),
         this.mats.runeEmerald
@@ -1646,7 +1966,10 @@ export class OddrootShrineManager {
     cg.add(extrudedVine);
 
     if (meta.isSystem) {
-      // W4.4 Crossed Spore-Stream Emitters & Mega-Seed Pod
+      // W4.4 Crossed Spore-Stream Emitters & Mega-Seed Pod + Flowering Blossom Gateposts
+      this._addBlossomGatepost(cg, -5.0, 0.15, -0.35, 3.25);
+      this._addBlossomGatepost(cg, 5.0, 0.15, -0.35, 3.25);
+
       for (const [sx, bVal, mat] of [
         [-4.2, meta.b1, this.mats.runeEmerald],
         [4.2, meta.b2, this.mats.sunGold],
@@ -1692,6 +2015,10 @@ export class OddrootShrineManager {
         this.mats.runeEmerald
       );
       megaSeedPod.add(podHalo);
+      const crownBlossom = this._buildBlossomCluster(1.25);
+      crownBlossom.position.set(0, 1.25, 0);
+      megaSeedPod.add(crownBlossom);
+
       const absTx = Math.min(1e6, Math.abs(safeNum(meta.targetX, 3)));
       const zMeet = Math.min(
         SHRINE_CHASM_SPAN_Z - 1.5,
@@ -1715,7 +2042,10 @@ export class OddrootShrineManager {
       return;
     }
 
-    // Single-Rail Living Grind-Vine (W0.6, W4.1, W4.2, W4.3)
+    // Single-Rail Living Grind-Vine (W0.6, W4.1, W4.2, W4.3) + Flowering Blossom Gateposts
+    this._addBlossomGatepost(cg, -2.55, 0.15, -0.35, 3.05);
+    this._addBlossomGatepost(cg, 2.55, 0.15, -0.35, 3.05);
+
     const startB = meta.solveForB ? safeNum(slot.encounter?.startDial, 0) : meta.b;
     const rootPad = new THREE.Mesh(
       new THREE.CylinderGeometry(1.45, 1.7, 0.55, 14),
@@ -1739,6 +2069,13 @@ export class OddrootShrineManager {
       this.mats.sunGold
     );
     targetRing.position.set(0, yWorldFromMath(meta.targetY), -SHRINE_TARGET_Z);
+    for (let b = 0; b < 4; b++) {
+      const bAng = (b / 4) * Math.PI * 2 + Math.PI / 4;
+      const ringBlossom = this._buildBlossomCluster(0.85);
+      ringBlossom.position.set(Math.cos(bAng) * 1.98, Math.sin(bAng) * 1.98, 0.16);
+      ringBlossom.rotation.x = Math.PI / 2;
+      targetRing.add(ringBlossom);
+    }
     cg.add(targetRing);
 
     const vineSegs = [];
@@ -1820,15 +2157,51 @@ export class OddrootShrineManager {
       new THREE.TorusGeometry(1.85, 0.1, 8, 32),
       this.mats.brass
     );
+    // Engraved celestial degree ticks & cardinal star pointers on outerRing
+    for (let t = 0; t < 12; t++) {
+      const tAng = (t / 12) * Math.PI * 2;
+      const isCardinal = t % 3 === 0;
+      const tick = new THREE.Mesh(
+        isCardinal
+          ? new THREE.OctahedronGeometry(0.16, 0)
+          : new THREE.BoxGeometry(0.06, 0.22, 0.08),
+        isCardinal ? this.mats.sunGold : this.mats.silverMoon
+      );
+      tick.position.set(Math.cos(tAng) * 1.98, Math.sin(tAng) * 1.98, 0);
+      tick.rotation.z = tAng - Math.PI / 2;
+      outerRing.add(tick);
+    }
+
+    const meridianHoop = new THREE.Mesh(
+      new THREE.TorusGeometry(2.02, 0.055, 8, 32),
+      this.mats.brass
+    );
+    meridianHoop.rotation.y = Math.PI / 2;
+    const zenithFinial = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 0),
+      this.mats.sunGold
+    );
+    zenithFinial.position.set(0, 2.26, 0);
+
     const midRing = new THREE.Mesh(
       new THREE.TorusGeometry(1.42, 0.08, 8, 28),
       this.mats.sunGold
     );
+    for (let r = 0; r < 8; r++) {
+      const rAng = (r / 8) * Math.PI * 2;
+      const runeStud = new THREE.Mesh(
+        new THREE.SphereGeometry(0.075, 8, 6),
+        this.mats.runeEmerald
+      );
+      runeStud.position.set(Math.cos(rAng) * 1.42, Math.sin(rAng) * 1.42, 0.07);
+      midRing.add(runeStud);
+    }
+
     const innerRing = new THREE.Mesh(
       new THREE.TorusGeometry(0.98, 0.07, 8, 24),
       this.mats.silverMoon
     );
-    astrolabeRings.add(outerRing, midRing, innerRing);
+    astrolabeRings.add(outerRing, meridianHoop, zenithFinial, midRing, innerRing);
     cg.add(astrolabeRings);
 
     const state = {
@@ -1862,6 +2235,25 @@ export class OddrootShrineManager {
       stoneRim.position.y = 0.45;
       moonwellBasin.add(stoneRim);
 
+      const brassInlayRing = new THREE.Mesh(
+        new THREE.TorusGeometry(4.1, 0.07, 8, 36),
+        this.mats.brass
+      );
+      brassInlayRing.rotation.x = Math.PI / 2;
+      brassInlayRing.position.y = 0.74;
+      moonwellBasin.add(brassInlayRing);
+
+      for (let p = 0; p < 8; p++) {
+        const pAng = (p / 8) * Math.PI * 2 + Math.PI / 8;
+        const lotus = new THREE.Mesh(
+          this.geos.petal,
+          p % 2 === 0 ? this.mats.silverMoon : this.mats.runeEmerald
+        );
+        lotus.position.set(Math.cos(pAng) * 4.12, 0.78, Math.sin(pAng) * 4.12);
+        lotus.rotation.set(0.35, -pAng, 0);
+        moonwellBasin.add(lotus);
+      }
+
       const waterDisc = new THREE.Mesh(
         new THREE.CircleGeometry(4.05, 32),
         this.mats.crystalGlass
@@ -1882,7 +2274,12 @@ export class OddrootShrineManager {
         new THREE.TorusGeometry(0.84, 0.06, 8, 24),
         this.mats.sunGold
       );
-      moonLantern.add(moonSphere, moonHalo);
+      const moonEquatorial = new THREE.Mesh(
+        new THREE.TorusGeometry(0.76, 0.045, 8, 24),
+        this.mats.brass
+      );
+      moonEquatorial.rotation.x = Math.PI / 2;
+      moonLantern.add(moonSphere, moonHalo, moonEquatorial);
       cg.add(moonLantern);
 
       const diameterChord = new THREE.Mesh(
@@ -1940,6 +2337,20 @@ export class OddrootShrineManager {
       const strutB = new THREE.Mesh(this.geos.vineSeg, this.mats.sunGold);
       this._positionSegmentBetween(strutB, 3.0, 0.8, 0, 0, 3.8, 0);
       cg.add(strutA, strutB);
+
+      for (const [jx, jy] of [
+        [-3.0, 0.8],
+        [3.0, 0.8],
+        [0, 3.8],
+      ]) {
+        const medallion = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.28, 0.28, 0.44, 12),
+          this.mats.brass
+        );
+        medallion.rotation.x = Math.PI / 2;
+        medallion.position.set(jx, jy, 0);
+        cg.add(medallion);
+      }
       state.trussClosingBeam = strutB;
     } else if (meta.mode === "pythag_squares") {
       // W5.3 3D a^2 + b^2 = c^2 Squares & Root Cable
@@ -1974,6 +2385,19 @@ export class OddrootShrineManager {
       this._positionSegmentBetween(rootCable, -aLen, 0.65, 0, 0, 0.65 + bLen, 0);
       cg.add(rootCable);
 
+      for (const [vx, vy] of [
+        [-aLen, 0.65],
+        [0, 0.65],
+        [0, 0.65 + bLen],
+      ]) {
+        const cornerGem = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.22, 0),
+          this.mats.sunGold
+        );
+        cornerGem.position.set(vx, vy, 0.12);
+        cg.add(cornerGem);
+      }
+
       state.pythagSquareA = pythagSquareA;
       state.pythagSquareB = pythagSquareB;
       state.pythagSquareC = pythagSquareC;
@@ -1995,6 +2419,20 @@ export class OddrootShrineManager {
       );
       risePillar.position.set(runVis * 0.5, 0.8 + riseVis * 0.5, 0);
       cg.add(risePillar);
+
+      const apexSunGem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.32, 0),
+        this.mats.sunGold
+      );
+      apexSunGem.position.set(runVis * 0.5, 0.8 + riseVis + 0.28, 0);
+      cg.add(apexSunGem);
+
+      const elevationArc = new THREE.Mesh(
+        new THREE.TorusGeometry(1.15, 0.055, 8, 18, Math.max(0.25, angRad)),
+        this.mats.brass
+      );
+      elevationArc.position.set(-runVis * 0.5, 0.8, 0);
+      cg.add(elevationArc);
 
       const sunbeamRay = new THREE.Mesh(this.geos.vineSeg, this.mats.sunGold);
       this._positionSegmentBetween(
@@ -2032,6 +2470,53 @@ export class OddrootShrineManager {
       );
       plinth.position.y = -0.18;
       forgeTable.add(plinth);
+
+      // Golden filigree altar trim & 4 alchemist corner crystal finials
+      const filigreeBezel = new THREE.Mesh(
+        new THREE.TorusGeometry(3.22, 0.095, 8, 8),
+        this.mats.brass
+      );
+      filigreeBezel.rotation.x = Math.PI / 2;
+      filigreeBezel.rotation.z = Math.PI / 8;
+      filigreeBezel.position.y = -0.02;
+      forgeTable.add(filigreeBezel);
+
+      const innerFiligree = new THREE.Mesh(
+        new THREE.TorusGeometry(2.62, 0.05, 8, 28),
+        this.mats.sunGold
+      );
+      innerFiligree.rotation.x = Math.PI / 2;
+      innerFiligree.position.y = 0.01;
+      forgeTable.add(innerFiligree);
+
+      const altarStem = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.15, 1.55, 1.15, 8),
+        this.mats.mossStone
+      );
+      altarStem.position.set(0, 0.58, 0);
+      cg.add(altarStem);
+      const stemCuff = new THREE.Mesh(
+        new THREE.TorusGeometry(1.26, 0.08, 8, 16),
+        this.mats.brass
+      );
+      stemCuff.rotation.x = Math.PI / 2;
+      stemCuff.position.set(0, 0.92, 0);
+      cg.add(stemCuff);
+
+      for (let f = 0; f < 4; f++) {
+        const fAng = (f / 4) * Math.PI * 2 + Math.PI / 4;
+        const finialStem = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.11, 0.15, 0.38, 8),
+          this.mats.brass
+        );
+        finialStem.position.set(Math.cos(fAng) * 2.92, 0.16, Math.sin(fAng) * 2.92);
+        const finialGem = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.18, 0),
+          f % 2 === 0 ? this.mats.sunGold : this.mats.runeEmerald
+        );
+        finialGem.position.set(Math.cos(fAng) * 2.92, 0.46, Math.sin(fAng) * 2.92);
+        forgeTable.add(finialStem, finialGem);
+      }
 
       const slabW = 2.2;
       const wingW = Math.max(0.55, Math.min(1.65, meta.half * 0.24));
@@ -2090,6 +2575,12 @@ export class OddrootShrineManager {
         this.mats.silverMoon
       );
       candidateCrystal.position.set(socketX, 2.25, socketZ);
+      const candidateFiligree = new THREE.Mesh(
+        new THREE.TorusGeometry(wingW * 0.78, 0.045, 8, 24),
+        this.mats.brass
+      );
+      candidateFiligree.rotation.x = Math.PI / 2;
+      candidateCrystal.add(candidateFiligree);
       forgeTable.add(candidateCrystal);
 
       slot.mosaicState = {
@@ -2109,6 +2600,9 @@ export class OddrootShrineManager {
     }
 
     // W6.1 / W6.2 Parabolic Spore-Arch (<=15% Origin Stub + Hidden Pre-Commit Extruded Arch)
+    this._addBlossomGatepost(cg, -2.65, 0.15, -0.35, 3.1);
+    this._addBlossomGatepost(cg, 2.65, 0.15, -0.35, 3.1);
+
     const originStub = new THREE.Group();
     originStub.name = "OriginSproutStub";
     // Anchor originStub at launch pad (0, BASE_PAD_Y, 0) so preview tilts stay <= 15% chasm span
@@ -2146,6 +2640,15 @@ export class OddrootShrineManager {
       this.mats.silverMoon
     );
     vertexRing.position.set(0, yWorldFromMath(meta.k), -SHRINE_CHASM_SPAN_Z * 0.5);
+    for (let g = 0; g < 4; g++) {
+      const gAng = (g / 4) * Math.PI * 2;
+      const crownGem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.24, 0),
+        this.mats.sunGold
+      );
+      crownGem.position.set(Math.cos(gAng) * 1.82, Math.sin(gAng) * 1.82, 0);
+      vertexRing.add(crownGem);
+    }
 
     cg.add(originStub, extrudedVine, splatterMesh, vertexRing);
     slot.originStub = originStub;
@@ -2188,9 +2691,58 @@ export class OddrootShrineManager {
     const cg = slot.contentGroup;
 
     if (meta.mode === "i_portal") {
-      // W7.4: Upright Circular Argand Compass Sanctuary Arch + Emerald 90° Quarter-Turn i-Portal Rings
+      // W7.4: Upright Circular Argand Compass Sanctuary Arch + Obsidian-Starlight Obelisk Trim
       const archCenterY = 4.6;
       const radius = 3.8;
+
+      // Twin obsidian-starlight flanking obelisks with brass cuffs & floating starlight pyramidion tips
+      for (const side of [-1, 1]) {
+        const ox = side * 4.52;
+        const obeliskBase = new THREE.Mesh(
+          new THREE.BoxGeometry(0.88, 0.42, 0.88),
+          this.mats.mossStone
+        );
+        obeliskBase.position.set(ox, 0.21, 0);
+        const obeliskShaft = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.32, 0.48, 5.1, 4),
+          this.mats.obsidianStar
+        );
+        obeliskShaft.rotation.y = Math.PI / 4;
+        obeliskShaft.position.set(ox, 2.95, 0);
+
+        const lowerCuff = new THREE.Mesh(
+          new THREE.BoxGeometry(0.68, 0.14, 0.68),
+          this.mats.brass
+        );
+        lowerCuff.position.set(ox, 1.65, 0);
+        const upperCuff = new THREE.Mesh(
+          new THREE.BoxGeometry(0.56, 0.14, 0.56),
+          this.mats.brass
+        );
+        upperCuff.position.set(ox, 4.35, 0);
+
+        const pyramidion = new THREE.Mesh(
+          new THREE.ConeGeometry(0.36, 0.82, 4),
+          this.mats.obsidianStar
+        );
+        pyramidion.rotation.y = Math.PI / 4;
+        pyramidion.position.set(ox, 5.92, 0);
+
+        const starJewel = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.24, 0),
+          side < 0 ? this.mats.frostCyan : this.mats.heliumViolet
+        );
+        starJewel.position.set(ox, 6.62, 0);
+
+        cg.add(obeliskBase, obeliskShaft, lowerCuff, upperCuff, pyramidion, starJewel);
+      }
+
+      const obsidianBezel = new THREE.Mesh(
+        new THREE.TorusGeometry(radius + 0.22, 0.095, 10, 40),
+        this.mats.obsidianStar
+      );
+      obsidianBezel.position.set(0, archCenterY, -0.06);
+      cg.add(obsidianBezel);
 
       const compassRing = new THREE.Mesh(
         new THREE.TorusGeometry(radius, 0.12, 10, 40),
@@ -2198,6 +2750,34 @@ export class OddrootShrineManager {
       );
       compassRing.position.set(0, archCenterY, 0);
       cg.add(compassRing);
+
+      // Subtle golden Argand axis crosshairs behind the portal plane
+      const hAxisBar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.035, 0.035, radius * 1.92, 8),
+        this.mats.brass
+      );
+      hAxisBar.rotation.z = Math.PI / 2;
+      hAxisBar.position.set(0, archCenterY, -0.14);
+      const vAxisBar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.035, 0.035, radius * 1.92, 8),
+        this.mats.brass
+      );
+      vAxisBar.position.set(0, archCenterY, -0.14);
+      cg.add(hAxisBar, vAxisBar);
+
+      // Near-field obsidian-starlight compass pedestal under previewNeedle
+      const needlePedestal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.62, 0.78, 1.18, 8),
+        this.mats.obsidianStar
+      );
+      needlePedestal.position.set(0, 0.62, 3.1);
+      const needleRim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.66, 0.06, 8, 20),
+        this.mats.brass
+      );
+      needleRim.rotation.x = Math.PI / 2;
+      needleRim.position.set(0, 1.22, 3.1);
+      cg.add(needlePedestal, needleRim);
 
       // 4 Argand Axis Receptors: +Real (0° Gold), +Imag (90° Emerald), -Real (180° Frost), -Imag (270° Violet)
       const axisSpecs = [
@@ -2215,6 +2795,11 @@ export class OddrootShrineManager {
           archCenterY + Math.sin(ax.ang) * radius,
           0
         );
+        const socketRing = new THREE.Mesh(
+          new THREE.TorusGeometry(0.58, 0.055, 8, 20),
+          this.mats.brass
+        );
+        rec.add(socketRing);
         cg.add(rec);
         receptors.push(rec);
       }
@@ -2306,7 +2891,20 @@ export class OddrootShrineManager {
     }
 
     if (meta.mode === "mitosis_puffballs") {
-      // W7.1 Dividing a * b^x Mitosis Puffballs via InstancedMesh
+      // W7.1 Dividing a * b^x Mitosis Puffballs via InstancedMesh + Botanical Spore Basin
+      const basinBase = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.75, 3.05, 0.36, 16),
+        this.mats.mossStone
+      );
+      basinBase.position.y = 0.22;
+      const basinRim = new THREE.Mesh(
+        new THREE.TorusGeometry(2.85, 0.14, 8, 28),
+        this.mats.brass
+      );
+      basinRim.rotation.x = Math.PI / 2;
+      basinRim.position.y = 0.44;
+      cg.add(basinBase, basinRim);
+
       const count = Math.min(128, Math.max(4, Math.round(safeNum(meta.target, 16))));
       const inst = new THREE.InstancedMesh(this.geos.heliumPuff, this.mats.runeEmerald, count);
       for (let i = 0; i < count; i++) {
@@ -2326,13 +2924,36 @@ export class OddrootShrineManager {
     }
 
     if (meta.mode === "log_spire") {
-      // W7.2 Inverse log_b Stage-Counter Spire
+      // W7.2 Inverse log_b Stage-Counter Spire + Obsidian Buttress Fins & Apex Prism
       const spire = new THREE.Mesh(
         new THREE.CylinderGeometry(0.45, 0.75, 7.2, 12),
         this.mats.mossStone
       );
       spire.position.y = 3.6;
       cg.add(spire);
+
+      for (let b = 0; b < 4; b++) {
+        const bAng = (b / 4) * Math.PI * 2 + Math.PI / 4;
+        const buttress = new THREE.Mesh(
+          new THREE.BoxGeometry(0.22, 2.2, 0.65),
+          this.mats.obsidianStar
+        );
+        buttress.position.set(Math.cos(bAng) * 0.86, 1.15, Math.sin(bAng) * 0.86);
+        buttress.rotation.y = -bAng + Math.PI / 2;
+        cg.add(buttress);
+      }
+
+      const apexPrism = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.48, 0),
+        this.mats.sunGold
+      );
+      apexPrism.position.y = 7.62;
+      const apexHalo = new THREE.Mesh(
+        new THREE.TorusGeometry(0.78, 0.06, 8, 24),
+        this.mats.brass
+      );
+      apexHalo.position.y = 7.62;
+      cg.add(apexPrism, apexHalo);
 
       const stageRings = [];
       for (let s = 0; s < 6; s++) {
@@ -2354,6 +2975,9 @@ export class OddrootShrineManager {
     }
 
     // W7.3 Harmonic Canopy Bio-Wave (15% stub + hidden pre-commit sinusoidal wave)
+    this._addBlossomGatepost(cg, -2.45, 0.15, -0.35, 2.95);
+    this._addBlossomGatepost(cg, 2.45, 0.15, -0.35, 2.95);
+
     const midY = yWorldFromMath(meta.midline);
     const midlineRod = new THREE.Mesh(
       new THREE.CylinderGeometry(0.06, 0.06, SHRINE_CHASM_SPAN_Z, 8),
@@ -2584,6 +3208,9 @@ export class OddrootShrineManager {
     if (slot.splatterMesh) slot.splatterMesh.visible = false;
     slot.beaconMat.color.setHex(0xffd166);
     slot.beaconMat.opacity = 0.45;
+    slot.templeFrame?.setAwakened(true, Boolean(commitResult?.overdrive));
+    this._spawnAmberSparks(centerWorld, 24);
+    this._spawnSteamPoofs(centerWorld, 20);
 
     const conseq = {
       cleared: true,
@@ -2834,6 +3461,10 @@ export class OddrootShrineManager {
 
     for (const slot of this.slots) {
       slot.approachRing.rotation.z = elapsed * 0.8;
+      stepTempleSanctuaryFrame(slot.templeFrame, dt, elapsed);
+      if (slot.moonwellState?.outerRing) {
+        slot.moonwellState.outerRing.rotation.z = elapsed * 0.18;
+      }
 
       if (slot.cauldronState && slot.cauldronState.toadAscending) {
         const cs = slot.cauldronState;

@@ -18,6 +18,14 @@ import {
 } from "./encounters-3d.js";
 import { GhostRigController } from "./ghost-rig.js";
 import { FrostwakeCoop3D } from "./coop-3d.js";
+import {
+  buildCelestialSkyDome,
+  buildTempleSanctuaryFrame,
+  stepTempleSanctuaryFrame,
+  SlipstreamBoostVFXController,
+  HorizonWonderAndRelicSystem,
+  createSoftGlowTexture,
+} from "../core/vfx-3d.js";
 
 export const VALLEY_SIZE = 184;
 export const VALLEY_HALF = VALLEY_SIZE / 2;
@@ -128,6 +136,8 @@ export class FrostwakeWorld3D {
     this._rafId = null;
     this.clock = new THREE.Clock();
     this.simElapsed = 0;
+    this.elapsed = 0;
+    this._baseCameraFov = 52;
     this.encounterDockOpen = false;
     this._boundProgressRef = null;
 
@@ -181,6 +191,8 @@ export class FrostwakeWorld3D {
     this.laserBeams = [];
     this.wokenFoxes = [];
     this.gateSlots = [];
+    this.sledPlasmaCones = [];
+    this.rigThrusterCones = [];
     this.whaleTimer = 0;
     this._quadrantWhaleTriggered = false;
     this.lastGhostWaveResult = null;
@@ -257,7 +269,7 @@ export class FrostwakeWorld3D {
     this.scene.background = new THREE.Color(0x0c2136);
     this.scene.fog = new THREE.FogExp2(0x102b44, 0.0056);
 
-    this.camera = new THREE.PerspectiveCamera(52, 16 / 9, 0.4, 380);
+    this.camera = new THREE.PerspectiveCamera(this._baseCameraFov, 16 / 9, 0.4, 380);
     this.camera.position.set(0, 11, 36);
 
     this.renderer = null;
@@ -288,16 +300,28 @@ export class FrostwakeWorld3D {
 
     this.toonRamp = this._buildToonRamp();
     this._buildAuroraSky();
+    this._buildGlacialMountainRing();
     this._buildDeformableSnow();
     this._buildSnowLilyPool();
     this._buildMoonSanctuaryAndObservatory();
     this._buildFrostGuardian();
     this._buildLiftGaragePad();
     this._buildAlpinePines();
+    this._buildRimIceCrystalClusters();
     this._buildSnowfallParticles();
     this._buildSprayAndShardPools();
     this._buildSkyWhale();
     this.quadrantBeacons = buildQuadrantWhaleBeacons(this.scene, (x, z) => this._baseHeight(x, z));
+
+    this.slipstreamVfx = new SlipstreamBoostVFXController({
+      scene: this.scene,
+      theme: "frostwake",
+    });
+    this.horizonWonder = new HorizonWonderAndRelicSystem({
+      scene: this.scene,
+      theme: "frostwake",
+      archPosition: { x: 0, y: this._baseHeight(0, -48) + 8.5, z: -48 },
+    });
 
     this.opposition = new FrostwakeOpposition3D({
       scene: this.scene,
@@ -377,29 +401,35 @@ export class FrostwakeWorld3D {
   }
 
   _buildAuroraSky() {
+    this.celestialSkyDome = buildCelestialSkyDome({ theme: "frostwake", radius: 228 });
+    this.scene.add(this.celestialSkyDome);
+
     this.auroraRibbons = [];
-    const colors = [0x3bf0c5, 0x5ce1e6, 0xffd166];
-    for (let i = 0; i < 3; i++) {
-      const geo = new THREE.PlaneGeometry(210, 28, 36, 4);
+    const colors = [0x3bf0c5, 0x5ce1e6, 0x7ee081, 0xffd166];
+    const opacities = [0.22, 0.19, 0.16, 0.14];
+    for (let i = 0; i < 4; i++) {
+      const geo = new THREE.PlaneGeometry(224, 30, 40, 4);
       const mat = new THREE.MeshBasicMaterial({
         color: colors[i],
         transparent: true,
-        opacity: 0.18 - i * 0.03,
+        opacity: opacities[i],
         side: THREE.DoubleSide,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set((i - 1) * 18, 48 + i * 7, -96 - i * 10);
-      mesh.rotation.x = 0.22;
+      mesh.position.set((i - 1.5) * 16, 48 + i * 6.5, -94 - i * 9);
+      mesh.rotation.x = 0.2 + i * 0.03;
+      mesh.rotation.y = (i - 1.5) * 0.08;
       this.scene.add(mesh);
-      this.auroraRibbons.push({ mesh, geo, mat, baseOpacity: 0.18 - i * 0.03, phase: i * 1.7 });
+      this.auroraRibbons.push({ mesh, geo, mat, baseOpacity: opacities[i], phase: i * 1.55 });
     }
 
     const starCount = 320;
     const pos = new Float32Array(starCount * 3);
+    const starTex = createSoftGlowTexture(32, [255, 255, 255], [180, 235, 255]);
     for (let i = 0; i < starCount; i++) {
-      const theta = ((i * 9301 + 49297) % 233280) / 233280 * Math.PI * 2;
+      const theta = (((i * 9301 + 49297) % 233280) / 233280) * Math.PI * 2;
       const phi = (((i * 49297 + 9301) % 233280) / 233280) * Math.PI * 0.44;
       const rad = 195;
       pos[i * 3] = Math.cos(theta) * Math.sin(phi) * rad;
@@ -410,11 +440,87 @@ export class FrostwakeWorld3D {
     starGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     const starMat = new THREE.PointsMaterial({
       color: 0xeef9ff,
-      size: 1.35,
+      map: starTex || null,
+      size: 2.1,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
     });
     this.scene.add(new THREE.Points(starGeo, starMat));
+  }
+
+  _buildGlacialMountainRing() {
+    const peakPlacements = [];
+    const totalCandidates = 48;
+    for (let i = 0; i < totalCandidates; i++) {
+      const angle = (i / totalCandidates) * Math.PI * 2 + (i % 3) * 0.045;
+      const radius = 96 + (i % 5) * 3.0; // r = 96..108m outside MAX_VALLEY_RADIUS = 68
+      const px = Math.cos(angle) * radius;
+      const pz = Math.sin(angle) * radius;
+      // Keep the northern Observatory canyon pass (|x| < 24, z < -55) framed & open!
+      if (Math.abs(px) < 24 && pz < -55) continue;
+
+      const isPassFlank = Math.abs(px) >= 24 && Math.abs(px) < 38 && pz < -55;
+      const widthScale = (0.85 + (i % 4) * 0.16) * (isPassFlank ? 1.15 : 1.0);
+      const heightScale = (0.78 + ((i * 7) % 5) * 0.18) * (isPassFlank ? 1.28 : 1.0);
+      const rotY = (i * 1.37) % (Math.PI * 2);
+      const py = this._baseHeight(px, pz) - 2.2;
+      peakPlacements.push({ x: px, y: py, z: pz, widthScale, heightScale, rotY, idx: i });
+    }
+
+    const n = peakPlacements.length;
+    if (!n) return;
+
+    const peakGeo = new THREE.ConeGeometry(13.5, 34, 5);
+    const peakMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.68,
+      metalness: 0.18,
+      flatShading: true,
+    });
+    const capGeo = new THREE.ConeGeometry(6.9, 15.2, 5);
+    const capMat = new THREE.MeshStandardMaterial({
+      color: 0xf0f9ff,
+      emissive: 0x244e73,
+      emissiveIntensity: 0.24,
+      roughness: 0.36,
+      metalness: 0.08,
+      flatShading: true,
+    });
+
+    const peaksInst = new THREE.InstancedMesh(peakGeo, peakMat, n);
+    const capsInst = new THREE.InstancedMesh(capGeo, capMat, n);
+    const rockPalette = [
+      new THREE.Color(0x1b3754),
+      new THREE.Color(0x23476b),
+      new THREE.Color(0x172f49),
+      new THREE.Color(0x2b557d),
+    ];
+
+    peakPlacements.forEach((p, idx) => {
+      const peakH = 34 * p.heightScale;
+      this._tmpEuler.set(0, p.rotY, 0);
+      this._tmpQuat.setFromEuler(this._tmpEuler);
+
+      this._tmpPos.set(p.x, p.y + peakH * 0.5, p.z);
+      this._tmpScale.set(p.widthScale, p.heightScale, p.widthScale * 0.92);
+      this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+      peaksInst.setMatrixAt(idx, this._tmpMat4);
+      peaksInst.setColorAt(idx, rockPalette[p.idx % rockPalette.length]);
+
+      const capH = 15.2 * p.heightScale;
+      this._tmpPos.set(p.x, p.y + peakH - capH * 0.48 + 0.15, p.z);
+      this._tmpScale.set(p.widthScale * 1.03, p.heightScale, p.widthScale * 0.95);
+      this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+      capsInst.setMatrixAt(idx, this._tmpMat4);
+    });
+
+    peaksInst.instanceMatrix.needsUpdate = true;
+    if (peaksInst.instanceColor) peaksInst.instanceColor.needsUpdate = true;
+    capsInst.instanceMatrix.needsUpdate = true;
+    this.scene.add(peaksInst, capsInst);
+    this.mountainMeshes = { peaksInst, capsInst };
   }
 
   _buildDeformableSnow() {
@@ -747,14 +853,26 @@ export class FrostwakeWorld3D {
     this.moonRing.position.set(0, this._baseHeight(0, 0) + 0.48, 0);
     this.scene.add(this.moonRing);
 
-    const crescentGeo = new THREE.TorusGeometry(1.5, 0.18, 12, 28, Math.PI * 1.45);
+    const crescentGeo = new THREE.TorusGeometry(1.38, 0.11, 12, 32, Math.PI * 1.44);
     const crescentMat = new THREE.MeshStandardMaterial({
-      color: 0xfff0b5,
+      color: 0xfff3c4,
       emissive: 0xffd166,
-      emissiveIntensity: 0.7,
+      emissiveIntensity: 0.88,
+      roughness: 0.18,
+      metalness: 0.45,
     });
     this.moonTotem = new THREE.Mesh(crescentGeo, crescentMat);
-    this.moonTotem.position.set(0, 2.4, 0);
+    this.moonTotem.position.set(0, 4.85, 0);
+    this.moonTotem.rotation.z = 0.38;
+    const moonStar = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.36, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0xaee8ff,
+        emissive: 0x45f0df,
+        emissiveIntensity: 1.1,
+      })
+    );
+    this.moonTotem.add(moonStar);
     this.scene.add(this.moonTotem);
 
     this.observatoryGroup = new THREE.Group();
@@ -1073,8 +1191,73 @@ export class FrostwakeWorld3D {
     this.pineMeshes = { trunks, lowerCones, upperCones, snowCaps };
   }
 
+  _buildRimIceCrystalClusters() {
+    const shards = [];
+    for (let i = 0; i < 32; i++) {
+      const angle = (i / 32) * Math.PI * 2 + 0.05;
+      const dist = 70 + (i % 4) * 1.65; // r = 70..74.95m strictly outside MAX_VALLEY_RADIUS = 68
+      const cx = Math.cos(angle) * dist;
+      const cz = Math.sin(angle) * dist;
+      if (Math.abs(cx) < 25 && cz < -52) continue;
+      const cy = this._baseHeight(cx, cz);
+
+      const clusterSpecs = [
+        { ox: 0, oz: 0, tiltX: 0.06, tiltZ: -0.05, sy: 1.18, sr: 1.0 },
+        { ox: 0.85, oz: -0.55, tiltX: 0.28, tiltZ: -0.24, sy: 0.82, sr: 0.78 },
+        { ox: -0.78, oz: 0.62, tiltX: -0.24, tiltZ: 0.26, sy: 0.72, sr: 0.72 },
+      ];
+      clusterSpecs.forEach((sp, sIdx) => {
+        shards.push({
+          x: cx + sp.ox,
+          y: cy + 1.55 * sp.sy,
+          z: cz + sp.oz,
+          tiltX: sp.tiltX,
+          rotY: (i * 0.9 + sIdx * 2.1) % (Math.PI * 2),
+          tiltZ: sp.tiltZ,
+          sr: sp.sr * (0.9 + (i % 3) * 0.12),
+          sy: sp.sy * (0.88 + ((i + sIdx) % 3) * 0.14),
+          colorIdx: (i + sIdx) % 3,
+        });
+      });
+    }
+
+    if (!shards.length) return;
+    const crystalGeo = new THREE.ConeGeometry(0.76, 3.8, 6);
+    const crystalMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0x1e8f88,
+      emissiveIntensity: 0.52,
+      roughness: 0.15,
+      metalness: 0.22,
+      transparent: true,
+      opacity: 0.88,
+      flatShading: true,
+    });
+    const inst = new THREE.InstancedMesh(crystalGeo, crystalMat, shards.length);
+    const palette = [
+      new THREE.Color(0x8ef3ff),
+      new THREE.Color(0x45f0df),
+      new THREE.Color(0xc4f8ff),
+    ];
+
+    shards.forEach((sh, idx) => {
+      this._tmpPos.set(sh.x, sh.y, sh.z);
+      this._tmpEuler.set(sh.tiltX, sh.rotY, sh.tiltZ);
+      this._tmpQuat.setFromEuler(this._tmpEuler);
+      this._tmpScale.set(sh.sr, sh.sy, sh.sr);
+      this._tmpMat4.compose(this._tmpPos, this._tmpQuat, this._tmpScale);
+      inst.setMatrixAt(idx, this._tmpMat4);
+      inst.setColorAt(idx, palette[sh.colorIdx]);
+    });
+
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    this.scene.add(inst);
+    this.rimCrystalMesh = inst;
+  }
+
   _buildSnowfallParticles() {
-    const count = 260;
+    const count = 280;
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       pos[i * 3] = (((i * 733 + 19) % 1000) / 1000 - 0.5) * 136;
@@ -1083,11 +1266,15 @@ export class FrostwakeWorld3D {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const snowTex = createSoftGlowTexture(32, [255, 255, 255], [180, 240, 255]);
     const mat = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 0.42,
+      map: snowTex || null,
+      size: 0.86,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.85,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
     });
     this.snowfall = new THREE.Points(geo, mat);
     this.scene.add(this.snowfall);
@@ -1366,91 +1553,382 @@ export class FrostwakeWorld3D {
     const g = new THREE.Group();
     g.rotation.order = "YXZ";
     this.rigWheels = [];
+    this.sledPlasmaCones = [];
+    this.rigThrusterCones = [];
 
     const primaryColor = hasCrown ? 0xffd86b : spec.primaryHex;
     const bodyMat = new THREE.MeshStandardMaterial({
       color: primaryColor,
-      roughness: 0.32,
-      metalness: 0.35,
+      roughness: 0.28,
+      metalness: 0.42,
     });
     const darkMat = new THREE.MeshStandardMaterial({
       color: spec.secondaryHex,
-      roughness: 0.55,
-      metalness: 0.25,
+      roughness: 0.5,
+      metalness: 0.34,
+    });
+    const chromeMat = new THREE.MeshStandardMaterial({
+      color: 0xdbe9f6,
+      roughness: 0.18,
+      metalness: 0.82,
+    });
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x8ef3ff,
+      emissive: 0x1b6b7d,
+      emissiveIntensity: 0.35,
+      roughness: 0.08,
+      metalness: 0.55,
+      transparent: true,
+      opacity: 0.72,
     });
     const glowMat = new THREE.MeshStandardMaterial({
       color: spec.glowHex,
       emissive: spec.glowHex,
-      emissiveIntensity: 0.9,
-      roughness: 0.2,
+      emissiveIntensity: 0.95,
+      roughness: 0.18,
+    });
+    const cyanHubMat = new THREE.MeshStandardMaterial({
+      color: 0x45f0df,
+      emissive: 0x3bf0c5,
+      emissiveIntensity: 1.1,
+      roughness: 0.16,
     });
     const magmaMat = new THREE.MeshStandardMaterial({
       color: 0xff8c42,
       emissive: 0xff6b2b,
-      emissiveIntensity: 1.25,
-      roughness: 0.18,
+      emissiveIntensity: 1.3,
+      roughness: 0.16,
+    });
+    const plasmaEdgeMat = new THREE.MeshStandardMaterial({
+      color: 0xfff0b5,
+      emissive: hasWide ? 0xff7b29 : 0x45f0df,
+      emissiveIntensity: 1.45,
+      roughness: 0.12,
     });
 
     if (cleanChassis === "aurora_sled") {
-      const hull = new THREE.Mesh(new THREE.ConeGeometry(1.35, 4.4, 6), bodyMat);
+      // Faceted streamlined hover-fuselage + dorsal energy spine + nose splitter
+      const facetedBodyMat = new THREE.MeshStandardMaterial({
+        color: primaryColor,
+        roughness: 0.22,
+        metalness: 0.48,
+        flatShading: true,
+      });
+      const hull = new THREE.Mesh(new THREE.ConeGeometry(1.24, 4.65, 6), facetedBodyMat);
       hull.rotation.x = -Math.PI / 2;
-      hull.position.set(0, 1.05, 0);
+      hull.scale.set(1.08, 1.0, 0.68);
+      hull.position.set(0, 1.02, 0.05);
       g.add(hull);
 
+      const ventralKeel = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.24, 3.65), darkMat);
+      ventralKeel.position.set(0, 0.68, 0.18);
+      const dorsalSpine = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 2.85), glowMat);
+      dorsalSpine.position.set(0, 1.38, 0.55);
+      g.add(ventralKeel, dorsalSpine);
+
+      const noseCone = new THREE.Mesh(new THREE.ConeGeometry(0.54, 1.35, 4), chromeMat);
+      noseCone.rotation.x = -Math.PI / 2;
+      noseCone.rotation.z = Math.PI / 4;
+      noseCone.scale.set(1.15, 1.0, 0.55);
+      noseCone.position.set(0, 0.92, -2.35);
+      const noseSplitter = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.08, 0.62), plasmaEdgeMat);
+      noseSplitter.position.set(0, 0.74, -2.18);
+      g.add(noseCone, noseSplitter);
+
+      // Cockpit coaming + pilot silhouette + iridescent crystal bubble canopy
+      const coaming = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.78, 0.22, 12), darkMat);
+      coaming.scale.set(0.94, 1.0, 1.48);
+      coaming.position.set(0, 1.28, 0.24);
+      g.add(coaming);
+
+      const pilotSuitMat = new THREE.MeshStandardMaterial({
+        color: 0x101c2e,
+        roughness: 0.45,
+        metalness: 0.3,
+      });
+      const pilotTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.26, 6, 10), pilotSuitMat);
+      pilotTorso.position.set(0, 1.42, 0.3);
+      pilotTorso.rotation.x = -0.22;
+      const pilotHelm = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), darkMat);
+      pilotHelm.position.set(0, 1.68, 0.22);
+      const pilotVisor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.14), cyanHubMat);
+      pilotVisor.position.set(0, 1.69, 0.08);
+      g.add(pilotTorso, pilotHelm, pilotVisor);
+
       const canopy = new THREE.Mesh(
-        new THREE.SphereGeometry(0.82, 16, 12),
+        new THREE.SphereGeometry(0.84, 18, 14),
         new THREE.MeshStandardMaterial({
-          color: 0xbaf7ff,
-          emissive: 0x2ec4b6,
-          emissiveIntensity: 0.35,
-          roughness: 0.1,
+          color: 0xc4f9ff,
+          emissive: 0x3bf0c5,
+          emissiveIntensity: 0.36,
+          roughness: 0.06,
+          metalness: 0.38,
+          transparent: true,
+          opacity: 0.56,
         })
       );
-      canopy.scale.set(0.9, 0.68, 1.45);
-      canopy.position.set(0, 1.48, 0.25);
+      canopy.scale.set(0.92, 0.72, 1.5);
+      canopy.position.set(0, 1.5, 0.24);
       g.add(canopy);
 
-      const wingSpan = hasWide ? 4.8 : 3.5;
-      const wings = new THREE.Mesh(new THREE.BoxGeometry(wingSpan, 0.16, 1.5), glowMat);
-      wings.position.set(0, 0.85, 0.35);
-      g.add(wings);
+      // Swept gull-winglet stabilizers with glowing leading-edge trim
+      const halfSpan = (hasWide ? 4.8 : 3.5) * 0.5;
+      for (const side of [-1, 1]) {
+        const innerWing = new THREE.Mesh(
+          new THREE.BoxGeometry(halfSpan * 0.56, 0.12, 1.48),
+          facetedBodyMat
+        );
+        innerWing.position.set(side * halfSpan * 0.36, 0.96, 0.32);
+        innerWing.rotation.z = side * 0.18;
+        innerWing.rotation.y = -side * 0.16;
 
-      for (const sx of [-1.25, 1.25]) {
-        const skid = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 3.8), glowMat);
-        skid.position.set(sx, 0.36, 0);
-        g.add(skid);
+        const outerWing = new THREE.Mesh(
+          new THREE.BoxGeometry(halfSpan * 0.58, 0.1, 1.18),
+          darkMat
+        );
+        outerWing.position.set(side * halfSpan * 0.82, 0.98, 0.58);
+        outerWing.rotation.z = -side * 0.12;
+        outerWing.rotation.y = -side * 0.26;
+
+        const wingTrim = new THREE.Mesh(
+          new THREE.BoxGeometry(halfSpan * 0.96, 0.07, 0.14),
+          glowMat
+        );
+        wingTrim.position.set(side * halfSpan * 0.58, 0.99, -0.22);
+        wingTrim.rotation.y = -side * 0.22;
+
+        const wingletFin = new THREE.Mesh(
+          new THREE.BoxGeometry(0.1, 0.68, 0.96),
+          glowMat
+        );
+        wingletFin.position.set(side * (halfSpan + 0.04), 1.24, 0.78);
+        wingletFin.rotation.z = -side * 0.28;
+
+        g.add(innerWing, outerWing, wingTrim, wingletFin);
       }
 
+      // Twin sculpted hover-skids + underneath cyan ground-glow rings
+      const groundGlowMat = new THREE.MeshBasicMaterial({
+        color: 0x45f0df,
+        transparent: true,
+        opacity: 0.58,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const groundGlowGeo = new THREE.RingGeometry(0.2, 0.54, 20);
+      groundGlowGeo.rotateX(-Math.PI / 2);
+
+      for (const sx of [-1.28, 1.28]) {
+        const pylonF = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.48, 0.28), darkMat);
+        pylonF.position.set(sx * 0.86, 0.6, -0.82);
+        pylonF.rotation.z = sx > 0 ? -0.32 : 0.32;
+        const pylonR = pylonF.clone();
+        pylonR.position.z = 0.92;
+
+        const skidMain = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 3.85), chromeMat);
+        skidMain.position.set(sx, 0.34, 0.05);
+        const skidRail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 3.65), cyanHubMat);
+        skidRail.position.set(sx, 0.44, 0.05);
+        const skidTip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.68), glowMat);
+        skidTip.position.set(sx, 0.45, -2.06);
+        skidTip.rotation.x = 0.36;
+        g.add(pylonF, pylonR, skidMain, skidRail, skidTip);
+
+        for (const gz of [-0.95, 0.98]) {
+          const glowPad = new THREE.Mesh(groundGlowGeo, groundGlowMat);
+          glowPad.position.set(sx, 0.08, gz);
+          g.add(glowPad);
+        }
+      }
+
+      // Twin rear ion-thruster nacelles with pulsing plasma cones
+      const plasmaConeMat = new THREE.MeshBasicMaterial({
+        color: 0x5ce1e6,
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      for (const sx of [-0.76, 0.76]) {
+        const nacelle = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.27, 0.33, 1.28, 6),
+          darkMat
+        );
+        nacelle.rotation.x = Math.PI / 2;
+        nacelle.position.set(sx, 0.98, 1.66);
+
+        const nozzleRing = new THREE.Mesh(
+          new THREE.TorusGeometry(0.26, 0.055, 8, 16),
+          cyanHubMat
+        );
+        nozzleRing.position.set(sx, 0.98, 2.31);
+
+        const plasmaCone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.23, 1.28, 12, 1, true),
+          plasmaConeMat
+        );
+        plasmaCone.rotation.x = Math.PI / 2;
+        plasmaCone.position.set(sx, 0.98, 2.95);
+
+        g.add(nacelle, nozzleRing, plasmaCone);
+        this.sledPlasmaCones.push({ mesh: plasmaCone, baseZ: 2.95, phase: sx > 0 ? 0 : 1.6 });
+      }
+
+      // Curved crescent energy prow + inner plasma arc
       const prowW = hasWide ? 4.5 : 3.1;
       const prow = new THREE.Mesh(
-        new THREE.TorusGeometry(prowW * 0.42, 0.2, 10, 24, Math.PI),
+        new THREE.TorusGeometry(prowW * 0.42, 0.19, 10, 28, Math.PI),
         hasWide ? magmaMat : glowMat
       );
       prow.rotation.x = Math.PI / 2;
       prow.rotation.z = Math.PI;
-      prow.position.set(0, 0.55, -1.55);
-      g.add(prow);
+      prow.position.set(0, 0.54, -1.58);
+
+      const innerArc = new THREE.Mesh(
+        new THREE.TorusGeometry(prowW * 0.35, 0.08, 8, 24, Math.PI),
+        plasmaEdgeMat
+      );
+      innerArc.rotation.x = Math.PI / 2;
+      innerArc.rotation.z = Math.PI;
+      innerArc.position.set(0, 0.54, -1.48);
+      g.add(prow, innerArc);
     } else {
-      const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.25, 1.05, 3.6), bodyMat);
-      chassis.position.set(0, 1.05, 0.2);
-      g.add(chassis);
+      // Sculpted 6x6 Thermal Dozer: beveled armored chassis + wheel-fender arches
+      const lowerTub = new THREE.Mesh(new THREE.BoxGeometry(1.94, 0.46, 3.68), darkMat);
+      lowerTub.position.set(0, 0.76, 0.22);
+      const mainHull = new THREE.Mesh(new THREE.BoxGeometry(2.26, 0.66, 3.42), bodyMat);
+      mainHull.position.set(0, 1.18, 0.22);
+      const upperBevel = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.18, 3.18), bodyMat);
+      upperBevel.position.set(0, 1.56, 0.26);
+      const frontGlacis = new THREE.Mesh(new THREE.BoxGeometry(2.14, 0.48, 0.88), bodyMat);
+      frontGlacis.position.set(0, 1.22, -1.34);
+      frontGlacis.rotation.x = 0.38;
+      const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(2.34, 0.28, 0.36), darkMat);
+      frontBumper.position.set(0, 0.86, -1.64);
+      g.add(lowerTub, mainHull, upperBevel, frontGlacis, frontBumper);
 
-      const cab = new THREE.Mesh(new THREE.BoxGeometry(1.85, 1.05, 1.75), darkMat);
-      cab.position.set(0, 1.95, 0.45);
-      g.add(cab);
+      // Rear louvered reactor deck + glowing core slats
+      const reactorDeck = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.34, 1.12), darkMat);
+      reactorDeck.position.set(0, 1.66, 1.32);
+      g.add(reactorDeck);
+      for (let r = 0; r < 3; r++) {
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.08, 0.14), glowMat);
+        slat.position.set(0, 1.85, 1.0 + r * 0.3);
+        g.add(slat);
+      }
 
-      const lightBar = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.18, 0.26), glowMat);
-      lightBar.position.set(0, 2.55, -0.35);
-      g.add(lightBar);
+      // Sculpted left/right wheel-fender arches
+      for (const sx of [-1.24, 1.24]) {
+        const fenderTop = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 3.36), darkMat);
+        fenderTop.position.set(sx, 1.24, 0.2);
+        const fenderLipF = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.48), darkMat);
+        fenderLipF.position.set(sx, 1.1, -1.56);
+        fenderLipF.rotation.x = 0.52;
+        const fenderLipR = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.48), darkMat);
+        fenderLipR.position.set(sx, 1.1, 1.96);
+        fenderLipR.rotation.x = -0.52;
+        const sideTrim = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 2.95), glowMat);
+        sideTrim.position.set(sx + (sx > 0 ? 0.22 : -0.22), 1.25, 0.2);
+        g.add(fenderTop, fenderLipF, fenderLipR, sideTrim);
+      }
 
-      const wheelGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.48, 14);
+      // Armored cockpit cab + panoramic tinted glass windshield & side windows + cyan instrument bar
+      const cabBase = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.96, 1.66), darkMat);
+      cabBase.position.set(0, 1.96, 0.28);
+      const cabRoof = new THREE.Mesh(new THREE.BoxGeometry(1.76, 0.16, 1.58), bodyMat);
+      cabRoof.position.set(0, 2.48, 0.3);
+      const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.62, 0.12), glassMat);
+      windshield.position.set(0, 2.04, -0.52);
+      windshield.rotation.x = 0.24;
+      const sideWinL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.52, 1.16), glassMat);
+      sideWinL.position.set(-0.91, 2.04, 0.3);
+      const sideWinR = sideWinL.clone();
+      sideWinR.position.x = 0.91;
+      const instrumentBar = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.12, 0.2), cyanHubMat);
+      instrumentBar.position.set(0, 1.78, -0.32);
+      const lightBar = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.18, 0.28), glowMat);
+      lightBar.position.set(0, 2.58, -0.38);
+      g.add(cabBase, cabRoof, windshield, sideWinL, sideWinR, instrumentBar, lightBar);
+
+      // Twin front volumetric-style headlight cones
+      const headBeamMat = new THREE.MeshBasicMaterial({
+        color: 0xbaf7ff,
+        transparent: true,
+        opacity: 0.16,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      for (const hx of [-0.78, 0.78]) {
+        const housing = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.24), darkMat);
+        housing.position.set(hx, 1.12, -1.62);
+        const lens = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.08), plasmaEdgeMat);
+        lens.position.set(hx, 1.12, -1.73);
+        const beamCone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.68, 4.1, 14, 1, true),
+          headBeamMat
+        );
+        beamCone.rotation.x = Math.PI / 2 - 0.11;
+        beamCone.position.set(hx, 0.89, -3.76);
+        g.add(housing, lens, beamCone);
+      }
+
+      // Twin rear angled chrome exhaust stacks with glowing ember tips
+      for (const ex of [-0.88, 0.88]) {
+        const stackGrp = new THREE.Group();
+        stackGrp.position.set(ex, 1.62, 1.48);
+        stackGrp.rotation.x = -0.24;
+        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 1.38, 10), chromeMat);
+        pipe.position.y = 0.68;
+        const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.72, 8), darkMat);
+        shield.position.y = 0.52;
+        const emberTip = new THREE.Mesh(
+          new THREE.TorusGeometry(0.11, 0.038, 8, 14),
+          magmaMat
+        );
+        emberTip.rotation.x = Math.PI / 2;
+        emberTip.position.y = 1.37;
+        const emberCore = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8),
+          plasmaEdgeMat
+        );
+        emberCore.position.y = 1.36;
+        stackGrp.add(pipe, shield, emberTip, emberCore);
+        g.add(stackGrp);
+      }
+
+      // 6x6 rugged Arctic tires + glowing cyan hubcap rings & spokes
+      const wheelGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.48, 16);
       wheelGeo.rotateZ(Math.PI / 2);
-      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x182232, roughness: 0.85 });
+      const wheelMat = new THREE.MeshStandardMaterial({
+        color: 0x16202e,
+        roughness: 0.84,
+        metalness: 0.15,
+      });
+      const hubRingGeo = new THREE.TorusGeometry(0.31, 0.052, 8, 16);
+      hubRingGeo.rotateY(Math.PI / 2);
+      const hubCapGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12);
+      hubCapGeo.rotateZ(Math.PI / 2);
+
       let wIdx = 0;
       for (const wx of [-1.25, 1.25]) {
+        const outSign = wx > 0 ? 1 : -1;
         for (const wz of [-1.05, 0.2, 1.45]) {
           const w = new THREE.Mesh(wheelGeo, wheelMat);
           w.position.set(wx, 0.56, wz);
+
+          const rimCap = new THREE.Mesh(hubCapGeo, chromeMat);
+          rimCap.position.x = outSign * 0.23;
+          const hubRing = new THREE.Mesh(hubRingGeo, cyanHubMat);
+          hubRing.position.x = outSign * 0.25;
+          const spokeA = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.08), chromeMat);
+          spokeA.position.x = outSign * 0.25;
+          const spokeB = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.5), chromeMat);
+          spokeB.position.x = outSign * 0.25;
+          w.add(rimCap, hubRing, spokeA, spokeB);
+
           g.add(w);
           this.rigWheels.push({
             mesh: w,
@@ -1471,31 +1949,91 @@ export class FrostwakeWorld3D {
         }
       }
 
+      // Twin hydraulic plow struts
+      for (const hx of [-0.66, 0.66]) {
+        const cylOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.62, 8), darkMat);
+        cylOuter.rotation.x = Math.PI / 2 + 0.14;
+        cylOuter.position.set(hx, 0.72, -1.52);
+        const pistonRod = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.065, 0.065, 0.56, 8),
+          chromeMat
+        );
+        pistonRod.rotation.x = Math.PI / 2 + 0.14;
+        pistonRod.position.set(hx, 0.66, -1.84);
+        g.add(cylOuter, pistonRod);
+      }
+
+      // Fierce Magma-Ribbed V-Plow Blade with serrated side-wings & glowing plasma cutting edge
       const bladeW = (hasWide ? 4.7 : 3.2) * 0.55;
-      const bladeGeo = new THREE.BoxGeometry(bladeW, 1.05, 0.28);
+      const bladeGeo = new THREE.BoxGeometry(bladeW, 1.08, 0.26);
       const bladeL = new THREE.Mesh(bladeGeo, hasWide ? magmaMat : bodyMat);
-      bladeL.position.set(-bladeW * 0.44, 0.68, -1.95);
+      bladeL.position.set(-bladeW * 0.44, 0.7, -1.96);
       bladeL.rotation.y = 0.28;
       const bladeR = new THREE.Mesh(bladeGeo, hasWide ? magmaMat : bodyMat);
-      bladeR.position.set(bladeW * 0.44, 0.68, -1.95);
+      bladeR.position.set(bladeW * 0.44, 0.7, -1.96);
       bladeR.rotation.y = -0.28;
+
+      // Vertical glowing magma ribs + serrated side-wings on each V-plow half
+      for (const side of [-1, 1]) {
+        const hostBlade = side < 0 ? bladeL : bladeR;
+        for (const ribT of [-0.32, 0, 0.32]) {
+          const rib = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.96, 0.32), magmaMat);
+          rib.position.set(ribT * bladeW, 0, -0.03);
+          hostBlade.add(rib);
+        }
+        const wingEar = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.04, 0.24), darkMat);
+        wingEar.position.set(side * (bladeW * 0.5 + 0.12), 0.02, -0.14);
+        wingEar.rotation.y = -side * 0.52;
+        for (const ty of [-0.28, 0.24]) {
+          const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 4), magmaMat);
+          tooth.rotation.x = -Math.PI / 2;
+          tooth.position.set(side * 0.08, ty, -0.18);
+          wingEar.add(tooth);
+        }
+        hostBlade.add(wingEar);
+      }
+
+      const prowSplitter = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.14, 4), magmaMat);
+      prowSplitter.position.set(0, 0.72, -2.18);
+      prowSplitter.rotation.y = Math.PI / 4;
+
       const magmaStrip = new THREE.Mesh(
-        new THREE.BoxGeometry(bladeW * 1.85, 0.22, 0.34),
+        new THREE.BoxGeometry(bladeW * 1.92, 0.2, 0.34),
         hasWide ? magmaMat : glowMat
       );
-      magmaStrip.position.set(0, 0.26, -2.02);
-      g.add(bladeL, bladeR, magmaStrip);
+      magmaStrip.position.set(0, 0.24, -2.04);
+      const plasmaEdge = new THREE.Mesh(
+        new THREE.BoxGeometry(bladeW * 1.98, 0.09, 0.18),
+        plasmaEdgeMat
+      );
+      plasmaEdge.position.set(0, 0.18, -2.18);
+      g.add(bladeL, bladeR, prowSplitter, magmaStrip, plasmaEdge);
     }
 
     if (hasBoost) {
+      const boostFlameMat = new THREE.MeshBasicMaterial({
+        color: 0xffd166,
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
       for (const tx of [-0.65, 0.65]) {
         const thruster = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.24, 0.34, 0.7, 10),
+          new THREE.CylinderGeometry(0.24, 0.34, 0.72, 10),
           glowMat
         );
         thruster.rotation.x = Math.PI / 2;
         thruster.position.set(tx, 0.95, 2.15);
-        g.add(thruster);
+        const flame = new THREE.Mesh(
+          new THREE.ConeGeometry(0.22, 0.95, 10, 1, true),
+          boostFlameMat
+        );
+        flame.rotation.x = Math.PI / 2;
+        flame.position.set(tx, 0.95, 2.95);
+        g.add(thruster, flame);
+        this.rigThrusterCones.push({ mesh: flame, baseZ: 2.95, phase: tx > 0 ? 0.5 : 2.1 });
       }
     }
 
@@ -1837,6 +2375,22 @@ export class FrostwakeWorld3D {
     this.coop?.syncSharedCoins(coinStatesMap);
   }
 
+  getSlipstreamBoostState() {
+    if (!this.slipstreamVfx) {
+      return { active: false, ratio: 0, multiplier: 1.0, overdrive: false };
+    }
+    return {
+      active: this.slipstreamVfx.isActive(),
+      ratio: this.slipstreamVfx.getRemainingRatio(),
+      multiplier: this.slipstreamVfx.getSpeedMultiplier(),
+      overdrive: Boolean(this.slipstreamVfx.overdriveActive),
+    };
+  }
+
+  setZoneProgressRatio(ratio) {
+    this.horizonWonder?.setZoneProgress(clampFinite(ratio, 0, 1, 0.25));
+  }
+
   playTwinBeamVisual(isRepel = false) {
     const slot =
       this.activeGateSlot || this.gateSlots.find((s) => !s.cleared) || this.gateSlots[0];
@@ -1886,6 +2440,32 @@ export class FrostwakeWorld3D {
     applyEncounterCommitFX(this, slot, safeRes, safeEnc);
 
     if (safeRes.outcome === "clear" || safeRes.outcome === "warm_reveal") {
+      const isOverdrive = Boolean(safeRes.overdrive);
+      const bx = clampFinite(this.rigState.x, -VALLEY_SIZE, VALLEY_SIZE, 0);
+      const by = clampFinite(this.rigState.y, -20, 80, 0);
+      const bz = clampFinite(this.rigState.z, -VALLEY_SIZE, VALLEY_SIZE, 0);
+      this.slipstreamVfx?.triggerClearBoost({
+        x: bx,
+        y: by,
+        z: bz,
+        overdrive: isOverdrive,
+      });
+      this.audio?.playSlipstreamBoost?.(isOverdrive);
+      if (!this.rigAnim && !this.autopilotTarget && this.slipstreamVfx?.isActive()) {
+        this.rigState.speed = Math.max(finiteOr(this.rigState.speed, 0), 10.2);
+        const h = Math.atan2(
+          Math.sin(finiteOr(this.rigState.heading, 0)),
+          Math.cos(finiteOr(this.rigState.heading, 0))
+        );
+        this.rigState.vx = -Math.sin(h) * this.rigState.speed;
+        this.rigState.vz = -Math.cos(h) * this.rigState.speed;
+      }
+      this.horizonWonder?.notifyTempleCleared({
+        dropX: 8,
+        dropY: this._baseHeight(8, -16) + 0.4,
+        dropZ: -16,
+      });
+
       if (this.scene) {
         const fox = this._createSpiritFoxMesh();
         fox.position.set(slot.x + 2.6, slot.y, slot.z + 1.8);
@@ -2021,6 +2601,7 @@ export class FrostwakeWorld3D {
   _update(dt) {
     if (!Number.isFinite(dt) || !(dt > 0)) return;
     this.simElapsed += dt;
+    this.elapsed = this.simElapsed;
     const elapsed = this.simElapsed;
 
     const spec =
@@ -2089,12 +2670,30 @@ export class FrostwakeWorld3D {
       }
 
       if (p >= 1) {
+        const finishedKind = this.rigAnim.kind;
         this.rigAnim = null;
+        if (
+          (finishedKind === "ram_surge" ||
+            finishedKind === "surf_ramp" ||
+            finishedKind === "surf_dual_system" ||
+            finishedKind === "winch_harpoon") &&
+          !this.autopilotTarget &&
+          this.slipstreamVfx?.isActive()
+        ) {
+          this.rigState.speed = Math.max(finiteOr(this.rigState.speed, 0), 11.5);
+          const h = Math.atan2(
+            Math.sin(finiteOr(this.rigState.heading, 0)),
+            Math.cos(finiteOr(this.rigState.heading, 0))
+          );
+          this.rigState.vx = -Math.sin(h) * this.rigState.speed;
+          this.rigState.vz = -Math.cos(h) * this.rigState.speed;
+        }
       }
     } else {
       let steer = this.rigState.steerInput;
       let throttle = this.rigState.throttleInput;
       let boostMul = this.rigState.boosting || this.rigState.inSurge ? 1.32 : 1.0;
+      const wasAutopilot = Boolean(this.autopilotTarget);
 
       if (this.autopilotTarget) {
         const dx = this.autopilotTarget.x - this.rigState.x;
@@ -2123,7 +2722,10 @@ export class FrostwakeWorld3D {
         ? this.opposition.isInsideIntactPermafrost(this.rigState.x, this.rigState.z)
         : false;
 
-      const maxSpd = spec.topSpeed * (hasBoost ? 1.28 : 1.0) * boostMul * permafrostFactor;
+      const slipSpeedMul =
+        wasAutopilot || !this.slipstreamVfx ? 1.0 : this.slipstreamVfx.getSpeedMultiplier();
+      const maxSpd =
+        spec.topSpeed * (hasBoost ? 1.28 : 1.0) * boostMul * permafrostFactor * slipSpeedMul;
       const targetSpd = throttle * maxSpd;
       const prevSpd = this.rigState.speed;
       const accel =
@@ -2293,6 +2895,24 @@ export class FrostwakeWorld3D {
           (this.rigState.chassisId === "aurora_sled" ? 2.25 : 2.95) +
           Math.sin(elapsed * 3.2) * 0.1;
       }
+
+      const slipBoostActive = Boolean(this.slipstreamVfx?.isActive());
+      const thrustDrive =
+        Math.min(1.35, Math.abs(finiteOr(this.rigState.speed, 0)) / 14) +
+        (this.rigState.boosting || this.rigState.inSurge || slipBoostActive ? 0.55 : 0.18);
+      for (const pc of this.sledPlasmaCones || []) {
+        const pulse = Math.max(0.28, thrustDrive + Math.sin(elapsed * 18 + pc.phase) * 0.16);
+        pc.mesh.scale.set(0.85 + pulse * 0.18, pulse, 0.85 + pulse * 0.18);
+        pc.mesh.position.z = 2.31 + 0.64 * pulse;
+      }
+      for (const tc of this.rigThrusterCones || []) {
+        const pulse = Math.max(
+          0.25,
+          thrustDrive * 0.9 + Math.sin(elapsed * 20 + tc.phase) * 0.15
+        );
+        tc.mesh.scale.set(0.85 + pulse * 0.16, pulse, 0.85 + pulse * 0.16);
+        tc.mesh.position.z = 2.51 + 0.47 * pulse;
+      }
     }
 
     // 2. Open-Air 3D Lift Garage Pad (-24, 16) with Spatial Hysteresis
@@ -2345,6 +2965,8 @@ export class FrostwakeWorld3D {
 
     // 4. Moon Sanctuary Mystery (0, 0) & Quadrant Sky-Whale Beacons (±34, ±34)
     if (
+      !this.encounterDockOpen &&
+      !this.activeGateSlot &&
       Math.hypot(this.rigState.x, this.rigState.z) < 4.6 &&
       Math.abs(this.rigState.speed) < 2.5
     ) {
@@ -2389,7 +3011,7 @@ export class FrostwakeWorld3D {
       this.onLeaveGate();
     }
 
-    // 6. Step Active Spatial Opposition, Self-Ghost Rig, Encounters & Live 2-Player Co-Op!
+    // 6. Step Active Spatial Opposition, Self-Ghost Rig, Encounters, Co-Op, Slipstream Boost & Horizon Wonder!
     const pausedForMath = this.isOppositionPaused();
     const plowX = this.rigState.x - Math.sin(this.rigState.heading) * 2.0;
     const plowZ = this.rigState.z - Math.cos(this.rigState.heading) * 2.0;
@@ -2412,7 +3034,39 @@ export class FrostwakeWorld3D {
       this.coop.update(dt, this.rigState, Boolean(this.rigAnim));
     }
 
-    // 7. Smooth Chase Camera
+    const safePoseX = clampFinite(this.rigState.x, -VALLEY_SIZE, VALLEY_SIZE, 0);
+    const safePoseY = clampFinite(this.rigState.y, -20, 80, 0);
+    const safePoseZ = clampFinite(this.rigState.z, -VALLEY_SIZE, VALLEY_SIZE, 0);
+    const safeHeading = Math.atan2(
+      Math.sin(finiteOr(this.rigState.heading, 0)),
+      Math.cos(finiteOr(this.rigState.heading, 0))
+    );
+    const safeSpeed = clampFinite(this.rigState.speed, -60, 60, 0);
+    if (this.slipstreamVfx) {
+      this.slipstreamVfx.step(dt, this.elapsed, {
+        x: safePoseX,
+        y: safePoseY,
+        z: safePoseZ,
+        heading: safeHeading,
+        speed: safeSpeed,
+        boosting: this.rigState.boosting,
+        inSurge: this.rigState.inSurge,
+        wingSpan: this.rigState.chassisId === "aurora_sled" ? 1.55 : 1.25,
+      });
+    }
+    if (this.horizonWonder) {
+      this.horizonWonder.step(
+        dt,
+        this.elapsed,
+        { x: safePoseX, y: safePoseY, z: safePoseZ },
+        (ev) => {
+          this.audio?.playCoinGrab?.();
+          this.onOppositionEvent?.(ev);
+        }
+      );
+    }
+
+    // 7. Smooth Chase Camera + Slipstream Boost FOV Kick (+5.5 deg)
     if (this.camera) {
       const fwdX = -Math.sin(this.rigState.heading);
       const fwdZ = -Math.cos(this.rigState.heading);
@@ -2437,6 +3091,15 @@ export class FrostwakeWorld3D {
       this._camTargetVec.set(desiredCamX, desiredCamY, desiredCamZ);
       this.camera.position.lerp(this._camTargetVec, Math.min(1, dt * 4.8));
       this.camera.lookAt(lookX, lookY, lookZ);
+
+      const baseFov = this._baseCameraFov || 52;
+      const targetFov =
+        this.slipstreamVfx?.isActive() && !this.activeGateSlot ? baseFov + 5.5 : baseFov;
+      const nextFov = this.camera.fov + (targetFov - this.camera.fov) * Math.min(1, dt * 6.5);
+      if (Math.abs(nextFov - this.camera.fov) > 0.02) {
+        this.camera.fov = nextFov;
+        this.camera.updateProjectionMatrix();
+      }
     }
 
     // 8. Animate Snow-Lilies, Aurora, Snowfall, Instanced Particles, Lasers, Foxes & Sky-Whale
@@ -2463,7 +3126,12 @@ export class FrostwakeWorld3D {
       const pAttr = r.geo.attributes.position;
       for (let i = 0; i < pAttr.count; i++) {
         const x = pAttr.getX(i);
-        pAttr.setZ(i, Math.sin(x * 0.045 + elapsed * 0.9 + r.phase) * 4.5);
+        const y = pAttr.getY(i);
+        pAttr.setZ(
+          i,
+          Math.sin(x * 0.042 + elapsed * 0.92 + r.phase) * 4.8 +
+            Math.cos(x * 0.085 - elapsed * 0.65 + y * 0.06 + r.phase) * 1.9
+        );
       }
       pAttr.needsUpdate = true;
     }

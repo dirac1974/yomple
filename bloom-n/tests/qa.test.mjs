@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import * as THREE from "../vendor/three.module.min.js";
 import {
   BANNED_CHILD_WORDS,
   SUB_GAMES,
@@ -16,7 +17,15 @@ import {
   evaluateCommit,
   pickNextEncounter,
   mergeProgress,
+  computeNextWonderTeaser,
 } from "../core/engine.js";
+import {
+  buildCelestialSkyDome,
+  buildTempleSanctuaryFrame,
+  stepTempleSanctuaryFrame,
+  SlipstreamBoostVFXController,
+  HorizonWonderAndRelicSystem,
+} from "../core/vfx-3d.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BLOOM_N_DIR = path.resolve(__dirname, "..");
@@ -198,4 +207,89 @@ test("Monotonic mergeProgress never loses shards, upgrades, mysteries, or person
   assert.ok(merged.discoveredMysteries.includes("moon_center"));
   assert.equal(merged.records.deepestSubZero, 200);
   assert.equal(merged.records.longestRampM, 64);
+});
+
+test("V3 Next Wonder Teaser, Slipstream Speed Boost VFX, Temple Sanctuary Frame & Horizon Relics work in headless Node and pass safety rails", () => {
+  // Static check on new V3 files
+  for (const rel of ["core/vfx-3d.js", "styles-oddroot.css"]) {
+    const src = fs.readFileSync(path.join(BLOOM_N_DIR, rel), "utf8").toLowerCase();
+    assert.ok(!src.includes("#ff0000"), `Raw #ff0000 found in ${rel}`);
+    assert.ok(!src.includes("countdown"), `Countdown word found in ${rel}`);
+  }
+
+  // 1. computeNextWonderTeaser across states
+  const autoProg = createInitialProgress("auto");
+  const autoSess = createSessionState();
+  const tPrologue = computeNextWonderTeaser(autoProg, autoSess, "frostwake");
+  assert.equal(tPrologue.action, "play");
+  assert.ok(tPrologue.headline.includes("Aurora Beacon"));
+
+  autoSess.overdriveStreak = 2;
+  const tWhale = computeNextWonderTeaser(autoProg, autoSess, "oddroot");
+  assert.ok(tWhale.headline.includes("Sky-Whale"));
+
+  const davidProg = createInitialProgress("david");
+  davidProg.unlockedWorlds = ["W0", "W1"];
+  davidProg.activeWorld = "W1";
+  const davidSess = createSessionState();
+  const tGuardian = computeNextWonderTeaser(davidProg, davidSess, "frostwake");
+  assert.equal(tGuardian.action, "worlds");
+  assert.ok(tGuardian.headline.includes("Crystal Loom"));
+
+  davidProg.nodes["W1.2"].stage = 2;
+  davidProg.unlockedWorlds.push("W2");
+  davidProg.fluxShards = 200;
+  const tForge = computeNextWonderTeaser(davidProg, davidSess, "oddroot");
+  assert.equal(tForge.action, "garage");
+  assert.ok(tForge.kicker.includes("READY TO FORGE"));
+
+  // Check zero banned or school labels in teasers
+  for (const t of [tPrologue, tWhale, tGuardian, tForge]) {
+    const text = `${t.kicker} ${t.headline} ${t.hint}`.toLowerCase();
+    for (const w of [...BANNED_CHILD_WORDS, "algebra", "geometry", "trigonometry", "curriculum", "lesson", "quiz"]) {
+      assert.ok(!text.includes(w), `Disallowed word "${w}" in teaser: ${text}`);
+    }
+  }
+
+  // 2. 3D Sky Dome, Temple Sanctuary Frame, Slipstream Boost VFX & Horizon Relics
+  const scene = new THREE.Scene();
+  const sky = buildCelestialSkyDome({ theme: "oddroot" });
+  scene.add(sky);
+  assert.ok(sky.children.length >= 3);
+
+  const frame = buildTempleSanctuaryFrame({ theme: "oddroot", archetype: "cauldron" });
+  scene.add(frame.group);
+  stepTempleSanctuaryFrame(frame, 0.25, 1.0);
+  frame.setAwakened(true, true);
+  stepTempleSanctuaryFrame(frame, 0.35, 1.35);
+  assert.equal(frame.awakened, true);
+  assert.equal(frame.clearPillarMesh.visible, true);
+
+  const vfx = new SlipstreamBoostVFXController({ scene, theme: "oddroot" });
+  assert.equal(vfx.isActive(), false);
+  assert.equal(vfx.getSpeedMultiplier(), 1);
+
+  vfx.triggerClearBoost({ x: 4, y: 0, z: -18, overdrive: true });
+  assert.equal(vfx.isActive(), true);
+  assert.equal(vfx.overdriveActive, true);
+  assert.ok(vfx.getSpeedMultiplier() >= 1.4);
+  assert.ok(vfx.getRemainingRatio() > 0.9);
+
+  vfx.step(0.25, 1.25, { x: 0, y: 1.5, z: 0, heading: 0, speed: 18, wingSpan: 1.8 });
+  vfx.step(9.0, 10.25, { x: 0, y: 1.5, z: -20, heading: 0, speed: 12, wingSpan: 1.8 });
+  assert.equal(vfx.isActive(), false);
+  assert.equal(vfx.getSpeedMultiplier(), 1);
+
+  const horizon = new HorizonWonderAndRelicSystem({ scene, theme: "frostwake" });
+  horizon.setZoneProgress(0.75);
+  // Every 3rd clear spawns a collectible Shooting-Star Relic (+8 shards)
+  assert.equal(horizon.notifyTempleCleared({ dropX: 2, dropY: 0, dropZ: -6 }).spawnedRelic, false);
+  assert.equal(horizon.notifyTempleCleared({ dropX: 2, dropY: 0, dropZ: -6 }).spawnedRelic, false);
+  assert.equal(horizon.notifyTempleCleared({ dropX: 2, dropY: 0, dropZ: -6 }).spawnedRelic, true);
+  assert.ok(horizon.relic.active);
+  let collected = null;
+  horizon.step(0.1, 2.0, { x: horizon.relic.x, z: horizon.relic.z }, (ev) => {
+    collected = ev;
+  });
+  assert.ok(collected && collected.kind === "shooting_star_relic" && collected.shardsEarned === 8);
 });

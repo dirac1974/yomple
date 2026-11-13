@@ -25,6 +25,7 @@ import {
   recordWeeklySunshine,
   getCrossRealmUnlocks,
   unlockMystery,
+  computeNextWonderTeaser,
 } from "./core/engine.js";
 
 import {
@@ -73,6 +74,9 @@ let encounterOpenedAt = 0;
 let firstInputAt = 0;
 let toastTimer = null;
 let waveReplenishTimer = null;
+let victoryStampTimer = null;
+let shardPopTimer = null;
+let boostHudRafId = 0;
 
 // Keyboard & virtual thumbstick state
 const keys = { up: false, down: false, left: false, right: false, boost: false };
@@ -124,6 +128,266 @@ function syncSurgeBanners() {
   }
 }
 
+function handleWonderTeaserAction(teaser) {
+  if (!teaser) return;
+  getActiveAudio().playDetentClick?.(16);
+  const prog = getActiveProgress(store);
+  if (teaser.action === "garage") {
+    openGarageModal();
+    return;
+  }
+  if (teaser.action === "journal") {
+    openJournalModal();
+    return;
+  }
+  if (teaser.action === "worlds") {
+    if (activeRealmId === "portal") {
+      $("worlds-constellation")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    } else {
+      renderWorldsGrid($("modal-worlds-grid"), true);
+      openModal("modal-worlds");
+    }
+    return;
+  }
+  if (activeRealmId === "portal") {
+    const prefersOddroot = prog.games?.oddroot?.equippedMount === "starlight_glider";
+    if (prefersOddroot) launchOddroot();
+    else launchFrostwake();
+  } else {
+    const target = getActiveWorld()?.engageAutopilotToNextGate?.();
+    if (target) showToast(`Cruising toward ${target.encounter.title}!`);
+  }
+}
+
+function renderPortalNextWonder(prog) {
+  const card = $("portal-next-wonder");
+  if (!card) return;
+  const preferredRealm =
+    prog.games?.oddroot?.equippedMount === "starlight_glider" ? "oddroot" : "frostwake";
+  const teaser = computeNextWonderTeaser(prog, session, preferredRealm);
+  const pct = Math.max(12, Math.min(100, Math.round((teaser.ratio || 0.35) * 100)));
+  const ctaLabel =
+    teaser.action === "garage"
+      ? "Open Workshop →"
+      : teaser.action === "journal"
+      ? "View Journal →"
+      : teaser.action === "worlds"
+      ? "Constellation →"
+      : "Explore Now →";
+
+  card.innerHTML = `
+    <div class="wonder-orb-icon" aria-hidden="true">${teaser.icon || "🔮"}</div>
+    <div class="wonder-copy-col">
+      <div class="wonder-kicker-row">
+        <span class="wonder-kicker">${teaser.kicker}</span>
+        <span class="wonder-cta-chip">${ctaLabel}</span>
+      </div>
+      <strong class="wonder-headline">${teaser.headline}</strong>
+      <span class="wonder-hint">${teaser.hint}</span>
+      <div class="wonder-progress-track"><div class="wonder-progress-fill" style="width:${pct}%"></div></div>
+    </div>
+  `;
+  card.onclick = () => handleWonderTeaserAction(teaser);
+}
+
+function renderHudWonderChip(elId, prog, realmId) {
+  const chip = $(elId);
+  if (!chip) return;
+  const teaser = computeNextWonderTeaser(prog, session, realmId);
+  const compactText =
+    teaser.headline.length > 44 ? `${teaser.headline.slice(0, 42).trim()}…` : teaser.headline;
+  chip.innerHTML = `<span class="wonder-chip-icon">${teaser.icon || "🔮"}</span><span>${compactText}</span>`;
+  chip.title = `${teaser.headline} — ${teaser.hint}`;
+  chip.onclick = () => handleWonderTeaserAction(teaser);
+  chip.onkeydown = (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      handleWonderTeaserAction(teaser);
+    }
+  };
+}
+
+function pulseActiveShardPill() {
+  const pillId = activeRealmId === "oddroot" ? "or-shard-pill" : "fw-shard-pill";
+  const pill = $(pillId);
+  if (!pill) return;
+  pill.classList.remove("shard-pop");
+  // Trigger crisp spring reflow
+  void pill.offsetWidth;
+  pill.classList.add("shard-pop");
+  clearTimeout(shardPopTimer);
+  shardPopTimer = setTimeout(() => pill.classList.remove("shard-pop"), 560);
+}
+
+function spawnFlyingShardBurst(count = 10, originYRatio = 0.56) {
+  const layer = $("flying-gems-layer");
+  if (!layer || activeRealmId === "portal") {
+    pulseActiveShardPill();
+    return;
+  }
+  const targetEl = $(activeRealmId === "oddroot" ? "or-shard-pill" : "fw-shard-pill");
+  const targetRect = targetEl?.getBoundingClientRect?.();
+  const vw = Math.max(320, window.innerWidth || 1024);
+  const vh = Math.max(240, window.innerHeight || 720);
+  const tx = targetRect && targetRect.width > 0 ? targetRect.left + targetRect.width * 0.5 : vw - 140;
+  const ty = targetRect && targetRect.height > 0 ? targetRect.top + targetRect.height * 0.5 : 28;
+  const sxBase = vw * 0.5;
+  const syBase = vh * originYRatio;
+
+  const prefersReduced =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (prefersReduced) {
+    pulseActiveShardPill();
+    return;
+  }
+
+  const safeCount = Math.max(3, Math.min(14, count));
+  for (let i = 0; i < safeCount; i++) {
+    const gem = document.createElement("span");
+    gem.className = "flying-shard-gem";
+    gem.textContent = i % 4 === 0 ? "✦" : "💎";
+    const angle = (i / safeCount) * Math.PI * 2 + (i % 2) * 0.25;
+    const burstR = 26 + (i % 4) * 18;
+    const sx = sxBase + Math.cos(angle) * 18;
+    const sy = syBase + Math.sin(angle) * 12;
+    const mx = sx + Math.cos(angle) * burstR * 1.45 + (tx - sx) * 0.32;
+    const my = sy + Math.sin(angle) * burstR - 54 + (ty - sy) * 0.24;
+
+    gem.style.left = "0px";
+    gem.style.top = "0px";
+    layer.appendChild(gem);
+
+    const delay = i * 32;
+    const duration = 560 + (i % 3) * 75;
+    if (typeof gem.animate === "function") {
+      const anim = gem.animate(
+        [
+          { transform: `translate3d(${sx}px, ${sy}px, 0) scale(0.45) rotate(0deg)`, opacity: 0 },
+          {
+            transform: `translate3d(${mx}px, ${my}px, 0) scale(1.22) rotate(${i % 2 ? 22 : -22}deg)`,
+            opacity: 1,
+            offset: 0.36,
+          },
+          { transform: `translate3d(${tx}px, ${ty}px, 0) scale(0.55) rotate(0deg)`, opacity: 0.15 },
+        ],
+        { duration, delay, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" }
+      );
+      anim.onfinish = () => {
+        gem.remove();
+        if (i === 0 || i === safeCount - 1) pulseActiveShardPill();
+      };
+    } else {
+      setTimeout(() => {
+        gem.remove();
+        if (i === 0) pulseActiveShardPill();
+      }, duration + delay);
+    }
+  }
+}
+
+function updateSlipstreamHudFrame() {
+  boostHudRafId = 0;
+  const world = getActiveWorld();
+  const st = world?.getSlipstreamBoostState?.() || { active: false, ratio: 0, multiplier: 1, overdrive: false };
+  const isOddroot = activeRealmId === "oddroot";
+  const activePill = $(isOddroot ? "or-boost-pill" : "fw-boost-pill");
+  const inactivePill = $(isOddroot ? "fw-boost-pill" : "or-boost-pill");
+  const activeFill = $(isOddroot ? "or-boost-fill" : "fw-boost-fill");
+  const screenFx = $("slipstream-screen-fx");
+
+  if (inactivePill) inactivePill.classList.remove("active", "overdrive");
+
+  if (st.active && activeRealmId !== "portal") {
+    const multStr = (st.multiplier || 1.38).toFixed(1);
+    if (activePill) {
+      activePill.classList.add("active");
+      activePill.classList.toggle("overdrive", Boolean(st.overdrive));
+      const lbl = activePill.querySelector(".boost-pill-label");
+      if (lbl) {
+        lbl.textContent = isOddroot
+          ? `🚀 Starlight Slipstream · ${multStr}×`
+          : `🚀 Cryo-Plasma Boost · ${multStr}×`;
+      }
+    }
+    if (activeFill) {
+      activeFill.style.width = `${Math.max(8, Math.min(100, Math.round((st.ratio || 0) * 100)))}%`;
+    }
+    if (screenFx) {
+      screenFx.classList.add("active");
+      screenFx.classList.toggle("overdrive", Boolean(st.overdrive));
+      screenFx.style.setProperty("--boost-alpha", String(Math.max(0.18, Math.min(0.95, st.ratio || 0.5))));
+    }
+    if (typeof requestAnimationFrame === "function") {
+      boostHudRafId = requestAnimationFrame(updateSlipstreamHudFrame);
+    }
+  } else {
+    if (activePill) activePill.classList.remove("active", "overdrive");
+    if (screenFx) screenFx.classList.remove("active", "overdrive");
+  }
+}
+
+function ensureSlipstreamHudLoop() {
+  if (!boostHudRafId) {
+    updateSlipstreamHudFrame();
+  }
+}
+
+function triggerHudVictoryCelebration(res) {
+  if (!res || activeRealmId === "portal") return;
+  const card = $("victory-stamp-card");
+  const kickerEl = $("victory-stamp-kicker");
+  const cueEl = $("victory-stamp-cue");
+  const shardsEl = $("victory-stamp-shards");
+  const boostEl = $("victory-stamp-boost");
+  const isOddroot = activeRealmId === "oddroot";
+  const isClear = res.outcome === "clear";
+  const isOverdrive = Boolean(res.overdrive);
+
+  if (kickerEl) {
+    kickerEl.textContent = isOverdrive
+      ? "⚡ MENTAL OVERDRIVE · 1.5× FLUX!"
+      : isClear
+      ? isOddroot
+        ? "✦ SANCTUARY SHRINE AWAKENED!"
+        : "✦ CRYO-TEMPLE AWAKENED!"
+      : "🦊 AURORA SYNTHESIS SEALED!";
+  }
+  if (cueEl) {
+    cueEl.textContent = res.cue || "Balance locked!";
+  }
+  if (shardsEl) {
+    shardsEl.textContent = `+${res.shardsEarned || 0}💎`;
+  }
+  if (boostEl) {
+    if (isClear) {
+      const multLabel = isOverdrive ? "1.5×" : "1.4×";
+      boostEl.textContent = isOddroot
+        ? `🚀 STARLIGHT SLIPSTREAM · ${multLabel} GLIDE BOOST!`
+        : `🚀 CRYO-PLASMA BOOST · ${multLabel} RIG SURGE!`;
+    } else {
+      boostEl.textContent = "✨ BEACON LIT · NEXT TEMPLE READY!";
+    }
+  }
+
+  if (card) {
+    card.classList.remove("show", "is-overdrive", "is-oddroot");
+    void card.offsetWidth;
+    card.classList.toggle("is-overdrive", isOverdrive);
+    card.classList.toggle("is-oddroot", isOddroot);
+    card.classList.add("show");
+    clearTimeout(victoryStampTimer);
+    victoryStampTimer = setTimeout(() => {
+      card.classList.remove("show");
+    }, 2350);
+  }
+
+  spawnFlyingShardBurst(isOverdrive ? 13 : isClear ? 9 : 6, 0.54);
+  if (isClear) {
+    ensureSlipstreamHudLoop();
+  }
+}
+
 function updateAllShardAndZoneDisplays() {
   const prog = getActiveProgress(store);
   const shards = String(prog.fluxShards || 0);
@@ -150,6 +414,20 @@ function updateAllShardAndZoneDisplays() {
   renderPortalZoneProgress(wp);
   renderHudZonePill("fw-zone-bar", wp);
   renderHudZonePill("or-zone-bar", wp);
+
+  const zoneRatio =
+    wp.worldId === "W0"
+      ? wp.beaconsLit / Math.max(1, wp.beaconsTotal)
+      : Math.max(
+          wp.beaconsLit / Math.max(1, wp.beaconsTotal),
+          wp.starsEarned / Math.max(1, wp.starsMax)
+        );
+  frostwakeWorld?.setZoneProgressRatio?.(zoneRatio);
+  oddrootWorld?.setZoneProgressRatio?.(zoneRatio);
+
+  renderPortalNextWonder(prog);
+  renderHudWonderChip("fw-wonder-chip", prog, "frostwake");
+  renderHudWonderChip("or-wonder-chip", prog, "oddroot");
 
   const worldLabel = `${wp.rankLabel} · ${wp.worldName}`;
   if ($("portal-active-world-label")) {
@@ -351,7 +629,9 @@ function renderWorldsGrid(container, launchOnSelect = false) {
   if (!container) return;
   const prog = getActiveProgress(store);
   container.innerHTML = "";
-  for (const w of WORLDS) {
+  for (let idx = 0; idx < WORLDS.length; idx++) {
+    const w = WORLDS[idx];
+    const prevWorld = idx > 0 ? WORLDS[idx - 1] : null;
     const open = isWorldUnlocked(prog, w.id);
     const tile = document.createElement("button");
     tile.type = "button";
@@ -363,18 +643,27 @@ function renderWorldsGrid(container, launchOnSelect = false) {
       })
       .join("");
     const starsEarned = w.nodes.reduce((s, n) => s + Math.min(3, prog.nodes?.[n.id]?.stage || 0), 0);
+    const subWhisper = open
+      ? `🛡️ ${w.guardianName}`
+      : prevWorld
+      ? `🔮 Wake ${prevWorld.guardianName} → ${w.realmSubtitle || w.name}`
+      : `🛡️ ${w.guardianName}`;
     tile.innerHTML = `
       <div class="world-top">
         <span>${w.id} · ${w.rankLabel}</span>
         <span>${open ? `${starsEarned}★` : "🔒"}</span>
       </div>
       <strong>${w.name}</strong>
-      <div style="font-size:0.74rem;color:var(--ink-soft);margin-top:2px">🛡️ ${w.guardianName}</div>
+      <div class="world-whisper">${subWhisper}</div>
       <div class="world-dots">${dotsHtml}</div>
     `;
     tile.onclick = () => {
       if (!open) {
-        showToast(`Wake the prior Guardian with 2 solid beacons first!`);
+        showToast(
+          prevWorld
+            ? `Wake ${prevWorld.guardianName} with 2 solid beacons to enter ${w.name}!`
+            : `Wake the prior Guardian with 2 solid beacons first!`
+        );
         return;
       }
       getActiveAudio().playDetentClick?.(18);
@@ -511,8 +800,10 @@ function triggerFriendlyFlare() {
 /* ==================== MOUNT SHARED DOCK INTO ACTIVE REALM ==================== */
 function attachSharedOverlaysToScreen(screenEl) {
   if (!screenEl) return;
+  const victoryLayer = $("victory-celebration-layer");
   const dock = $("encounter-dock");
   const toast = $("hud-toast");
+  if (victoryLayer && victoryLayer.parentElement !== screenEl) screenEl.appendChild(victoryLayer);
   if (toast && toast.parentElement !== screenEl) screenEl.appendChild(toast);
   if (dock && dock.parentElement !== screenEl) screenEl.appendChild(dock);
 }
@@ -527,6 +818,7 @@ function handleSharedCoinGrabbed(coinId) {
   p.fluxShards = (p.fluxShards || 0) + SHARED_COIN_REWARD_SHARDS;
   p.unsyncedFlux = (p.unsyncedFlux || 0) + SHARED_COIN_REWARD_SHARDS;
   getActiveAudio().playSnowShardTick?.();
+  spawnFlyingShardBurst(5, 0.58);
   updateAllShardAndZoneDisplays();
   saveStore(store);
   showToast(`⭐ Grabbed Shared Star-Coin! +${SHARED_COIN_REWARD_SHARDS}💎`);
@@ -538,6 +830,7 @@ function handleMysteryFound(mysteryId) {
     p.fluxShards += 25;
     p.unsyncedFlux = (p.unsyncedFlux || 0) + 25;
     getActiveAudio().playClear?.(true);
+    spawnFlyingShardBurst(12, 0.52);
     const myst = MYSTERIES.find((m) => m.id === mysteryId);
     showToast(`✦ Mystery Woken: ${myst ? myst.title : "Hidden Wonder"}! +25💎`, 3400);
     const w = getActiveWorld();
@@ -553,11 +846,17 @@ function handleOppositionEvent(ev) {
   if (Number(ev.shardsEarned) > 0) {
     p.fluxShards += Number(ev.shardsEarned);
     p.unsyncedFlux = (p.unsyncedFlux || 0) + Number(ev.shardsEarned);
+    if (Number(ev.shardsEarned) >= 5) {
+      getActiveAudio().playSlipstreamBoost?.(false);
+      spawnFlyingShardBurst(7, 0.56);
+    } else {
+      pulseActiveShardPill();
+    }
     updateAllShardAndZoneDisplays();
     saveStore(store);
   }
   if (ev.message) {
-    showToast(ev.message, 2200);
+    showToast(ev.message, 2400);
   }
 }
 
@@ -708,6 +1007,18 @@ function exitRealmToHub() {
     clearTimeout(waveReplenishTimer);
     waveReplenishTimer = null;
   }
+  if (victoryStampTimer) {
+    clearTimeout(victoryStampTimer);
+    victoryStampTimer = null;
+  }
+  if (boostHudRafId && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(boostHudRafId);
+    boostHudRafId = 0;
+  }
+  $("victory-stamp-card")?.classList.remove("show", "is-overdrive", "is-oddroot");
+  $("slipstream-screen-fx")?.classList.remove("active", "overdrive");
+  $("fw-boost-pill")?.classList.remove("active", "overdrive");
+  $("or-boost-pill")?.classList.remove("active", "overdrive");
   closeEncounterDock();
   disconnectMultiplayer();
   if (frostwakeWorld) frostwakeWorld.stop();
@@ -994,6 +1305,7 @@ function handleCommit() {
     }
     recordWeeklySunshine(prog);
     audio.playClear?.(res.overdrive);
+    triggerHudVictoryCelebration(res);
     showToast(`${res.cue} +${res.shardsEarned}💎`);
 
     if (session.overdriveStreak >= 3) {
@@ -1017,6 +1329,7 @@ function handleCommit() {
   } else if (res.outcome === "warm_reveal") {
     recordWeeklySunshine(prog);
     audio.playFoxReveal?.();
+    triggerHudVictoryCelebration(res);
     showToast(`${res.cue} · +${res.shardsEarned}💎`, 3200);
     finishGateAndReplenishIfDone(res);
   } else {

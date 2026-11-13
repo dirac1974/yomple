@@ -38,6 +38,9 @@
       <!-- Active Frontier & Guardian Awakening Progress Bar -->
       <div id="portal-zone-progress" class="zone-progress-card"></div>
 
+      <!-- Next Discovery & Curiosity Teaser Spotlight -->
+      <button type="button" id="portal-next-wonder" class="next-wonder-card" aria-label="Next discovery teaser"></button>
+
       <!-- Dual Live 3D Realms (#1 Frostwake & #2 Oddroot Wilds) -->
       <div class="dual-heroes-stack">
         <!-- Featured Sub-Game #1: Frostwake -->
@@ -142,11 +145,16 @@
         <button type="button" id="hud-exit-btn" class="hud-btn">← Bloomⁿ Hub</button>
         <button type="button" id="hud-world-btn" class="hud-btn gold">Rank I · Sub-Zero Core ▾</button>
         <div id="fw-zone-bar" class="hud-zone-pill"></div>
+        <div id="fw-wonder-chip" class="hud-wonder-chip" role="button" tabindex="0"></div>
+        <div id="fw-boost-pill" class="slipstream-boost-pill" aria-hidden="true">
+          <span class="boost-pill-label">🚀 Cryo-Boost</span>
+          <span class="boost-pill-bar"><span id="fw-boost-fill" class="boost-pill-fill"></span></span>
+        </div>
       </div>
       <div class="hud-group">
         <div id="fw-partner-pill" class="partner-pill" style="display:none"></div>
         <button type="button" id="fw-flare-btn" class="hud-btn flare-btn">🎆 Flare</button>
-        <div class="hud-btn gold">💎 <span id="hud-shards">30</span></div>
+        <div id="fw-shard-pill" class="hud-btn gold shard-hud-pill">💎 <span id="hud-shards">30</span></div>
         <div class="hud-btn">⚡ <span id="hud-streak">0</span></div>
         <button type="button" id="hud-garage-btn" class="hud-btn">🛠️ Garage</button>
         <button type="button" id="hud-snow-btn" class="hud-btn">❄️ Fresh Snow</button>
@@ -156,6 +164,20 @@
 
     <div id="surge-banner" class="surge-banner">✨ GOLDEN THAW OVERDRIVE · 1.5× FLUX ✨</div>
     <div id="hud-toast" class="hud-toast"></div>
+
+    <!-- Shared Non-Blocking Victory Celebration & Slipstream Screen FX Overlay -->
+    <div id="victory-celebration-layer" class="victory-celebration-layer" aria-hidden="true">
+      <div id="slipstream-screen-fx" class="slipstream-screen-fx"></div>
+      <div id="victory-stamp-card" class="victory-stamp-card">
+        <div id="victory-stamp-kicker" class="victory-stamp-kicker">✦ TEMPLE AWAKENED!</div>
+        <div class="victory-stamp-main">
+          <span id="victory-stamp-cue" class="victory-stamp-cue">Towers locked in balance!</span>
+          <span id="victory-stamp-shards" class="victory-stamp-shards">+14💎</span>
+        </div>
+        <div id="victory-stamp-boost" class="victory-stamp-boost">🚀 CRYO-PLASMA BOOST · 1.4× SPEED!</div>
+      </div>
+      <div id="flying-gems-layer" class="flying-gems-layer"></div>
+    </div>
 
     <!-- Bottom-Left Tactile Thumbstick & 1-Tap Autopilot -->
     <div class="drive-cluster">
@@ -205,6 +227,11 @@
         <button type="button" id="oddroot-exit-btn" class="hud-btn">← Bloomⁿ Hub</button>
         <button type="button" id="oddroot-world-btn" class="hud-btn gold">Rank I · Sub-Zero Core ▾</button>
         <div id="or-zone-bar" class="hud-zone-pill"></div>
+        <div id="or-wonder-chip" class="hud-wonder-chip" role="button" tabindex="0"></div>
+        <div id="or-boost-pill" class="slipstream-boost-pill" aria-hidden="true">
+          <span class="boost-pill-label">🚀 Starlight Slipstream</span>
+          <span class="boost-pill-bar"><span id="or-boost-fill" class="boost-pill-fill"></span></span>
+        </div>
       </div>
       <div class="hud-group">
         <div id="or-partner-pill" class="partner-pill" style="display:none"></div>
@@ -216,7 +243,7 @@
           <span class="orb-chip pod">🌿 <b id="orb-pod-count">0</b></span>
           <span class="orb-chip puff">🫧 <b id="orb-puff-count">0</b></span>
         </div>
-        <div class="hud-btn gold">💎 <span id="oddroot-shards">30</span></div>
+        <div id="or-shard-pill" class="hud-btn gold shard-hud-pill">💎 <span id="oddroot-shards">30</span></div>
         <div class="hud-btn">⚡ <span id="oddroot-streak">0</span></div>
         <button type="button" id="oddroot-workshop-btn" class="hud-btn">🛠️ Workshop</button>
         <button type="button" id="oddroot-journal-btn" class="hud-btn">🐾 Journal</button>

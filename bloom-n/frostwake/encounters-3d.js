@@ -6,6 +6,10 @@
  */
 
 import * as THREE from "../vendor/three.module.min.js";
+import {
+  buildTempleSanctuaryFrame,
+  stepTempleSanctuaryFrame,
+} from "../core/vfx-3d.js";
 
 export const CHASM_SPAN_M = 16.0;
 export const STUB_MAX_SPAN_M = 2.0; // 12.5% <= 15% of 16.0m chasm span
@@ -245,6 +249,14 @@ export function buildEncounter3DGroup(slot) {
     enc.encounterType === "holo_ramp" ||
     enc.encounterType === "rainbow_arch" ||
     kind === "complex_i_rotation";
+
+  const templeFrame = buildTempleSanctuaryFrame({
+    theme: "frostwake",
+    archetype: isWarmBeacon ? "ramp" : "default",
+  });
+  slot.templeFrame = templeFrame;
+  g.add(templeFrame.group);
+
   const beacon = new THREE.Mesh(
     new THREE.CylinderGeometry(0.18, 0.55, 26, 12, 1, true),
     new THREE.MeshBasicMaterial({
@@ -328,6 +340,20 @@ function populateCryoTowersMesh(g, enc, slot, kind) {
     emissiveIntensity: 0.85,
     roughness: 0.15,
   });
+  const pedStoneMat = new THREE.MeshStandardMaterial({
+    color: 0x182f4c,
+    emissive: 0x0b1c30,
+    emissiveIntensity: 0.35,
+    roughness: 0.48,
+    metalness: 0.24,
+  });
+  const conduitMat = new THREE.MeshStandardMaterial({
+    color: 0x45f0df,
+    emissive: 0x2ec4b6,
+    emissiveIntensity: 0.92,
+    roughness: 0.18,
+    metalness: 0.35,
+  });
   const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffae42 });
 
   const defaultAns = clampFinite(enc.answer, -10000, 10000, 6);
@@ -341,17 +367,51 @@ function populateCryoTowersMesh(g, enc, slot, kind) {
 
   slot.towerClusters = [];
 
+  // Glowing floor energy conduits linking left & right pedestals into central Cryo-Nexus
+  for (const cz of [-0.34, 0.34]) {
+    const conduit = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 8.2, 8), conduitMat);
+    conduit.rotation.z = Math.PI / 2;
+    conduit.position.set(0, 0.34, cz);
+    g.add(conduit);
+  }
+  const nexusCollar = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.06, 8, 24), goldMat);
+  nexusCollar.rotation.x = Math.PI / 2;
+  nexusCollar.position.set(0, 0.36, 0);
+  const nexusPrism = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0), conduitMat);
+  nexusPrism.position.set(0, 0.72, 0);
+  g.add(nexusCollar, nexusPrism);
+  slot.nexusPrism = nexusPrism;
+
   const buildStack = (side, xPos, varCount, constVal, groupedMeta = null) => {
     const towerRoot = new THREE.Group();
     towerRoot.position.set(xPos, 0, 0);
     g.add(towerRoot);
 
-    const ped = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.85, 2.15, 0.8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x1d3554, roughness: 0.5 })
+    const pedLower = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.92, 2.22, 0.48, 8),
+      pedStoneMat
     );
-    ped.position.y = 0.5;
-    towerRoot.add(ped);
+    pedLower.position.y = 0.28;
+    const pedUpper = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.64, 1.84, 0.44, 8),
+      pedStoneMat
+    );
+    pedUpper.position.y = 0.68;
+    const runeCuff = new THREE.Mesh(
+      new THREE.TorusGeometry(1.78, 0.065, 8, 28),
+      conduitMat
+    );
+    runeCuff.rotation.x = Math.PI / 2;
+    runeCuff.position.y = 0.56;
+    towerRoot.add(pedLower, pedUpper, runeCuff);
+
+    for (let rb = 0; rb < 4; rb++) {
+      const ang = (rb * Math.PI) / 2 + Math.PI / 4;
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.66, 0.28), goldMat);
+      rib.position.set(Math.cos(ang) * 1.84, 0.46, Math.sin(ang) * 1.84);
+      rib.rotation.y = -ang;
+      towerRoot.add(rib);
+    }
 
     const hasBoth = (varCount || 0) !== 0 && (constVal || 0) !== 0;
     const baseVarX = hasBoth ? -0.95 : 0;
@@ -414,8 +474,8 @@ function populateCryoTowersMesh(g, enc, slot, kind) {
     });
   };
 
-  buildStack("left", -4.2, towers.leftA, towers.leftB, enc.left?.grouped || null);
-  buildStack("right", 4.2, towers.rightA, towers.rightB, enc.right?.grouped || null);
+  buildStack("left", -3.9, towers.leftA, towers.leftB, enc.left?.grouped || null);
+  buildStack("right", 3.9, towers.rightA, towers.rightB, enc.right?.grouped || null);
 
   if (kind === "int_double_neg") {
     const siphonTube = new THREE.Mesh(
@@ -434,24 +494,45 @@ function populateCryoTowersMesh(g, enc, slot, kind) {
   }
 
   const barrier = new THREE.Mesh(
-    new THREE.BoxGeometry(6.4, 5.2, 0.45),
+    new THREE.BoxGeometry(6.2, 5.2, 0.42),
     new THREE.MeshStandardMaterial({
       color: 0x7ceeff,
       emissive: 0x1f8ea8,
-      emissiveIntensity: 0.45,
+      emissiveIntensity: 0.48,
       transparent: true,
-      opacity: 0.62,
+      opacity: 0.6,
       roughness: 0.12,
     })
   );
   barrier.position.set(0, 3.0, 0);
+  const barrierHeader = new THREE.Mesh(new THREE.BoxGeometry(6.45, 0.22, 0.56), conduitMat);
+  barrierHeader.position.set(0, 2.62, 0);
+  barrier.add(barrierHeader);
   g.add(barrier);
   slot.barrierMesh = barrier;
 }
 
 function populateAuroraCascadeMesh(g, enc, slot, kind) {
-  const pedGeo = new THREE.CylinderGeometry(1.15, 1.35, 0.65, 8);
-  const pedMat = new THREE.MeshStandardMaterial({ color: 0x1c3554, roughness: 0.5 });
+  const pedGeo = new THREE.CylinderGeometry(1.05, 1.25, 0.65, 8);
+  const pedMat = new THREE.MeshStandardMaterial({
+    color: 0x183150,
+    emissive: 0x0b1a2e,
+    emissiveIntensity: 0.35,
+    roughness: 0.46,
+    metalness: 0.22,
+  });
+  const finialSpireMat = new THREE.MeshStandardMaterial({
+    color: 0x62f5e4,
+    emissive: 0x2ec4b6,
+    emissiveIntensity: 0.9,
+    roughness: 0.16,
+  });
+  const finialGoldMat = new THREE.MeshStandardMaterial({
+    color: 0xffd166,
+    emissive: 0xf4a62a,
+    emissiveIntensity: 0.95,
+    roughness: 0.18,
+  });
 
   const barrier = new THREE.Mesh(
     new THREE.BoxGeometry(5.6, 4.6, 0.38),
@@ -466,6 +547,18 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
   barrier.position.set(0, 2.8, -0.8);
   g.add(barrier);
   slot.barrierMesh = barrier;
+
+  // Floor cascade energy conduit connecting the 4 pedestals inside the temple dais
+  const cascadeConduit = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.065, 0.065, 8.0, 8),
+    finialSpireMat
+  );
+  cascadeConduit.rotation.z = Math.PI / 2;
+  cascadeConduit.position.set(0, 0.33, 0);
+  g.add(cascadeConduit);
+
+  slot.finialGems = [];
+  const xCoords = [-3.9, -1.3, 1.3, 3.9];
 
   if (kind === "seq_linear" || enc.patternMeta) {
     const pm = enc.patternMeta && typeof enc.patternMeta === "object" ? enc.patternMeta : {};
@@ -489,7 +582,6 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
     });
 
     slot.cascadePedestals = [];
-    const xCoords = [-5.4, -1.8, 1.8, 5.4];
 
     for (let pIdx = 0; pIdx < 4; pIdx++) {
       const pedGroup = new THREE.Group();
@@ -499,6 +591,15 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
       const pedMesh = new THREE.Mesh(pedGeo, pedMat);
       pedMesh.position.y = 0.35;
       pedGroup.add(pedMesh);
+
+      const pedCollar = new THREE.Mesh(
+        new THREE.TorusGeometry(1.08, 0.055, 8, 24),
+        pIdx === 3 ? finialGoldMat : finialSpireMat
+      );
+      pedCollar.rotation.x = Math.PI / 2;
+      pedCollar.position.y = 0.66;
+      pedCollar.userData = { partType: "pedestal_collar" };
+      pedGroup.add(pedCollar);
 
       let curY = 0.9;
       for (let b = 0; b < absBase; b++) {
@@ -511,6 +612,7 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
       }
       curY += Math.ceil(absBase / 2) * 0.38 + 0.25;
 
+      let finialBaseY = curY + 2.2;
       if (pIdx < 3) {
         const stepNum = pIdx + 1;
         for (let r = 0; r < stepNum; r++) {
@@ -526,6 +628,7 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
           }
           pedGroup.add(rowGroup);
         }
+        finialBaseY = curY + stepNum * 0.62 + 0.52;
       } else {
         const targetHalo = new THREE.Mesh(
           new THREE.TorusGeometry(0.95, 0.1, 10, 24),
@@ -534,7 +637,26 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
         targetHalo.position.y = curY + 1.4;
         targetHalo.userData = { partType: "target_frame_halo" };
         pedGroup.add(targetHalo);
+        finialBaseY = curY + 2.75;
       }
+
+      // Crystalline Spire Finial crowning each pedestal strictly outside growthRows
+      const finialGroup = new THREE.Group();
+      finialGroup.position.set(0, finialBaseY, 0);
+      finialGroup.userData = { partType: "spire_finial" };
+      const finialCone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.18, 0.54, 6),
+        pIdx === 3 ? finialGoldMat : finialSpireMat
+      );
+      const finialRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.28, 0.032, 8, 16),
+        finialGoldMat
+      );
+      finialRing.rotation.x = Math.PI / 2;
+      finialRing.position.y = -0.18;
+      finialGroup.add(finialCone, finialRing);
+      pedGroup.add(finialGroup);
+      slot.finialGems.push(finialGroup);
 
       g.add(pedGroup);
       slot.cascadePedestals.push(pedGroup);
@@ -585,7 +707,6 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
   });
 
   slot.myceliumStages = [];
-  const xCoords = [-5.4, -1.8, 1.8, 5.4];
   for (let stage = 0; stage < 4; stage++) {
     const stageGroup = new THREE.Group();
     stageGroup.position.set(xCoords[stage], 0, 0);
@@ -596,6 +717,14 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
     const pedMesh = new THREE.Mesh(pedGeo, pedMat);
     pedMesh.position.y = 0.35;
     stageGroup.add(pedMesh);
+
+    const pedCollar = new THREE.Mesh(
+      new THREE.TorusGeometry(1.08, 0.055, 8, 24),
+      stage === 3 ? finialGoldMat : finialSpireMat
+    );
+    pedCollar.rotation.x = Math.PI / 2;
+    pedCollar.position.y = 0.66;
+    stageGroup.add(pedCollar);
 
     const stemH = 1.1 + stage * 0.85;
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.24, stemH, 8), stemMat);
@@ -623,6 +752,16 @@ function populateAuroraCascadeMesh(g, enc, slot, kind) {
       logHalo.userData = { partType: "log_stage_halo", stage };
       stageGroup.add(logHalo);
     }
+
+    const topSpireY = 1.35 + stemH + Math.floor(Math.max(0, capCount - 1) / 9) * 0.32;
+    const finialSpire = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.22, 0),
+      stage === 3 ? finialGoldMat : finialSpireMat
+    );
+    finialSpire.position.set(0, topSpireY, 0);
+    finialSpire.userData = { partType: "spire_finial" };
+    stageGroup.add(finialSpire);
+    slot.finialGems.push(finialSpire);
 
     g.add(stageGroup);
     slot.myceliumStages.push(stageGroup);
@@ -880,32 +1019,80 @@ function populateRampOrArchMesh(g, enc, slot, kind) {
   const launchPadGroup = new THREE.Group();
   launchPadGroup.name = "holo_launch_pad";
   const initialPadMathB = isArch ? 0 : bVal;
-  launchPadGroup.position.set(isSystem ? -2.2 : 0, mapY(initialPadMathB) - 0.55, 2.2);
+  const padOriginX = isSystem ? -2.2 : 0;
+  const padOriginY = mapY(initialPadMathB) - 0.55;
+  launchPadGroup.position.set(padOriginX, padOriginY, 2.2);
 
+  const padWidth = isSystem ? 3.6 : 4.8;
   const padMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(isSystem ? 3.6 : 4.8, 0.5, 4.0),
+    new THREE.BoxGeometry(padWidth, 0.5, 4.0),
     new THREE.MeshStandardMaterial({
       color: 0x1e3858,
       emissive: 0x164c6b,
       emissiveIntensity: 0.5,
+      roughness: 0.35,
+      metalness: 0.3,
     })
   );
   launchPadGroup.add(padMesh);
 
-  // Strict <= 15% Near-Field Origin Stub (spans z in [0, -1.9m] = 11.875% of 16.0m chasm!)
+  const corePadTrim = new THREE.Mesh(
+    new THREE.BoxGeometry(isSystem ? 2.1 : 2.8, 0.08, 2.2),
+    new THREE.MeshBasicMaterial({
+      color: isArch ? 0xffd166 : 0x45f0df,
+      transparent: true,
+      opacity: 0.88,
+    })
+  );
+  corePadTrim.position.set(0, 0.28, -0.55);
+  launchPadGroup.add(corePadTrim);
+
+  // Stationary Launch-Bay Guide Rails & Approach Chevrons (anchored to g so hydraulic W4.3 lift glides cleanly between rails!)
+  const bayFrameGroup = new THREE.Group();
+  bayFrameGroup.name = "holo_launch_bay_frame";
+  bayFrameGroup.position.set(padOriginX, padOriginY, 2.2);
+  const chevronMat = new THREE.MeshBasicMaterial({
+    color: isArch ? 0xffd166 : 0x45f0df,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const railTrimMat = new THREE.MeshStandardMaterial({
+    color: 0xffd166,
+    emissive: 0xf4a62a,
+    emissiveIntensity: 0.78,
+    roughness: 0.22,
+  });
+  for (const rx of [-(padWidth * 0.5 + 0.14), padWidth * 0.5 + 0.14]) {
+    const sideRail = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.36, 3.75), railTrimMat);
+    sideRail.position.set(rx, 0.24, 0);
+    bayFrameGroup.add(sideRail);
+  }
+  const chevArmW = isSystem ? 0.95 : 1.32;
+  for (let cIdx = 0; cIdx < 2; cIdx++) {
+    const cz = 2.45 + cIdx * 0.85;
+    for (const sx of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(chevArmW, 0.08, 0.18), chevronMat);
+      arm.position.set(sx * chevArmW * 0.42, 0.12, cz);
+      arm.rotation.y = sx * 0.42;
+      bayFrameGroup.add(arm);
+    }
+  }
+  g.add(bayFrameGroup);
+
+  // Strict <= 15% Near-Field Origin Stub (spans <= 2.1m = 12% of chasm!)
   const stubGroup = new THREE.Group();
   stubGroup.name = "origin_tangent_stub";
-  stubGroup.position.set(0, 0.42, -1.8);
+  stubGroup.position.set(0, 0.42, -1.12);
   for (let i = 0; i < 3; i++) {
     const strip = new THREE.Mesh(
-      new THREE.BoxGeometry(3.1 - i * 0.35, 0.14, 0.55),
+      new THREE.BoxGeometry(3.1 - i * 0.35, 0.14, 0.52),
       new THREE.MeshBasicMaterial({
         color: 0x45f0df,
         transparent: true,
         opacity: 0.9 - i * 0.22,
       })
     );
-    strip.position.set(0, 0, -i * 0.68); // max local extent -1.36m (< 2.0m total!)
+    strip.position.set(0, 0, -i * 0.48); // max local center z = -2.08m (< 15% of 17.6m!)
     stubGroup.add(strip);
   }
   if (solveForB) {
@@ -936,6 +1123,15 @@ function populateRampOrArchMesh(g, enc, slot, kind) {
       roughness: 0.2,
     })
   );
+  for (let rIdx = 0; rIdx < 4; rIdx++) {
+    const rAng = (rIdx * Math.PI) / 2;
+    const crownSpire = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.32, 0),
+      new THREE.MeshBasicMaterial({ color: 0x62f5e4 })
+    );
+    crownSpire.position.set(Math.cos(rAng) * 2.55, Math.sin(rAng) * 2.55, 0);
+    targetRing.add(crownSpire);
+  }
   targetRing.position.set(0, ringWorldY, -13.5);
   g.add(targetRing);
   slot.targetRing = targetRing;
@@ -1071,18 +1267,64 @@ function populateAstrolabeMesh(g, enc, slot, kind) {
   const brassMat = new THREE.MeshStandardMaterial({
     color: 0xf5c451,
     emissive: 0x9e6f14,
-    emissiveIntensity: 0.45,
-    metalness: 0.65,
-    roughness: 0.25,
+    emissiveIntensity: 0.48,
+    metalness: 0.68,
+    roughness: 0.22,
   });
   const starMat = new THREE.MeshStandardMaterial({
     color: 0x5ce1e6,
     emissive: 0x2ec4b6,
-    emissiveIntensity: 0.8,
+    emissiveIntensity: 0.85,
+    roughness: 0.18,
   });
+  const obsidianBaseMat = new THREE.MeshStandardMaterial({
+    color: 0x162b46,
+    emissive: 0x0b192c,
+    emissiveIntensity: 0.35,
+    roughness: 0.42,
+    metalness: 0.3,
+  });
+
+  // Celestial Cradle Pedestal & Brass Meridian Support Arc
+  const cradleBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.55, 1.95, 0.56, 8),
+    obsidianBaseMat
+  );
+  cradleBase.position.set(0, 0.42, 0);
+  const cradleStem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.24, 0.38, 0.65, 8),
+    brassMat
+  );
+  cradleStem.position.set(0, 0.85, 0);
+  const meridianCradle = new THREE.Mesh(
+    new THREE.TorusGeometry(4.48, 0.11, 8, 32, Math.PI),
+    brassMat
+  );
+  meridianCradle.position.set(0, 5.2, 0);
+  meridianCradle.rotation.z = Math.PI;
+  g.add(cradleBase, cradleStem, meridianCradle);
 
   const outer = new THREE.Mesh(new THREE.TorusGeometry(4.2, 0.24, 12, 40), brassMat);
   outer.position.set(0, 5.2, 0);
+
+  // Brass Celestial Degree-Ring Accents & Cardinal Star-Compass Finials
+  const filigreeRing = new THREE.Mesh(new THREE.TorusGeometry(3.72, 0.045, 8, 40), starMat);
+  outer.add(filigreeRing);
+  for (let d = 0; d < 12; d++) {
+    const ang = (d / 12) * Math.PI * 2;
+    const isCardinal = d % 3 === 0;
+    const tick = new THREE.Mesh(
+      isCardinal
+        ? new THREE.ConeGeometry(0.16, 0.46, 4)
+        : new THREE.BoxGeometry(0.09, 0.3, 0.14),
+      isCardinal ? starMat : brassMat
+    );
+    const rad = isCardinal ? 4.52 : 3.94;
+    tick.position.set(Math.cos(ang) * rad, Math.sin(ang) * rad, 0);
+    tick.rotation.z = ang - Math.PI / 2;
+    outer.add(tick);
+  }
+
   const mid = new THREE.Mesh(new THREE.TorusGeometry(3.15, 0.2, 12, 36), brassMat);
   mid.position.set(0, 5.2, 0);
   const inner = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.18, 10, 32), starMat);
@@ -1207,6 +1449,51 @@ function populateIPortalRingMesh(g, enc, slot) {
   slot.portalMeta = { ...rawPm, startReal, quarterTurns };
 
   const centerY = 5.2;
+  const obsidianMat = new THREE.MeshStandardMaterial({
+    color: 0x13243b,
+    emissive: 0x091628,
+    emissiveIntensity: 0.42,
+    roughness: 0.36,
+    metalness: 0.48,
+  });
+  const runeGlowMat = new THREE.MeshStandardMaterial({
+    color: 0x45f0df,
+    emissive: 0x2ec4b6,
+    emissiveIntensity: 0.95,
+    roughness: 0.18,
+  });
+  const runeGoldMat = new THREE.MeshStandardMaterial({
+    color: 0xffd166,
+    emissive: 0xf4a62a,
+    emissiveIntensity: 0.95,
+    roughness: 0.18,
+  });
+
+  // Sculpted Obsidian Outer Portal Ring & Carved Portal Frame Runes
+  const obsidianRing = new THREE.Mesh(
+    new THREE.TorusGeometry(4.44, 0.24, 8, 36),
+    obsidianMat
+  );
+  obsidianRing.position.set(0, centerY, -0.06);
+  g.add(obsidianRing);
+
+  for (const bx of [-2.85, 2.85]) {
+    const buttress = new THREE.Mesh(new THREE.BoxGeometry(0.76, 1.9, 0.88), obsidianMat);
+    buttress.position.set(bx, 1.05, -0.06);
+    buttress.rotation.z = bx < 0 ? -0.34 : 0.34;
+    g.add(buttress);
+  }
+
+  for (let rIdx = 0; rIdx < 8; rIdx++) {
+    const rAng = (rIdx / 8) * Math.PI * 2 + Math.PI / 8;
+    const runeGem = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 0),
+      rIdx % 2 === 0 ? runeGlowMat : runeGoldMat
+    );
+    runeGem.position.set(Math.cos(rAng) * 4.46, centerY + Math.sin(rAng) * 4.46, 0.14);
+    g.add(runeGem);
+  }
+
   const ringMat = new THREE.MeshStandardMaterial({
     color: 0x66e3ff,
     emissive: 0x3bf0c5,
@@ -1214,7 +1501,9 @@ function populateIPortalRingMesh(g, enc, slot) {
   });
   const mainRing = new THREE.Mesh(new THREE.TorusGeometry(4.0, 0.2, 12, 44), ringMat);
   mainRing.position.set(0, centerY, 0);
-  g.add(mainRing);
+  const centerHub = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.06, 8, 20), runeGoldMat);
+  centerHub.position.set(0, centerY, 0.18);
+  g.add(mainRing, centerHub);
 
   // 4 Cardinal beacons (+1, +i, -1, -i)
   const cardColors = [0xffd166, 0x45f0df, 0xff9b71, 0x7ee081];
@@ -1313,6 +1602,7 @@ export function applyEncounterCommitFX(world, slot, commitResult = {}, encOverri
 
   if (isClear) {
     slot.cleared = true;
+    slot.templeFrame?.setAwakened(true, Boolean(safeCommit.overdrive));
     if (slot.dialedCurveMesh) slot.dialedCurveMesh.visible = false;
     if (slot.caliperMesh) slot.caliperMesh.visible = false;
 
@@ -1498,6 +1788,17 @@ export function applyEncounterCommitFX(world, slot, commitResult = {}, encOverri
 export function updateEncounterAnimations(world, dt, elapsed) {
   if (!world || !world.gateSlots || !Number.isFinite(dt) || !Number.isFinite(elapsed)) return;
   for (const slot of world.gateSlots) {
+    if (slot.templeFrame) {
+      stepTempleSanctuaryFrame(slot.templeFrame, dt, elapsed);
+    }
+    if (slot.nexusPrism) {
+      slot.nexusPrism.rotation.y += dt * 1.8;
+    }
+    if (slot.finialGems) {
+      for (const fg of slot.finialGems) {
+        fg.rotation.y += dt * 1.5;
+      }
+    }
     if (slot.ssaHingeGroup && !slot.trussLocked) {
       slot.ssaHingeGroup.rotation.z = Math.sin(elapsed * 3.8) * 0.42;
     }

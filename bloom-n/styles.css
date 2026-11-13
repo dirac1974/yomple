@@ -597,7 +597,7 @@ button:active {
 
 .surge-banner {
   position: absolute;
-  top: 64px;
+  top: 96px;
   left: 50%;
   transform: translateX(-50%);
   padding: 7px 18px;
@@ -621,7 +621,7 @@ button:active {
 
 .hud-toast {
   position: absolute;
-  top: 68px;
+  top: 100px;
   left: 50%;
   transform: translateX(-50%);
   padding: 10px 20px;
@@ -1232,5 +1232,378 @@ button:active {
   #screen-frostwake.dock-open .drive-cluster,
   #screen-oddroot.dock-open .drive-cluster {
     display: none;
+  }
+}
+
+/* ==================== V3: NEXT WONDER SPOTLIGHT, VICTORY CELEBRATION & SLIPSTREAM BOOST ==================== */
+.hero-card {
+  border: 1px solid rgba(92, 225, 230, 0.28);
+  box-shadow: 0 20px 44px rgba(3, 10, 22, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.world-tile {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.world-tile:hover {
+  transform: translateY(-2px);
+  border-color: rgba(92, 225, 230, 0.42);
+}
+
+.world-tile.locked {
+  opacity: 0.68;
+  background: linear-gradient(155deg, rgba(14, 30, 48, 0.78), rgba(18, 36, 54, 0.62));
+  border-style: dashed;
+}
+
+.world-whisper {
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  margin-top: 2px;
+  line-height: 1.28;
+}
+
+.encounter-dock {
+  border: 1px solid rgba(92, 225, 230, 0.34);
+  box-shadow: 0 20px 48px rgba(2, 8, 18, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Portal Next Discovery Spotlight Card */
+.next-wonder-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+  padding: 15px 18px;
+  margin-bottom: 18px;
+  border-radius: 22px;
+  background: radial-gradient(circle at 10% 50%, hsla(41, 96%, 62%, 0.2), transparent 46%),
+    linear-gradient(135deg, rgba(13, 38, 62, 0.94), rgba(14, 54, 58, 0.92));
+  border: 1px solid hsla(41, 95%, 64%, 0.46);
+  box-shadow: 0 14px 32px rgba(4, 12, 24, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.next-wonder-card:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.wonder-orb-icon {
+  flex: 0 0 54px;
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  font-size: 1.75rem;
+  background: radial-gradient(circle at 32% 28%, hsla(45, 100%, 76%, 0.34), hsla(174, 80%, 38%, 0.28));
+  border: 1px solid hsla(43, 98%, 68%, 0.55);
+  box-shadow: 0 0 22px hsla(41, 95%, 62%, 0.28);
+}
+
+.wonder-copy-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wonder-kicker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wonder-kicker {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+}
+
+.wonder-cta-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: hsla(172, 78%, 52%, 0.2);
+  color: var(--turquoise);
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.wonder-headline {
+  font-size: 1.02rem;
+  font-weight: 900;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.wonder-hint {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.wonder-progress-track {
+  width: 100%;
+  height: 6px;
+  margin-top: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.wonder-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--amber), var(--turquoise));
+  transition: width 0.3s ease;
+}
+
+/* Compact In-World HUD Wonder Chip */
+.hud-wonder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  padding: 7px 12px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, rgba(14, 38, 60, 0.88), rgba(34, 42, 22, 0.84));
+  border: 1px solid hsla(42, 96%, 64%, 0.45);
+  color: hsl(46, 98%, 88%);
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.wonder-chip-icon {
+  font-size: 0.92rem;
+}
+
+/* Live Cosmetic & Speed Boost HUD Energy Pill (Zero Numeric Timer!) */
+.slipstream-boost-pill {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, rgba(12, 48, 66, 0.94), rgba(18, 72, 78, 0.92));
+  border: 1px solid hsla(174, 88%, 62%, 0.72);
+  color: hsl(176, 95%, 92%);
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: 0 0 22px hsla(174, 86%, 54%, 0.42);
+}
+
+.slipstream-boost-pill.active {
+  display: inline-flex;
+  animation: boostPillPulse 0.9s ease-in-out infinite alternate;
+}
+
+.slipstream-boost-pill.overdrive {
+  background: linear-gradient(135deg, rgba(64, 44, 10, 0.94), rgba(18, 68, 72, 0.92));
+  border-color: hsla(43, 100%, 68%, 0.88);
+  color: hsl(46, 100%, 92%);
+  box-shadow: 0 0 26px hsla(42, 98%, 60%, 0.52);
+}
+
+.boost-pill-bar {
+  width: 54px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.boost-pill-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--amber), var(--turquoise), #ffffff);
+  transition: width 0.08s linear;
+}
+
+/* Shard Pill Impact Pop */
+.shard-hud-pill {
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.shard-hud-pill.shard-pop {
+  transform: scale(1.22);
+  background: linear-gradient(135deg, hsla(43, 98%, 58%, 0.95), hsla(172, 84%, 48%, 0.92));
+  color: hsl(208, 64%, 9%);
+  box-shadow: 0 0 24px hsla(43, 100%, 65%, 0.78);
+}
+
+/* Non-Blocking Victory Celebration & Screen-Edge Slipstream FX */
+.victory-celebration-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 13;
+}
+
+.slipstream-screen-fx {
+  --boost-alpha: 0.65;
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+  background: radial-gradient(
+      ellipse at center,
+      transparent 54%,
+      hsla(174, 88%, 56%, 0.16) 82%,
+      hsla(42, 98%, 62%, 0.24) 100%
+    ),
+    repeating-conic-gradient(
+      from 0deg at 50% 52%,
+      transparent 0deg 8deg,
+      hsla(178, 92%, 72%, 0.05) 8deg 9.5deg,
+      transparent 9.5deg 18deg
+    );
+}
+
+.slipstream-screen-fx.active {
+  opacity: var(--boost-alpha, 0.65);
+}
+
+.slipstream-screen-fx.overdrive {
+  background: radial-gradient(
+      ellipse at center,
+      transparent 50%,
+      hsla(42, 98%, 62%, 0.2) 80%,
+      hsla(172, 90%, 58%, 0.3) 100%
+    ),
+    repeating-conic-gradient(
+      from 4deg at 50% 52%,
+      transparent 0deg 7deg,
+      hsla(44, 100%, 76%, 0.07) 7deg 8.8deg,
+      transparent 8.8deg 16deg
+    );
+}
+
+.victory-stamp-card {
+  position: absolute;
+  top: 148px;
+  left: 50%;
+  transform: translate3d(-50%, -18px, 0) scale(0.82);
+  opacity: 0;
+  pointer-events: none;
+  min-width: min(390px, 88vw);
+  max-width: 92vw;
+  padding: 13px 22px;
+  border-radius: 22px;
+  text-align: center;
+  background: linear-gradient(140deg, rgba(10, 34, 56, 0.95), rgba(14, 58, 62, 0.94));
+  border: 2px solid hsla(174, 88%, 64%, 0.85);
+  box-shadow: 0 18px 42px rgba(2, 10, 22, 0.62), 0 0 34px hsla(174, 88%, 56%, 0.45);
+  transition: transform 0.28s cubic-bezier(0.2, 1.25, 0.36, 1), opacity 0.22s ease;
+}
+
+.victory-stamp-card.show {
+  opacity: 1;
+  transform: translate3d(-50%, 0, 0) scale(1);
+}
+
+.victory-stamp-card.is-overdrive {
+  background: linear-gradient(140deg, rgba(48, 34, 8, 0.96), rgba(14, 58, 62, 0.95));
+  border-color: hsla(43, 100%, 68%, 0.95);
+  box-shadow: 0 18px 44px rgba(2, 10, 22, 0.65), 0 0 42px hsla(42, 100%, 62%, 0.62);
+}
+
+.victory-stamp-kicker {
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  color: var(--amber);
+  margin-bottom: 3px;
+}
+
+.victory-stamp-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.victory-stamp-cue {
+  font-size: clamp(1.05rem, 2.5vw, 1.28rem);
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.victory-stamp-shards {
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--amber), hsl(36, 96%, 54%));
+  color: hsl(210, 65%, 9%);
+  font-size: 1.02rem;
+  font-weight: 900;
+  box-shadow: 0 0 16px hsla(42, 98%, 62%, 0.55);
+}
+
+.victory-stamp-boost {
+  margin-top: 5px;
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: var(--turquoise);
+}
+
+.flying-gems-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.flying-shard-gem {
+  position: absolute;
+  pointer-events: none;
+  font-size: 1.32rem;
+  font-weight: 900;
+  color: var(--amber);
+  filter: drop-shadow(0 0 10px hsla(43, 100%, 66%, 0.85));
+  will-change: transform, opacity;
+}
+
+@keyframes boostPillPulse {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.04);
+  }
+}
+
+@media (max-width: 720px) {
+  .hud-wonder-chip {
+    display: none;
+  }
+  .victory-stamp-card {
+    top: 104px;
+    padding: 10px 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slipstream-boost-pill.active,
+  .victory-stamp-card,
+  .shard-hud-pill {
+    animation: none !important;
+    transition: none !important;
   }
 }

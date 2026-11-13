@@ -4212,3 +4212,159 @@ export function mergeProgress(a, b) {
     nodes: mergedNodes,
   };
 }
+
+/**
+ * Computes the single most tantalizing upcoming discovery, upgrade, creature, or guardian awakening
+ * so kids always feel an exciting mystery just 1–2 temples ahead (100% free of school or shame labels).
+ */
+export function computeNextWonderTeaser(progress, session = null, realmId = "frostwake") {
+  const p = progress || createInitialProgress("auto");
+  const shards = Number(p.fluxShards) || 0;
+  const myst = new Set(p.discoveredMysteries || []);
+  const ownedFw = new Set(p.ownedUpgrades || []);
+  const ownedOr = new Set([
+    ...(p.games?.oddroot?.sanctuaryUpgrades || []),
+    ...(p.ownedUpgrades || []),
+  ]);
+  const isOddroot = realmId === "oddroot";
+
+  // 1. Overdrive streak on the brink of summoning the Sky-Whale
+  if ((session?.overdriveStreak || 0) === 2) {
+    return {
+      icon: "🐋",
+      kicker: "SKY WONDER STIRRING",
+      headline: "1 more 1-Shot Overdrive summons the Giant Sky-Whale!",
+      hint: "Dial the exact balance in one move to breach the aurora clouds",
+      ratio: 0.68,
+      action: "play",
+    };
+  }
+
+  // 2. Prologue Awakening Glacier
+  if (!p.calibrated || p.activeWorld === "W0") {
+    const done = Math.min(6, Number(p.calibrationStep) || 0);
+    const left = Math.max(1, 6 - done);
+    return {
+      icon: "🧭",
+      kicker: "SECRET FRONTIER TUNING",
+      headline: `${left} more Aurora Beacon${left === 1 ? "" : "s"} to reveal your Starting Rank!`,
+      hint: "Watch the Northern Horizon Gate light up with every beacon",
+      ratio: Math.max(0.15, Math.min(0.95, done / 6)),
+      action: "play",
+    };
+  }
+
+  // 3. Guardian on the verge of awakening a brand-new Rank
+  const wp = computeWorldProgress(p, p.activeWorld);
+  const nextWorldObj = wp.nextWorldId
+    ? WORLDS.find((w) => w.id === wp.nextWorldId)
+    : null;
+  const nodesRemaining = Math.max(0, (wp.beaconsNeededForUnlock || 2) - (wp.beaconsLit || 0));
+  if (!wp.guardianAwakened && nextWorldObj && nodesRemaining === 1) {
+    return {
+      icon: "👑",
+      kicker: "GUARDIAN ALMOST AWAKE",
+      headline: `1 more solid temple awakens ${wp.guardianName} → ${nextWorldObj.name}!`,
+      hint: `Opens ${nextWorldObj.rankLabel}: ${nextWorldObj.realmSubtitle}`,
+      ratio: 0.86,
+      action: "worlds",
+    };
+  }
+
+  // 4. Ready-to-forge or nearly affordable Workshop / Garage upgrade
+  const catalog = isOddroot ? ODDROOT_UPGRADES : RIG_UPGRADES;
+  const ownedSet = isOddroot ? ownedOr : ownedFw;
+  const nextUpg = catalog.find((u) => !ownedSet.has(u.id));
+  if (nextUpg) {
+    if (shards >= nextUpg.cost) {
+      return {
+        icon: nextUpg.icon,
+        kicker: "NEW GEAR READY TO FORGE",
+        headline: `${nextUpg.name} is ready in the ${isOddroot ? "Workshop" : "Garage"}!`,
+        hint: nextUpg.shortDesc,
+        ratio: 1.0,
+        action: "garage",
+      };
+    }
+    const needed = nextUpg.cost - shards;
+    if (needed <= 20) {
+      return {
+        icon: nextUpg.icon,
+        kicker: "NEW GEAR ALMOST UNLOCKED",
+        headline: `Just ${needed}💎 away from ${nextUpg.name}!`,
+        hint: nextUpg.shortDesc,
+        ratio: Math.max(0.2, shards / nextUpg.cost),
+        action: "garage",
+      };
+    }
+  }
+
+  // 5. Undiscovered Realm Mysteries & Secret Spirit Creatures
+  if (!myst.has("subzero_abyss") && (p.unlockedWorlds || []).includes("W1")) {
+    const curDeep = Math.min(99, p.records?.deepestSubZero || 0);
+    return {
+      icon: "🐸",
+      kicker: "MYSTERY EGG STIRRING",
+      headline: "Dive past -99 in a Sub-Zero temple to hatch a Zero-G Creature!",
+      hint: "Rumor says it floats upside-down and bonks sky-chests",
+      ratio: Math.max(0.18, curDeep / 100),
+      action: "journal",
+    };
+  }
+
+  if (!myst.has("moon_center")) {
+    return {
+      icon: "🌙",
+      kicker: "SANCTUARY WHISPER",
+      headline: "Secret clue: pause quietly at the center Moonwell (0, 0)...",
+      hint: "Awakens the Silver Moon Lantern across both 3D realms",
+      ratio: 0.5,
+      action: "play",
+    };
+  }
+
+  if (!myst.has("rainbow_surfer")) {
+    return {
+      icon: "🌈",
+      kicker: "CANYON WONDER",
+      headline: "Clear a Holo-Ramp or Living Vine chasm to unlock Prismatic Plumes!",
+      hint: "Every 3rd temple also drops a Golden Shooting-Star Relic",
+      ratio: 0.55,
+      action: "play",
+    };
+  }
+
+  if (!myst.has("astrolabe_lock")) {
+    return {
+      icon: "🦌",
+      kicker: "STARLIGHT CONSTELLATION",
+      headline: "Align a Brass Sky-Astrolabe to summon the Eclipse Stag!",
+      hint: "Unlocks Golden Compass trim across your rigs & mounts",
+      ratio: 0.62,
+      action: "journal",
+    };
+  }
+
+  // 6. Ongoing Frontier & Shooting-Star Relic Teaser
+  const toRelic = 3 - ((p.totalSolved || 0) % 3);
+  if (!wp.guardianAwakened && nextWorldObj && nodesRemaining > 0) {
+    return {
+      icon: "🔮",
+      kicker: "NEXT HORIZON RANK",
+      headline: `${nodesRemaining} more temple${nodesRemaining === 1 ? "" : "s"} to unlock ${nextWorldObj.rankLabel} · ${nextWorldObj.name}!`,
+      hint: `${toRelic} clear${toRelic === 1 ? "" : "s"} until next Golden Shooting-Star Relic (+8💎)`,
+      ratio: Math.max(0.2, (wp.completionPct || 25) / 100),
+      action: "worlds",
+    };
+  }
+
+  return {
+    icon: "🌠",
+    kicker: "ASTRAL EXPEDITION",
+    headline: `${toRelic} temple${toRelic === 1 ? "" : "s"} until a Golden Shooting-Star Relic drops!`,
+    hint: "Chase your shimmering Personal-Best Ghost across the realm",
+    ratio: (3 - toRelic) / 3 || 0.34,
+    action: "play",
+  };
+}
+

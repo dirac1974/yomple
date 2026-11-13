@@ -360,4 +360,23 @@ export class OddrootAudio {
       this.tone(n, 0.3, "sine", 0.055, idx * 0.05);
     });
   }
+
+  playSlipstreamBoost(overdrive = false) {
+    if (this.muted) return;
+    // Airy starlight breeze whoosh + warm updraft swell + ascending celestial harp chimes
+    this.noiseBurst(overdrive ? 0.34 : 0.26, overdrive ? 1580 : 1280, 1.4, 0.04, 0);
+    this.tone(261.63, 0.28, "sine", 0.052, 0, overdrive ? 783.99 : 523.25);
+    const harpNotes = overdrive
+      ? [587.33, 739.99, 880.0, 1174.66, 1479.98, 1760.0]
+      : [523.25, 659.25, 783.99, 987.77, 1318.5];
+    harpNotes.forEach((n, idx) => {
+      this.tone(
+        n,
+        0.22,
+        idx % 2 === 0 ? "sine" : "triangle",
+        overdrive ? 0.068 : 0.054,
+        0.025 + idx * 0.038
+      );
+    });
+  }
 }
