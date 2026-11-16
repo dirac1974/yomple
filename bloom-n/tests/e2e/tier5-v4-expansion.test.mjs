@@ -379,12 +379,19 @@ describe("Tier 5 Section C — Expanded Biomes, Field Expeditions, 3-Way Cosmeti
         { timeoutMs: 4000, label: "All Portal custom character PNG portraits decoded" }
       );
 
-      // Verify Garage & Sanctuary Journal portraits also decode with naturalWidth > 0
+      // Verify scoped Garage (rig chips + visual game tabs + banner) & Sanctuary Journal portraits decode with naturalWidth > 0
       const modalPortraits = await page.eval(async () => {
         document.getElementById("portal-garage-btn")?.click();
-        await new Promise((r) => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 150));
         const garageImgs = [...document.querySelectorAll("#modal-garage .char-garage-avatar")];
-        const garageDecoded = garageImgs.length >= 6 && garageImgs.every((i) => i.complete && i.naturalWidth > 0);
+        const tabImgs = [...document.querySelectorAll("#modal-garage .char-tab-avatar")];
+        const bannerImgs = [...document.querySelectorAll("#modal-garage .char-banner-avatar")];
+        const allGarageImgs = [...garageImgs, ...tabImgs, ...bannerImgs];
+        const garageDecoded =
+          garageImgs.length === 2 &&
+          tabImgs.length === 3 &&
+          bannerImgs.length === 2 &&
+          allGarageImgs.every((i) => i.complete && i.naturalWidth > 0);
         document.getElementById("modal-garage")?.classList.remove("open");
 
         document.getElementById("portal-journal-btn")?.click();
@@ -395,12 +402,14 @@ describe("Tier 5 Section C — Expanded Biomes, Field Expeditions, 3-Way Cosmeti
 
         return {
           garageCount: garageImgs.length,
+          tabCount: tabImgs.length,
+          bannerCount: bannerImgs.length,
           garageDecoded,
           journalCount: journalImgs.length,
           journalDecoded,
         };
       });
-      assert.equal(modalPortraits.garageDecoded, true, "All Garage rig/mount custom portraits must load cleanly");
+      assert.equal(modalPortraits.garageDecoded, true, "All scoped Garage rig, tab & banner portraits must load cleanly");
       assert.equal(modalPortraits.journalDecoded, true, "All Sanctuary Journal creature portraits must load cleanly");
 
       // Launch all 3 realms and verify HUD character avatars + zero WebGL/console errors
@@ -425,6 +434,93 @@ describe("Tier 5 Section C — Expanded Biomes, Field Expeditions, 3-Way Cosmeti
       }
 
       page.assertZeroRuntimeErrors("T5-CHAR-01");
+    });
+  });
+
+  test("T5-GARAGE-01: Single-game scoped Garage/Workshop/Armory hides other games' upgrades in-world & switches cleanly via Hero Card buttons and visual tabs", async () => {
+    await pool.withPage({ initialUrl: "/bloom-n/" }, async (page) => {
+      // 1. Portal Hero Card contextual button opens straight to THAT game's gear only
+      const portalScoped = await page.eval(async () => {
+        document.querySelector('[data-open-realm-garage="oddroot"]')?.click();
+        await new Promise((r) => setTimeout(r, 80));
+        const oddrootState = {
+          tabsVisible: !document.getElementById("garage-realm-tabs")?.hidden,
+          fwHidden: Boolean(document.getElementById("garage-section-frostwake")?.hidden),
+          orHidden: Boolean(document.getElementById("garage-section-oddroot")?.hidden),
+          abHidden: Boolean(document.getElementById("garage-section-bastion")?.hidden),
+          fwCount: document.getElementById("garage-upgrades-grid")?.children.length || 0,
+          orCount: document.getElementById("garage-oddroot-upgrades-grid")?.children.length || 0,
+          abCount: document.getElementById("garage-bastion-upgrades-grid")?.children.length || 0,
+        };
+
+        document.querySelector('[data-garage-realm-tab="arc_bastion"]')?.click();
+        await new Promise((r) => setTimeout(r, 80));
+        const bastionState = {
+          fwHidden: Boolean(document.getElementById("garage-section-frostwake")?.hidden),
+          orHidden: Boolean(document.getElementById("garage-section-oddroot")?.hidden),
+          abHidden: Boolean(document.getElementById("garage-section-bastion")?.hidden),
+          fwCount: document.getElementById("garage-upgrades-grid")?.children.length || 0,
+          orCount: document.getElementById("garage-oddroot-upgrades-grid")?.children.length || 0,
+          abCount: document.getElementById("garage-bastion-upgrades-grid")?.children.length || 0,
+        };
+        document.getElementById("garage-close-btn")?.click();
+        return { oddrootState, bastionState };
+      });
+
+      assert.equal(portalScoped.oddrootState.tabsVisible, true, "Portal Garage shows visual game tabs");
+      assert.equal(portalScoped.oddrootState.orHidden, false, "Oddroot section visible when Mount Upgrades tapped");
+      assert.equal(portalScoped.oddrootState.fwHidden, true, "Frostwake section hidden when Mount Upgrades tapped");
+      assert.equal(portalScoped.oddrootState.abHidden, true, "Bastion section hidden when Mount Upgrades tapped");
+      assert.equal(portalScoped.oddrootState.fwCount, 0, "Zero Frostwake upgrade cards rendered in Oddroot view");
+      assert.equal(portalScoped.oddrootState.abCount, 0, "Zero Bastion upgrade cards rendered in Oddroot view");
+      assert.ok(portalScoped.oddrootState.orCount >= 4, "Oddroot upgrades rendered");
+
+      assert.equal(portalScoped.bastionState.abHidden, false, "Bastion section visible after clicking Ballista & Skiff tab");
+      assert.equal(portalScoped.bastionState.fwCount, 0, "Zero Frostwake cards in Bastion view");
+      assert.equal(portalScoped.bastionState.orCount, 0, "Zero Oddroot cards in Bastion view");
+      assert.ok(portalScoped.bastionState.abCount >= 6, "Bastion upgrades rendered");
+
+      // 2. Inside each active 3D game, tabs are hidden and ONLY that active game's gear appears
+      const gameChecks = [
+        { realmId: "frostwake", btnId: "hud-garage-btn", activeGrid: "garage-upgrades-grid" },
+        { realmId: "oddroot", btnId: "oddroot-workshop-btn", activeGrid: "garage-oddroot-upgrades-grid" },
+        { realmId: "arc_bastion", btnId: "bastion-armory-btn", activeGrid: "garage-bastion-upgrades-grid" },
+      ];
+
+      for (const spec of gameChecks) {
+        await launchRealmFromPortal(page, spec.realmId);
+        const inWorldState = await page.eval(async ({ btnId }) => {
+          document.getElementById(btnId)?.click();
+          await new Promise((r) => setTimeout(r, 80));
+          const tabsEl = document.getElementById("garage-realm-tabs");
+          const counts = {
+            "garage-upgrades-grid": document.getElementById("garage-upgrades-grid")?.children.length || 0,
+            "garage-oddroot-upgrades-grid":
+              document.getElementById("garage-oddroot-upgrades-grid")?.children.length || 0,
+            "garage-bastion-upgrades-grid":
+              document.getElementById("garage-bastion-upgrades-grid")?.children.length || 0,
+          };
+          const tabsHidden = Boolean(tabsEl?.hidden) && (tabsEl?.children.length || 0) === 0;
+          document.getElementById("garage-close-btn")?.click();
+          return { tabsHidden, counts };
+        }, { btnId: spec.btnId });
+
+        assert.equal(
+          inWorldState.tabsHidden,
+          true,
+          `Cross-game tabs must be completely hidden inside active ${spec.realmId}`
+        );
+        for (const [gridId, count] of Object.entries(inWorldState.counts)) {
+          if (gridId === spec.activeGrid) {
+            assert.ok(count >= 4, `${spec.realmId} must show its own upgrades (${gridId})`);
+          } else {
+            assert.equal(count, 0, `${spec.realmId} must NOT show cross-game upgrades from ${gridId}`);
+          }
+        }
+        await exitRealmToPortal(page);
+      }
+
+      page.assertZeroRuntimeErrors("T5-GARAGE-01");
     });
   });
 });

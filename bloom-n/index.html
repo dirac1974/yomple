@@ -364,25 +364,43 @@
     </div>
   </div>
 
-  <!-- ==================== MODAL: 3D RIG GARAGE, WORKSHOP & SIEGESMITH ARMORY ==================== -->
+  <!-- ==================== MODAL: SCOPED SINGLE-GAME GARAGE / WORKSHOP / ARMORY ==================== -->
   <div id="modal-garage" class="modal-backdrop">
     <div class="modal-sheet">
       <div class="modal-top">
-        <h2 id="garage-modal-title">🛠️ Terra-Rig Garage, Sanctuary Workshop &amp; Armory</h2>
+        <h2 id="garage-modal-title">🛠️ Snow Rig Garage</h2>
         <button type="button" class="close-btn" data-close="modal-garage">Close</button>
       </div>
-      <p style="margin:0 0 10px;color:var(--ink-soft);font-size:0.88rem;font-weight:700">
-        Switch rigs &amp; mounts anytime — upgrades transform live 3D terrain &amp; opposition! Available: <strong style="color:var(--amber)">💎 <span id="garage-shards">30</span></strong>
-      </p>
-      <div id="garage-chassis-row" class="rig-quick-row" style="margin-bottom:10px"></div>
-      <div id="garage-mounts-row" class="rig-quick-row" style="margin-bottom:10px"></div>
-      <div id="garage-bastion-rigs-row" class="rig-quick-row" style="margin-bottom:14px"></div>
-      <div class="garage-subhead">❄️ Frostwake Rig Upgrades</div>
-      <div id="garage-upgrades-grid" class="upgrade-list"></div>
-      <div class="garage-subhead" style="margin-top:14px">🌿 Oddroot Sanctuary Upgrades</div>
-      <div id="garage-oddroot-upgrades-grid" class="upgrade-list"></div>
-      <div class="garage-subhead" style="margin-top:14px">🛡️ Arc Bastion Siegesmith Upgrades</div>
-      <div id="garage-bastion-upgrades-grid" class="upgrade-list"></div>
+      <div id="garage-realm-tabs" class="garage-realm-tabs" role="tablist" aria-label="Choose game gear"></div>
+      <div id="garage-context-banner" class="garage-context-banner">
+        <div id="garage-context-art" class="garage-context-art" aria-hidden="true"></div>
+        <div class="garage-context-copy">
+          <div id="garage-context-subtitle" class="garage-context-subtitle">Switch snow rigs or install thermal plow &amp; booster gear.</div>
+          <div class="garage-shards-line">Available Shards: <strong style="color:var(--amber)">💎 <span id="garage-shards">30</span></strong></div>
+        </div>
+      </div>
+
+      <div id="garage-section-frostwake" class="garage-realm-section">
+        <div class="garage-subhead">🚜 Choose Your Snow Rig</div>
+        <div id="garage-chassis-row" class="rig-quick-row" style="margin-bottom:12px"></div>
+        <div class="garage-subhead">❄️ Snow Plow &amp; Hover-Sled Upgrades</div>
+        <div id="garage-upgrades-grid" class="upgrade-list"></div>
+      </div>
+
+      <div id="garage-section-oddroot" class="garage-realm-section" hidden>
+        <div class="garage-subhead">🦋 Choose Your Sanctuary Mount</div>
+        <div id="garage-mounts-row" class="rig-quick-row" style="margin-bottom:12px"></div>
+        <div class="garage-subhead">🌿 Glider, Boar &amp; Cauldron Upgrades</div>
+        <div id="garage-oddroot-upgrades-grid" class="upgrade-list"></div>
+      </div>
+
+      <div id="garage-section-bastion" class="garage-realm-section" hidden>
+        <div class="garage-subhead">🏹 Choose Your Siege Rover</div>
+        <div id="garage-bastion-rigs-row" class="rig-quick-row" style="margin-bottom:12px"></div>
+        <div class="garage-subhead">🛡️ Ballista, Skiff &amp; Citadel Upgrades</div>
+        <div id="garage-bastion-upgrades-grid" class="upgrade-list"></div>
+      </div>
+
       <div id="garage-borrow-box" class="borrow-banner-box"></div>
     </div>
   </div>

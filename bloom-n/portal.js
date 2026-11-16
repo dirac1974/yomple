@@ -60,7 +60,7 @@ import { CHARACTER_PORTRAIT_PATHS } from "./core/character-graphics-3d.js";
 function charImgHtml(key, cls = "char-chip-avatar") {
   const src = CHARACTER_PORTRAIT_PATHS[key];
   if (!src) return "";
-  return `<img class="${cls}" src="${src}" alt="" loading="lazy" />`;
+  return `<img class="${cls}" src="${src}" alt="" />`;
 }
 
 const store = loadStore();
@@ -146,12 +146,59 @@ function syncSurgeBanners() {
   }
 }
 
+let selectedGarageRealm = "frostwake";
+
+const GARAGE_REALM_META = Object.freeze({
+  frostwake: {
+    id: "frostwake",
+    modalTitle: "🛠️ Snow Rig Garage",
+    tabLabel: "Snow Rigs & Plows",
+    tabHint: "6×6 Dozer & Hover-Sled",
+    shortKicker: "SNOW RIGS",
+    openCtaLabel: "Open Snow Garage →",
+    bannerSubtitle:
+      "For your 6×6 Snow Dozer & Aurora Sled — melt permafrost drifts, boost chasm jumps & grapple spires!",
+    borrowLabel: "Snow Rig Loadout",
+    portraits: ["terra_dozer", "aurora_sled"],
+    themeClass: "is-frostwake",
+    sectionId: "garage-section-frostwake",
+  },
+  oddroot: {
+    id: "oddroot",
+    modalTitle: "🌿 Sanctuary Mount Workshop",
+    tabLabel: "Glider & Boar",
+    tabHint: "Glide-Cape & Bramble-Boar",
+    shortKicker: "GLIDER & BOAR",
+    openCtaLabel: "Open Mount Workshop →",
+    bannerSubtitle:
+      "For your Starlight Glide-Cape & Bramble-Boar — charge thorns, widen your orb siphon & soar chasms!",
+    borrowLabel: "Glider & Boar Loadout",
+    portraits: ["starlight_glider", "bramble_boar"],
+    themeClass: "is-oddroot",
+    sectionId: "garage-section-oddroot",
+  },
+  arc_bastion: {
+    id: "arc_bastion",
+    modalTitle: "🛡️ Citadel Siege Armory",
+    tabLabel: "Ballista & Skiff",
+    tabHint: "6×6 Ballista & Rail-Skiff",
+    shortKicker: "BALLISTA & SKIFF",
+    openCtaLabel: "Open Siege Armory →",
+    bannerSubtitle:
+      "For your 6×6 Siege-Ballista & Hover-Skiff — cryo-mortars, sentinel turrets & crystal time-aura gear!",
+    borrowLabel: "Siege Rover Loadout",
+    portraits: ["iron_ballista", "prism_rail_skiff"],
+    themeClass: "is-bastion",
+    sectionId: "garage-section-bastion",
+  },
+});
+
 function handleWonderTeaserAction(teaser) {
   if (!teaser) return;
   getActiveAudio().playDetentClick?.(16);
   const prog = getActiveProgress(store);
   if (teaser.action === "garage") {
-    openGarageModal();
+    openGarageModal(teaser.targetRealm || null);
     return;
   }
   if (teaser.action === "journal") {
@@ -190,21 +237,31 @@ function renderPortalNextWonder(prog) {
       ? "oddroot"
       : "frostwake";
   const teaser = computeNextWonderTeaser(prog, session, preferredRealm);
+  teaser.targetRealm = preferredRealm;
+  const realmMeta = GARAGE_REALM_META[preferredRealm] || GARAGE_REALM_META.frostwake;
   const pct = Math.max(12, Math.min(100, Math.round((teaser.ratio || 0.35) * 100)));
   const ctaLabel =
     teaser.action === "garage"
-      ? "Open Workshop →"
+      ? realmMeta.openCtaLabel
       : teaser.action === "journal"
       ? "View Journal →"
       : teaser.action === "worlds"
       ? "Constellation →"
       : "Explore Now →";
+  const kickerText =
+    teaser.action === "garage"
+      ? `${realmMeta.shortKicker} · ${teaser.kicker}`
+      : teaser.kicker;
+  const orbIconHtml =
+    teaser.action === "garage"
+      ? charImgHtml(realmMeta.portraits[0], "char-tab-avatar") || (teaser.icon || "🔮")
+      : teaser.icon || "🔮";
 
   card.innerHTML = `
-    <div class="wonder-orb-icon" aria-hidden="true">${teaser.icon || "🔮"}</div>
+    <div class="wonder-orb-icon" aria-hidden="true">${orbIconHtml}</div>
     <div class="wonder-copy-col">
       <div class="wonder-kicker-row">
-        <span class="wonder-kicker">${teaser.kicker}</span>
+        <span class="wonder-kicker">${kickerText}</span>
         <span class="wonder-cta-chip">${ctaLabel}</span>
       </div>
       <strong class="wonder-headline">${teaser.headline}</strong>
@@ -219,6 +276,7 @@ function renderHudWonderChip(elId, prog, realmId) {
   const chip = $(elId);
   if (!chip) return;
   const teaser = computeNextWonderTeaser(prog, session, realmId);
+  teaser.targetRealm = realmId;
   const compactText =
     teaser.headline.length > 44 ? `${teaser.headline.slice(0, 42).trim()}…` : teaser.headline;
   chip.innerHTML = `<span class="wonder-chip-icon">${teaser.icon || "🔮"}</span><span>${compactText}</span>`;
@@ -620,7 +678,7 @@ function renderPortal() {
 
   updateAllShardAndZoneDisplays();
 
-  // Frostwake Rig Quick Picker
+  // Frostwake Rig Quick Picker + Contextual Snow Upgrades Button
   const rigRow = $("portal-rig-picker");
   rigRow.innerHTML = "";
   for (const ch of RIG_CHASSIS) {
@@ -641,8 +699,21 @@ function renderPortal() {
     };
     rigRow.appendChild(btn);
   }
+  {
+    const fwOwned = RIG_UPGRADES.filter((u) => (prog.ownedUpgrades || []).includes(u.id)).length;
+    const upgBtn = document.createElement("button");
+    upgBtn.type = "button";
+    upgBtn.className = "rig-chip hero-upg-btn";
+    upgBtn.dataset.openRealmGarage = "frostwake";
+    upgBtn.textContent = `🛠️ Snow Upgrades (${fwOwned}/${RIG_UPGRADES.length})`;
+    upgBtn.onclick = () => {
+      frostwakeAudio.playDetentClick?.(14);
+      openGarageModal("frostwake");
+    };
+    rigRow.appendChild(upgBtn);
+  }
 
-  // Oddroot Mount Quick Picker
+  // Oddroot Mount Quick Picker + Contextual Sanctuary Upgrades Button
   const mountRow = $("portal-mount-picker");
   if (mountRow) {
     mountRow.innerHTML = "";
@@ -666,9 +737,24 @@ function renderPortal() {
       };
       mountRow.appendChild(btn);
     }
+    const orOwnedSet = new Set([
+      ...(prog.ownedUpgrades || []),
+      ...(prog.games?.oddroot?.sanctuaryUpgrades || []),
+    ]);
+    const orOwned = ODDROOT_UPGRADES.filter((u) => orOwnedSet.has(u.id)).length;
+    const upgBtn = document.createElement("button");
+    upgBtn.type = "button";
+    upgBtn.className = "rig-chip hero-upg-btn";
+    upgBtn.dataset.openRealmGarage = "oddroot";
+    upgBtn.textContent = `🛠️ Mount Upgrades (${orOwned}/${ODDROOT_UPGRADES.length})`;
+    upgBtn.onclick = () => {
+      oddrootAudio.playDetentClick?.(14);
+      openGarageModal("oddroot");
+    };
+    mountRow.appendChild(upgBtn);
   }
 
-  // Arc Bastion Siege-Rover Quick Picker
+  // Arc Bastion Siege-Rover Quick Picker + Contextual Siege Upgrades Button
   const bastionRow = $("portal-bastion-picker");
   if (bastionRow) {
     bastionRow.innerHTML = "";
@@ -692,6 +778,21 @@ function renderPortal() {
       };
       bastionRow.appendChild(btn);
     }
+    const abOwnedSet = new Set([
+      ...(prog.ownedUpgrades || []),
+      ...(prog.games?.arc_bastion?.bastionUpgrades || []),
+    ]);
+    const abOwned = BASTION_UPGRADES.filter((u) => abOwnedSet.has(u.id)).length;
+    const upgBtn = document.createElement("button");
+    upgBtn.type = "button";
+    upgBtn.className = "rig-chip hero-upg-btn";
+    upgBtn.dataset.openRealmGarage = "arc_bastion";
+    upgBtn.textContent = `🛠️ Siege Upgrades (${abOwned}/${BASTION_UPGRADES.length})`;
+    upgBtn.onclick = () => {
+      bastionAudio.playDetentClick?.(14);
+      openGarageModal("arc_bastion");
+    };
+    bastionRow.appendChild(upgBtn);
   }
 
   // Sister Sub-Games (Stardrift + Astrolabes, plus any non-hero realm cards)
@@ -1021,6 +1122,7 @@ function launchFrostwake(overrideWorldId = null) {
   }
 
   activeRealmId = "frostwake";
+  selectedGarageRealm = "frostwake";
   $("screen-portal").classList.remove("active");
   $("screen-oddroot").classList.remove("active");
   $("screen-bastion")?.classList.remove("active");
@@ -1060,7 +1162,7 @@ function launchFrostwake(overrideWorldId = null) {
       onApproachGate: (enc) => openEncounterDock(enc),
       onLeaveGate: () => closeEncounterDock(),
       onMysteryFound: handleMysteryFound,
-      onGaragePadEntered: () => openGarageModal(),
+      onGaragePadEntered: () => openGarageModal("frostwake"),
       onOppositionEvent: handleOppositionEvent,
       onSharedCoinGrabbed: handleSharedCoinGrabbed,
     });
@@ -1090,6 +1192,7 @@ function launchOddroot(overrideWorldId = null) {
   }
 
   activeRealmId = "oddroot";
+  selectedGarageRealm = "oddroot";
   $("screen-portal").classList.remove("active");
   $("screen-frostwake").classList.remove("active");
   $("screen-bastion")?.classList.remove("active");
@@ -1151,7 +1254,7 @@ function launchOddroot(overrideWorldId = null) {
           showToast(`🐾 Hatched in Sanctuary: ${hatchedSpec.icon || "✨"} ${hatchedSpec.name}!`, 3200);
         }
       },
-      onGaragePadEntered: () => openGarageModal(),
+      onGaragePadEntered: () => openGarageModal("oddroot"),
       onOppositionEvent: handleOppositionEvent,
       onSharedCoinGrabbed: handleSharedCoinGrabbed,
     });
@@ -1181,6 +1284,7 @@ function launchBastion(overrideWorldId = null) {
   }
 
   activeRealmId = "arc_bastion";
+  selectedGarageRealm = "arc_bastion";
   $("screen-portal").classList.remove("active");
   $("screen-frostwake").classList.remove("active");
   $("screen-oddroot").classList.remove("active");
@@ -1219,7 +1323,7 @@ function launchBastion(overrideWorldId = null) {
       onApproachGate: (enc) => openEncounterDock(enc),
       onLeaveGate: () => closeEncounterDock(),
       onMysteryFound: handleMysteryFound,
-      onGaragePadEntered: () => openGarageModal(),
+      onGaragePadEntered: () => openGarageModal("arc_bastion"),
       onOppositionEvent: handleOppositionEvent,
       onSharedCoinGrabbed: handleSharedCoinGrabbed,
     });
@@ -1673,219 +1777,289 @@ function applyLoadoutAcrossAllActiveWorlds(prog) {
   bastionWorld?.applyLoadout(prog, unlocks, activeBorrowedToy);
 }
 
-function openGarageModal() {
+function openGarageModal(requestedRealm = null) {
   const prog = getActiveProgress(store);
-  $("garage-shards").textContent = String(prog.fluxShards || 0);
+  const inLiveGame =
+    activeRealmId === "frostwake" ||
+    activeRealmId === "oddroot" ||
+    activeRealmId === "arc_bastion";
 
-  // Frostwake Chassis
+  if (inLiveGame) {
+    selectedGarageRealm = activeRealmId;
+  } else if (requestedRealm && GARAGE_REALM_META[requestedRealm]) {
+    selectedGarageRealm = requestedRealm;
+  }
+  const focusRealm = inLiveGame
+    ? activeRealmId
+    : GARAGE_REALM_META[selectedGarageRealm]
+    ? selectedGarageRealm
+    : "frostwake";
+  const meta = GARAGE_REALM_META[focusRealm];
+
+  if ($("garage-modal-title")) $("garage-modal-title").textContent = meta.modalTitle;
+  if ($("garage-shards")) $("garage-shards").textContent = String(prog.fluxShards || 0);
+
+  // Portal-only visual game switcher tabs (completely hidden inside any active game!)
+  const tabsBox = $("garage-realm-tabs");
+  if (tabsBox) {
+    tabsBox.innerHTML = "";
+    if (inLiveGame) {
+      tabsBox.hidden = true;
+    } else {
+      tabsBox.hidden = false;
+      for (const key of ["frostwake", "oddroot", "arc_bastion"]) {
+        const m = GARAGE_REALM_META[key];
+        const tabBtn = document.createElement("button");
+        tabBtn.type = "button";
+        tabBtn.setAttribute("role", "tab");
+        tabBtn.setAttribute("aria-selected", key === focusRealm ? "true" : "false");
+        tabBtn.dataset.garageRealmTab = key;
+        tabBtn.className = `garage-realm-tab ${m.themeClass}${key === focusRealm ? " active" : ""}`;
+        tabBtn.innerHTML = `
+          ${charImgHtml(m.portraits[0], "char-tab-avatar")}
+          <span class="garage-tab-text">
+            <strong>${m.tabLabel}</strong>
+            <span>${m.tabHint}</span>
+          </span>
+        `;
+        tabBtn.onclick = () => {
+          getActiveAudio().playDetentClick?.(14);
+          openGarageModal(key);
+        };
+        tabsBox.appendChild(tabBtn);
+      }
+    }
+  }
+
+  // Visual context banner with the active game's two hero vehicles/characters
+  const banner = $("garage-context-banner");
+  if (banner) {
+    banner.className = `garage-context-banner ${meta.themeClass}`;
+  }
+  const bannerArt = $("garage-context-art");
+  if (bannerArt) {
+    bannerArt.innerHTML = meta.portraits
+      .map((pKey) => charImgHtml(pKey, "char-banner-avatar"))
+      .join("");
+  }
+  if ($("garage-context-subtitle")) {
+    $("garage-context-subtitle").textContent = meta.bannerSubtitle;
+  }
+
+  // Show ONLY the focused game's section; clear and hide the other two so games never mix
+  for (const key of ["frostwake", "oddroot", "arc_bastion"]) {
+    const sec = $(GARAGE_REALM_META[key].sectionId);
+    if (sec) sec.hidden = key !== focusRealm;
+  }
+
   const chRow = $("garage-chassis-row");
-  chRow.innerHTML = "";
-  for (const ch of RIG_CHASSIS) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `rig-chip${prog.equippedChassis === ch.id ? " selected" : ""}`;
-    b.innerHTML = `${charImgHtml(ch.id, "char-garage-avatar")}<span>${ch.name} (${ch.tag})</span>`;
-    b.onclick = () => {
-      prog.equippedChassis = ch.id;
-      if (prog.games?.frostwake) prog.games.frostwake.equippedChassis = ch.id;
-      activeBorrowedToy = null;
-      getActiveAudio().playDetentClick?.(15);
-      saveStore(store);
-      frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
-      openGarageModal();
-      renderPortal();
-    };
-    chRow.appendChild(b);
-  }
-
-  // Oddroot Mounts
   const mRow = $("garage-mounts-row");
-  if (mRow) {
-    mRow.innerHTML = "";
-    const curMount = prog.games?.oddroot?.equippedMount || "bramble_boar";
-    for (const m of ODDROOT_MOUNTS) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = `rig-chip${curMount === m.id ? " selected" : ""}`;
-      b.innerHTML = `${charImgHtml(m.id, "char-garage-avatar")}<span>${m.name} (${m.tag})</span>`;
-      b.onclick = () => {
-        prog.games.oddroot.equippedMount = m.id;
-        activeBorrowedToy = null;
-        getActiveAudio().playDetentClick?.(15);
-        saveStore(store);
-        oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
-        openGarageModal();
-        renderPortal();
-      };
-      mRow.appendChild(b);
-    }
-  }
-
-  // Arc Bastion Siege-Rovers
   const abRow = $("garage-bastion-rigs-row");
-  if (abRow) {
-    abRow.innerHTML = "";
-    const curRig = prog.games?.arc_bastion?.equippedRig || "iron_ballista";
-    for (const r of BASTION_RIGS) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = `rig-chip${curRig === r.id ? " selected" : ""}`;
-      b.innerHTML = `${charImgHtml(r.id, "char-garage-avatar")}<span>${r.name} (${r.tag})</span>`;
-      b.onclick = () => {
-        prog.games = prog.games || {};
-        prog.games.arc_bastion = prog.games.arc_bastion || {};
-        prog.games.arc_bastion.equippedRig = r.id;
-        activeBorrowedToy = null;
-        getActiveAudio().playDetentClick?.(15);
-        saveStore(store);
-        bastionWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
-        openGarageModal();
-        renderPortal();
-      };
-      abRow.appendChild(b);
-    }
-  }
-
-  // Frostwake Upgrades
   const grid = $("garage-upgrades-grid");
-  grid.innerHTML = "";
-  for (const upg of RIG_UPGRADES) {
-    const owned = (prog.ownedUpgrades || []).includes(upg.id);
-    const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
-    const card = document.createElement("div");
-    card.className = `upg-card${owned ? " owned" : ""}`;
-    card.innerHTML = `
-      <div style="font-weight:900">${upg.icon} ${upg.name}</div>
-      <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
-    `;
-    const buyBtn = document.createElement("button");
-    buyBtn.type = "button";
-    buyBtn.className = "upg-buy-btn";
-    buyBtn.textContent = owned ? "✓ Installed on Rig" : `Install · 💎 ${upg.cost}`;
-    buyBtn.disabled = owned || !canBuy;
-    buyBtn.onclick = () => {
-      if ((prog.ownedUpgrades || []).includes(upg.id) || prog.fluxShards < upg.cost) return;
-      prog.fluxShards -= upg.cost;
-      prog.ownedUpgrades.push(upg.id);
-      getActiveAudio().playClear?.(true);
-      saveStore(store);
-      applyLoadoutAcrossAllActiveWorlds(prog);
-      openGarageModal();
-      renderPortal();
-    };
-    card.appendChild(buyBtn);
-    grid.appendChild(card);
-  }
-
-  // Oddroot Upgrades
   const orGrid = $("garage-oddroot-upgrades-grid");
-  if (orGrid) {
-    orGrid.innerHTML = "";
-    const ownedSet = new Set([
-      ...(prog.ownedUpgrades || []),
-      ...(prog.games?.oddroot?.sanctuaryUpgrades || []),
-    ]);
-    for (const upg of ODDROOT_UPGRADES) {
-      const owned = ownedSet.has(upg.id);
-      const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
-      const card = document.createElement("div");
-      card.className = `upg-card${owned ? " owned" : ""}`;
-      card.innerHTML = `
-        <div style="font-weight:900">${upg.icon} ${upg.name}</div>
-        <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
-      `;
-      const buyBtn = document.createElement("button");
-      buyBtn.type = "button";
-      buyBtn.className = "upg-buy-btn";
-      buyBtn.textContent = owned ? "✓ Active in Sanctuary" : `Install · 💎 ${upg.cost}`;
-      buyBtn.disabled = owned || !canBuy;
-      buyBtn.onclick = () => {
-        if (ownedSet.has(upg.id) || prog.fluxShards < upg.cost) return;
-        prog.fluxShards -= upg.cost;
-        prog.ownedUpgrades.push(upg.id);
-        prog.games.oddroot.sanctuaryUpgrades = prog.games.oddroot.sanctuaryUpgrades || [];
-        if (!prog.games.oddroot.sanctuaryUpgrades.includes(upg.id)) {
-          prog.games.oddroot.sanctuaryUpgrades.push(upg.id);
-        }
-        getActiveAudio().playClear?.(true);
-        saveStore(store);
-        applyLoadoutAcrossAllActiveWorlds(prog);
-        openGarageModal();
-        renderPortal();
-      };
-      card.appendChild(buyBtn);
-      orGrid.appendChild(card);
-    }
-  }
-
-  // Arc Bastion Siegesmith Upgrades
   const abGrid = $("garage-bastion-upgrades-grid");
-  if (abGrid) {
-    abGrid.innerHTML = "";
-    const abOwnedSet = new Set([
-      ...(prog.ownedUpgrades || []),
-      ...(prog.games?.arc_bastion?.bastionUpgrades || []),
-    ]);
-    for (const upg of BASTION_UPGRADES) {
-      const owned = abOwnedSet.has(upg.id);
-      const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
-      const card = document.createElement("div");
-      card.className = `upg-card${owned ? " owned" : ""}`;
-      card.innerHTML = `
-        <div style="font-weight:900">${upg.icon} ${upg.name}</div>
-        <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
-      `;
-      const buyBtn = document.createElement("button");
-      buyBtn.type = "button";
-      buyBtn.className = "upg-buy-btn";
-      buyBtn.textContent = owned ? "✓ Active on Citadel" : `Install · 💎 ${upg.cost}`;
-      buyBtn.disabled = owned || !canBuy;
-      buyBtn.onclick = () => {
-        if (abOwnedSet.has(upg.id) || prog.fluxShards < upg.cost) return;
-        prog.fluxShards -= upg.cost;
-        prog.ownedUpgrades.push(upg.id);
-        prog.games = prog.games || {};
-        prog.games.arc_bastion = prog.games.arc_bastion || {};
-        prog.games.arc_bastion.bastionUpgrades = prog.games.arc_bastion.bastionUpgrades || [];
-        if (!prog.games.arc_bastion.bastionUpgrades.includes(upg.id)) {
-          prog.games.arc_bastion.bastionUpgrades.push(upg.id);
-        }
-        getActiveAudio().playClear?.(true);
-        saveStore(store);
-        applyLoadoutAcrossAllActiveWorlds(prog);
-        openGarageModal();
-        renderPortal();
-      };
-      card.appendChild(buyBtn);
-      abGrid.appendChild(card);
+  if (chRow) chRow.innerHTML = "";
+  if (mRow) mRow.innerHTML = "";
+  if (abRow) abRow.innerHTML = "";
+  if (grid) grid.innerHTML = "";
+  if (orGrid) orGrid.innerHTML = "";
+  if (abGrid) abGrid.innerHTML = "";
+
+  if (focusRealm === "frostwake") {
+    if (chRow) {
+      for (const ch of RIG_CHASSIS) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = `rig-chip${prog.equippedChassis === ch.id ? " selected" : ""}`;
+        b.innerHTML = `${charImgHtml(ch.id, "char-garage-avatar")}<span>${ch.name} (${ch.tag})</span>`;
+        b.onclick = () => {
+          prog.equippedChassis = ch.id;
+          if (prog.games?.frostwake) prog.games.frostwake.equippedChassis = ch.id;
+          activeBorrowedToy = null;
+          getActiveAudio().playDetentClick?.(15);
+          saveStore(store);
+          frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+          openGarageModal("frostwake");
+          renderPortal();
+        };
+        chRow.appendChild(b);
+      }
+    }
+
+    if (grid) {
+      for (const upg of RIG_UPGRADES) {
+        const owned = (prog.ownedUpgrades || []).includes(upg.id);
+        const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
+        const card = document.createElement("div");
+        card.className = `upg-card${owned ? " owned" : ""}`;
+        card.innerHTML = `
+          <div style="font-weight:900">${upg.icon} ${upg.name}</div>
+          <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
+        `;
+        const buyBtn = document.createElement("button");
+        buyBtn.type = "button";
+        buyBtn.className = "upg-buy-btn";
+        buyBtn.textContent = owned ? "✓ Installed on Rig" : `Install · 💎 ${upg.cost}`;
+        buyBtn.disabled = owned || !canBuy;
+        buyBtn.onclick = () => {
+          if ((prog.ownedUpgrades || []).includes(upg.id) || prog.fluxShards < upg.cost) return;
+          prog.fluxShards -= upg.cost;
+          prog.ownedUpgrades.push(upg.id);
+          getActiveAudio().playClear?.(true);
+          saveStore(store);
+          applyLoadoutAcrossAllActiveWorlds(prog);
+          openGarageModal("frostwake");
+          renderPortal();
+        };
+        card.appendChild(buyBtn);
+        grid.appendChild(card);
+      }
+    }
+  } else if (focusRealm === "oddroot") {
+    if (mRow) {
+      const curMount = prog.games?.oddroot?.equippedMount || "bramble_boar";
+      for (const m of ODDROOT_MOUNTS) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = `rig-chip${curMount === m.id ? " selected" : ""}`;
+        b.innerHTML = `${charImgHtml(m.id, "char-garage-avatar")}<span>${m.name} (${m.tag})</span>`;
+        b.onclick = () => {
+          prog.games = prog.games || {};
+          prog.games.oddroot = prog.games.oddroot || {};
+          prog.games.oddroot.equippedMount = m.id;
+          activeBorrowedToy = null;
+          getActiveAudio().playDetentClick?.(15);
+          saveStore(store);
+          oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+          openGarageModal("oddroot");
+          renderPortal();
+        };
+        mRow.appendChild(b);
+      }
+    }
+
+    if (orGrid) {
+      const ownedSet = new Set([
+        ...(prog.ownedUpgrades || []),
+        ...(prog.games?.oddroot?.sanctuaryUpgrades || []),
+      ]);
+      for (const upg of ODDROOT_UPGRADES) {
+        const owned = ownedSet.has(upg.id);
+        const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
+        const card = document.createElement("div");
+        card.className = `upg-card${owned ? " owned" : ""}`;
+        card.innerHTML = `
+          <div style="font-weight:900">${upg.icon} ${upg.name}</div>
+          <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
+        `;
+        const buyBtn = document.createElement("button");
+        buyBtn.type = "button";
+        buyBtn.className = "upg-buy-btn";
+        buyBtn.textContent = owned ? "✓ Active in Sanctuary" : `Install · 💎 ${upg.cost}`;
+        buyBtn.disabled = owned || !canBuy;
+        buyBtn.onclick = () => {
+          if (ownedSet.has(upg.id) || prog.fluxShards < upg.cost) return;
+          prog.fluxShards -= upg.cost;
+          prog.ownedUpgrades.push(upg.id);
+          prog.games = prog.games || {};
+          prog.games.oddroot = prog.games.oddroot || {};
+          prog.games.oddroot.sanctuaryUpgrades = prog.games.oddroot.sanctuaryUpgrades || [];
+          if (!prog.games.oddroot.sanctuaryUpgrades.includes(upg.id)) {
+            prog.games.oddroot.sanctuaryUpgrades.push(upg.id);
+          }
+          getActiveAudio().playClear?.(true);
+          saveStore(store);
+          applyLoadoutAcrossAllActiveWorlds(prog);
+          openGarageModal("oddroot");
+          renderPortal();
+        };
+        card.appendChild(buyBtn);
+        orGrid.appendChild(card);
+      }
+    }
+  } else if (focusRealm === "arc_bastion") {
+    if (abRow) {
+      const curRig = prog.games?.arc_bastion?.equippedRig || "iron_ballista";
+      for (const r of BASTION_RIGS) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = `rig-chip${curRig === r.id ? " selected" : ""}`;
+        b.innerHTML = `${charImgHtml(r.id, "char-garage-avatar")}<span>${r.name} (${r.tag})</span>`;
+        b.onclick = () => {
+          prog.games = prog.games || {};
+          prog.games.arc_bastion = prog.games.arc_bastion || {};
+          prog.games.arc_bastion.equippedRig = r.id;
+          activeBorrowedToy = null;
+          getActiveAudio().playDetentClick?.(15);
+          saveStore(store);
+          bastionWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+          openGarageModal("arc_bastion");
+          renderPortal();
+        };
+        abRow.appendChild(b);
+      }
+    }
+
+    if (abGrid) {
+      const abOwnedSet = new Set([
+        ...(prog.ownedUpgrades || []),
+        ...(prog.games?.arc_bastion?.bastionUpgrades || []),
+      ]);
+      for (const upg of BASTION_UPGRADES) {
+        const owned = abOwnedSet.has(upg.id);
+        const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
+        const card = document.createElement("div");
+        card.className = `upg-card${owned ? " owned" : ""}`;
+        card.innerHTML = `
+          <div style="font-weight:900">${upg.icon} ${upg.name}</div>
+          <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
+        `;
+        const buyBtn = document.createElement("button");
+        buyBtn.type = "button";
+        buyBtn.className = "upg-buy-btn";
+        buyBtn.textContent = owned ? "✓ Active on Citadel" : `Install · 💎 ${upg.cost}`;
+        buyBtn.disabled = owned || !canBuy;
+        buyBtn.onclick = () => {
+          if (abOwnedSet.has(upg.id) || prog.fluxShards < upg.cost) return;
+          prog.fluxShards -= upg.cost;
+          prog.ownedUpgrades.push(upg.id);
+          prog.games = prog.games || {};
+          prog.games.arc_bastion = prog.games.arc_bastion || {};
+          prog.games.arc_bastion.bastionUpgrades = prog.games.arc_bastion.bastionUpgrades || [];
+          if (!prog.games.arc_bastion.bastionUpgrades.includes(upg.id)) {
+            prog.games.arc_bastion.bastionUpgrades.push(upg.id);
+          }
+          getActiveAudio().playClear?.(true);
+          saveStore(store);
+          applyLoadoutAcrossAllActiveWorlds(prog);
+          openGarageModal("arc_bastion");
+          renderPortal();
+        };
+        card.appendChild(buyBtn);
+        abGrid.appendChild(card);
+      }
     }
   }
 
-  // 1-Tap Sibling Toy Borrow (+5💎 Gift to Sibling!)
+  // 1-Tap Sibling Toy Borrow (+5💎 Gift to Sibling!) scoped to THIS game
   const borrowBox = $("garage-borrow-box");
   if (borrowBox) {
     borrowBox.innerHTML = "";
     const siblings = (store.profiles || []).filter((p) => p.username !== store.activeUsername);
-    const targetRealm =
-      activeRealmId === "arc_bastion"
-        ? "arc_bastion"
-        : activeRealmId === "oddroot"
-        ? "oddroot"
-        : "frostwake";
     for (const sib of siblings) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "borrow-cta-btn";
-      btn.textContent = `🤝 Borrow ${sib.avatar || "✨"} ${sib.name}'s Loadout (+5💎 Gift to ${sib.name})`;
+      btn.textContent = `🤝 Borrow ${sib.avatar || "✨"} ${sib.name}'s ${meta.borrowLabel} (+5💎 Gift to ${sib.name})`;
       btn.onclick = () => {
-        const res = borrowSiblingToy(store, store.activeUsername, sib.username, targetRealm);
+        const res = borrowSiblingToy(store, store.activeUsername, sib.username, focusRealm);
         if (res.ok) {
           activeBorrowedToy = res.borrowedToy;
           getActiveAudio().playClear?.(true);
           applyLoadoutAcrossAllActiveWorlds(prog);
           renderPortal();
-          showToast(`🤝 Borrowed ${sib.name}'s loadout! Sent +5💎 gift!`, 3000);
-          openGarageModal();
+          showToast(`🤝 Borrowed ${sib.name}'s ${meta.borrowLabel}! Sent +5💎 gift!`, 3000);
+          openGarageModal(focusRealm);
         }
       };
       borrowBox.appendChild(btn);
@@ -2194,9 +2368,9 @@ async function init() {
 
   $("portal-who-btn").onclick = () => openWhoModal();
   $("portal-garage-btn").onclick = () => openGarageModal();
-  $("hud-garage-btn").onclick = () => openGarageModal();
-  $("oddroot-workshop-btn").onclick = () => openGarageModal();
-  if ($("bastion-armory-btn")) $("bastion-armory-btn").onclick = () => openGarageModal();
+  $("hud-garage-btn").onclick = () => openGarageModal("frostwake");
+  $("oddroot-workshop-btn").onclick = () => openGarageModal("oddroot");
+  if ($("bastion-armory-btn")) $("bastion-armory-btn").onclick = () => openGarageModal("arc_bastion");
 
   $("portal-journal-btn").onclick = () => openJournalModal();
   $("oddroot-journal-btn").onclick = () => openJournalModal();

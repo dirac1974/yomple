@@ -1717,3 +1717,172 @@ button:active {
   }
 }
 
+/* ==================== SCOPED SINGLE-GAME GARAGE / WORKSHOP / ARMORY ==================== */
+.garage-realm-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.garage-realm-tabs[hidden],
+.garage-realm-section[hidden] {
+  display: none !important;
+}
+
+.garage-realm-tab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  color: var(--ink-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.14s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.garage-realm-tab:hover {
+  transform: translateY(-1px);
+  border-color: rgba(92, 225, 230, 0.45);
+  color: var(--ink);
+}
+
+.garage-realm-tab.active {
+  background: linear-gradient(135deg, rgba(59, 240, 228, 0.2), rgba(245, 179, 53, 0.16));
+  border-color: var(--amber);
+  color: var(--ink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.garage-realm-tab.is-oddroot.active {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.24), rgba(245, 179, 53, 0.15));
+  border-color: #5eead4;
+}
+
+.garage-realm-tab.is-bastion.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(245, 179, 53, 0.18));
+  border-color: #fbbf24;
+}
+
+.char-tab-avatar {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.55));
+}
+
+.garage-tab-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.18;
+}
+
+.garage-tab-text strong {
+  font-size: 0.82rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.garage-tab-text span {
+  font-size: 0.69rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.garage-context-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 13px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(16, 42, 67, 0.78), rgba(11, 27, 45, 0.86));
+  border: 1px solid rgba(92, 225, 230, 0.3);
+}
+
+.garage-context-banner.is-oddroot {
+  background: linear-gradient(135deg, rgba(12, 56, 46, 0.82), rgba(9, 32, 29, 0.88));
+  border-color: rgba(94, 234, 212, 0.36);
+}
+
+.garage-context-banner.is-bastion {
+  background: linear-gradient(135deg, rgba(23, 43, 92, 0.84), rgba(14, 25, 56, 0.9));
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.garage-context-art {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.char-banner-avatar {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.55));
+}
+
+.garage-context-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.garage-context-subtitle {
+  font-size: 0.83rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+
+.garage-shards-line {
+  font-size: 0.86rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.rig-chip.hero-upg-btn {
+  background: rgba(15, 35, 56, 0.82);
+  border: 1px dashed rgba(251, 191, 36, 0.65);
+  color: var(--amber);
+}
+
+.rig-chip.hero-upg-btn:hover {
+  background: rgba(245, 179, 53, 0.18);
+  border-style: solid;
+}
+
+@media (max-width: 680px) {
+  .garage-realm-tabs {
+    grid-template-columns: 1fr;
+  }
+}
+
+.modal-card {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 210, 230, 0.32) transparent;
+}
+
+.modal-card::-webkit-scrollbar {
+  width: 7px;
+}
+
+.modal-card::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-card::-webkit-scrollbar-thumb {
+  background: rgba(120, 210, 230, 0.28);
+  border-radius: 999px;
+}
+
+
+
