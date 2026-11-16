@@ -62,7 +62,8 @@ export function createSacredRuneSealTexture(size = 128, theme = "oddroot") {
   const data = new Uint8Array(n * n * 4);
   const half = (n - 1) * 0.5;
   const isOddroot = theme === "oddroot";
-  const cMain = isOddroot ? [94, 242, 200] : [69, 240, 223];
+  const isBastion = theme === "arc_bastion";
+  const cMain = isBastion ? [126, 232, 250] : isOddroot ? [94, 242, 200] : [69, 240, 223];
   const cGold = [255, 209, 102];
 
   for (let y = 0; y < n; y++) {
@@ -128,6 +129,7 @@ export function buildCelestialSkyDome({ theme = "oddroot", radius = 228 } = {}) 
   const pos = domeGeo.attributes.position;
   const cols = new Float32Array(pos.count * 3);
   const isOddroot = theme === "oddroot";
+  const isBastion = theme === "arc_bastion";
 
   for (let i = 0; i < pos.count; i++) {
     const py = pos.getY(i) / radius; // -1..1
@@ -139,7 +141,12 @@ export function buildCelestialSkyDome({ theme = "oddroot", radius = 228 } = {}) 
     let r;
     let g;
     let b;
-    if (isOddroot) {
+    if (isBastion) {
+      // Astral clockwork cobalt zenith -> warm brass-sunset & crystal cyan canyon horizon
+      r = 0.04 * t + 0.16 * (1 - t) + auroraBand * 0.13;
+      g = 0.08 * t + 0.22 * (1 - t) + auroraBand * 0.19;
+      b = 0.22 * t + 0.42 * (1 - t) + auroraBand * 0.22;
+    } else if (isOddroot) {
       // Deep emerald-indigo zenith -> luminous turquoise-gold twilight horizon
       r = 0.03 * t + 0.09 * (1 - t) + auroraBand * 0.08;
       g = 0.09 * t + 0.26 * (1 - t) + auroraBand * 0.22;
@@ -168,18 +175,18 @@ export function buildCelestialSkyDome({ theme = "oddroot", radius = 228 } = {}) 
 
   // Giant Luminous Sanctuary Moon + Soft Corona in the Northern Twilight Sky
   const moonGroup = new THREE.Group();
-  moonGroup.position.set(isOddroot ? 38 : -44, 74, -148);
+  moonGroup.position.set(isBastion ? -32 : isOddroot ? 38 : -44, 74, -148);
   const moonDisc = new THREE.Mesh(
     new THREE.SphereGeometry(9.5, 20, 16),
     new THREE.MeshBasicMaterial({
-      color: isOddroot ? 0xfff6d6 : 0xeef9ff,
+      color: isBastion ? 0xfff0c8 : isOddroot ? 0xfff6d6 : 0xeef9ff,
       depthWrite: false,
     })
   );
   const glowTex = createSoftGlowTexture(
     64,
-    isOddroot ? [255, 245, 200] : [210, 248, 255],
-    isOddroot ? [94, 242, 200] : [69, 240, 223]
+    isBastion ? [255, 236, 185] : isOddroot ? [255, 245, 200] : [210, 248, 255],
+    isBastion ? [90, 169, 255] : isOddroot ? [94, 242, 200] : [69, 240, 223]
   );
   const corona = new THREE.Mesh(
     new THREE.PlaneGeometry(46, 46),
@@ -252,22 +259,25 @@ export function buildTempleSanctuaryFrame({
   accentHex = null,
 } = {}) {
   const isOddroot = theme === "oddroot";
+  const isBastion = theme === "arc_bastion";
   const group = new THREE.Group();
   group.name = `TempleSanctuaryFrame_${theme}_${archetype}`;
 
   const baseAccent =
     accentHex ??
-    (archetype === "vine" || archetype === "ramp"
+    (archetype === "vine" || archetype === "ramp" || archetype === "mortar"
       ? 0xffd166
       : archetype === "astrolabe" || archetype === "moonwell"
       ? 0x7ee8fa
+      : isBastion
+      ? 0x5aa9ff
       : isOddroot
       ? 0x5ef2c8
       : 0x45f0df);
 
   const stoneMat = new THREE.MeshStandardMaterial({
-    color: isOddroot ? 0x23423b : 0x1a314d,
-    emissive: isOddroot ? 0x0b221c : 0x0b1a2e,
+    color: isBastion ? 0x222f4d : isOddroot ? 0x23423b : 0x1a314d,
+    emissive: isBastion ? 0x0d1730 : isOddroot ? 0x0b221c : 0x0b1a2e,
     emissiveIntensity: 0.32,
     roughness: 0.58,
     metalness: 0.18,
@@ -556,7 +566,8 @@ export class SlipstreamBoostVFXController {
     if (this.scene) this.scene.add(this.root);
 
     const isOddroot = theme === "oddroot";
-    const primaryHex = isOddroot ? 0x62f5e4 : 0x45f0df;
+    const isBastion = theme === "arc_bastion";
+    const primaryHex = isBastion ? 0x7ee8fa : isOddroot ? 0x62f5e4 : 0x45f0df;
     const goldHex = 0xffd166;
 
     // 1. Twin Dynamic 3D Ribbon Trails (left & right wingtip / thruster streamers)

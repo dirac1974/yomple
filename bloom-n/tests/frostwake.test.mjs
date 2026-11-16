@@ -1389,3 +1389,209 @@ test("Fuzz & Hostile-Input Hardening Regression Suite: ±Infinity/NaN dial, O(1)
   }
 });
 
+test("Outer Frontier Biomes & 3-Way Cross-Realm Clockwork Crest: Thermal Caldera Geysers, Singing Crystal Chimes, Sequential Causeway Pylons & frostwake_clockwork_crest", () => {
+  const { world, events } = createHeadlessWorld();
+
+  const outerGroup = world.scene.getObjectByName("FrostwakeOuterBiomes");
+  assert.ok(outerGroup, "FrostwakeOuterBiomes group must exist in scene");
+  assert.ok(world.calderaGeyserVents.length >= 3);
+  assert.ok(world.singingCrystalChimes.length >= 3);
+  assert.equal(world.causewayPylons.length, 8);
+
+  // 1. Biome resolution across valley & outer frontier
+  world.rigState.x = 0;
+  world.rigState.z = 0;
+  assert.equal(world.getActiveBiome().id, "central_glacier");
+
+  world.rigState.x = -44;
+  world.rigState.z = 22;
+  assert.equal(world.getActiveBiome().id, "caldera_springs");
+  assert.equal(world.getActiveBiome().insideRadius, true);
+
+  // 2. Thermal Geyser Caldera (-44, 22): gentle upward hop + speed boost + cooldown-guarded +3💎
+  world.rigState.speed = 2.0;
+  const baseCalderaY = world._baseHeight(-44, 22) + 0.14;
+  world.step(1 / 60);
+  const geyserEvts = events.filter((e) => e.type === "caldera_geyser");
+  assert.equal(geyserEvts.length, 1, "Driving onto active caldera geyser must emit 1 event");
+  assert.equal(geyserEvts[0].shardsEarned, 3);
+  assert.ok(world.rigState.speed >= 13.8, "Caldera geyser must gently boost rig speed");
+  assert.ok(world.rigState.y > baseCalderaY + 0.3, "Caldera geyser must gently hop the rig upward");
+
+  // Cooldown guard prevents spam on subsequent frames at same vent
+  world.rigState.x = -44;
+  world.rigState.z = 22;
+  world.step(0.05);
+  assert.equal(
+    events.filter((e) => e.type === "caldera_geyser").length,
+    1,
+    "Caldera geyser vent must respect cooldown"
+  );
+
+  // 3. Prism Ice-Crystal Ridge (45, -10): Singing Crystal Chimes pulse gold & chime harmonically
+  world.rigState.x = 45;
+  world.rigState.z = -10;
+  assert.equal(world.getActiveBiome().id, "prism_cavern");
+  world.step(0.05);
+  const midChime = world.singingCrystalChimes[1];
+  assert.equal(midChime.pulsingGold, true);
+  assert.equal(midChime.chimeMat.color.getHex(), 0xffd166);
+  assert.equal(midChime.chimeCount, 1);
+
+  // 4. Northern Observatory Causeway: sequential starlight beacon pylons toward (0, -56)
+  world.rigState.x = 0;
+  world.rigState.z = -31; // within 9.5m of z=-38 stage 0, before z=-44 stage 1
+  world.step(0.05);
+  const litAt31 = world.causewayPylons.filter((p) => p.lit).map((p) => p.stageIndex);
+  assert.deepEqual(litAt31, [0, 0]);
+
+  world.rigState.z = -43; // lights stages 0, 1, 2 (z = -38, -44, -50)
+  world.step(0.05);
+  const litAt43 = world.causewayPylons.filter((p) => p.lit).map((p) => p.stageIndex);
+  assert.deepEqual(litAt43, [0, 0, 1, 1, 2, 2]);
+
+  world.rigState.z = -56;
+  assert.equal(world.getActiveBiome().id, "aurora_causeway");
+  world.step(0.05);
+  assert.equal(world.causewayPylons.every((p) => p.lit), true);
+
+  // 5. 3-Way Cross-Realm Ornament: Brass Clockwork Gear-Crest (frostwake_clockwork_crest)
+  assert.equal(world.rigGroup.getObjectByName("frostwake_clockwork_crest") || null, null);
+  world.applyLoadout({ equippedChassis: "terra_dozer" }, { clockworkCrestUnlocked: true });
+  const dozerCrest = world.rigGroup.getObjectByName("frostwake_clockwork_crest");
+  assert.ok(dozerCrest, "frostwake_clockwork_crest must mount on Terra-Rig when unlocked");
+  const prevOuterRot = world.clockworkCrestOuter.rotation.z;
+  const prevInnerRot = world.clockworkCrestInner.rotation.z;
+  world.step(0.05);
+  assert.notEqual(world.clockworkCrestOuter.rotation.z, prevOuterRot);
+  assert.notEqual(world.clockworkCrestInner.rotation.z, prevInnerRot);
+
+  world.applyLoadout({ equippedChassis: "aurora_sled" }, { clockworkCrestUnlocked: true });
+  assert.ok(
+    world.rigGroup.getObjectByName("frostwake_clockwork_crest"),
+    "frostwake_clockwork_crest must also mount on Aurora Hover-Sled"
+  );
+
+  world.applyLoadout({ equippedChassis: "aurora_sled" }, { clockworkCrestUnlocked: false });
+  assert.equal(world.rigGroup.getObjectByName("frostwake_clockwork_crest") || null, null);
+});
+
+test("3D Field Expeditions & Roblox Simulation Snapshot Parity: FrostwakeExpeditionBeacons, guardrails, single-counted rewards & getRobloxSimSnapshot()", () => {
+  const { world, events, activities } = createHeadlessWorld();
+  const prog = { games: { frostwake: { expeditionsCompleted: 0 } } };
+  world.applyLoadout(prog);
+
+  const beaconGroup = world.scene.getObjectByName("FrostwakeExpeditionBeacons");
+  assert.ok(beaconGroup, "FrostwakeExpeditionBeacons group must exist in scene");
+  assert.equal(world.expeditionBeacons.length, 3);
+  assert.equal(world.expeditionBeacons.every((b) => b.group.visible), true);
+
+  const exp0 = world.getFieldExpeditionState();
+  assert.equal(exp0.expeditionId, "fw_caldera_geysers");
+  const [wp0, wp1, wp2] = exp0.waypoints;
+
+  // CRITICAL SHARD TIMING GUARDRAILS: must NOT collect when dock open, gate active, rigAnim active, or autopilot active
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.rigState.speed = 0;
+
+  world.setEncounterDockOpen(true);
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0, "Dock open must block expedition pickup");
+  world.setEncounterDockOpen(false);
+
+  world.autopilotTarget = { x: 0, z: -5, slot: { rotY: 0 } };
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0, "Autopilot must block expedition pickup");
+  world.autopilotTarget = null;
+
+  world.rigAnim = { kind: "recoil_jack", t: 0, dur: 0.5, deltaSign: 1 };
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0, "rigAnim must block expedition pickup");
+  world.rigAnim = null;
+
+  const mockSlot = {
+    x: wp0.x,
+    z: wp0.z - 6.0,
+    rotY: 0,
+    cleared: false,
+    encounter: { uid: "mock_gate" },
+  };
+  world.gateSlots = [mockSlot];
+  world.activeGateSlot = mockSlot;
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0, "activeGateSlot must block expedition pickup");
+  world.gateSlots = [];
+  world.activeGateSlot = null;
+
+  assert.equal(events.filter((e) => e.type?.startsWith("expedition_")).length, 0);
+  assert.equal(activities.length, 0);
+
+  // Pure free-roam pickup of Waypoint 1 & Waypoint 2 (+2💎 each via onOppositionEvent)
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 1);
+  assert.equal(world.expeditionBeacons[0].group.visible, false);
+  assert.equal(world.expeditionBeacons[1].group.visible, true);
+
+  world.rigState.x = wp1.x;
+  world.rigState.z = wp1.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 2);
+  assert.equal(world.expeditionBeacons[1].group.visible, false);
+
+  const wpEvents = events.filter((e) => e.type === "expedition_waypoint");
+  assert.equal(wpEvents.length, 2);
+  assert.equal(wpEvents[0].shardsEarned, 2);
+  assert.equal(wpEvents[1].shardsEarned, 2);
+
+  // Pure free-roam pickup of Waypoint 3 -> completes expedition, single-counts +14💎 on onWorldActivity, rotates to next expedition & respawns all 3 beacons!
+  world.rigState.x = wp2.x;
+  world.rigState.z = wp2.z;
+  world.step(1 / 60);
+
+  const expAfter = world.getFieldExpeditionState();
+  assert.equal(expAfter.completedTotal, 1);
+  assert.equal(expAfter.expeditionId, "fw_prism_chimes");
+  assert.equal(expAfter.collectedCount, 0);
+  assert.equal(prog.games.frostwake.expeditionsCompleted, 1);
+  assert.equal(
+    world.expeditionBeacons.every((b) => b.group.visible),
+    true,
+    "All 3 expedition beacons must respawn visibly at the rotated expedition coordinates"
+  );
+  assert.equal(world.expeditionBeacons[0].group.position.x, expAfter.waypoints[0].x);
+
+  const expActivities = activities.filter((a) => a.metricKey === "expeditionsCompleted");
+  const completeEvts = events.filter((e) => e.type === "expedition_complete");
+  assert.equal(expActivities.length, 1);
+  assert.equal(expActivities[0].bonusFlux, 14);
+  assert.equal(completeEvts.length, 1);
+  assert.equal(completeEvts[0].shardsEarned, 0, "Completion shards must not be double-counted");
+
+  // Roblox simulation snapshot parity (3.5 studs/m & mathPaused reflection)
+  world.rigState.x = 10;
+  world.rigState.z = -20;
+  const snapLive = world.getRobloxSimSnapshot();
+  assert.equal(snapLive.v, 1);
+  assert.equal(snapLive.realmId, "frostwake");
+  assert.equal(snapLive.pose.studsX, 35);
+  assert.equal(snapLive.pose.studsZ, -70);
+  assert.equal(snapLive.mathPaused, false);
+  assert.equal(snapLive.expedition.id, "fw_prism_chimes");
+
+  world.setEncounterDockOpen(true);
+  const snapPaused = world.getRobloxSimSnapshot();
+  assert.equal(snapPaused.mathPaused, true);
+  assert.equal(Object.is(world.simTimeState.oppositionDt, 0.0), true);
+});
+
+
+

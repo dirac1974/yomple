@@ -1,0 +1,310 @@
+/*
+ * Arc Bastion: Siegesmiths — Scoped Sapphire-Brass Glassmorphic HUD, Co-Op & Bullet-Time Styles
+ * Royal sapphire, burnished clockwork brass, crystal cyan, and solar amber palette.
+ * Zero harsh red tones, mobile-safe dock ergonomics, and reduced-motion support.
+ */
+
+#screen-bastion,
+[data-realm="arc_bastion"],
+.bastion-modal {
+  --ab-bg-deep: hsl(222, 56%, 9%);
+  --ab-surface: hsla(222, 48%, 14%, 0.88);
+  --ab-surface-soft: hsla(220, 42%, 19%, 0.78);
+  --ab-border: hsla(194, 86%, 64%, 0.36);
+  --ab-border-brass: hsla(41, 88%, 62%, 0.48);
+  --ab-sapphire: hsl(212, 92%, 64%);
+  --ab-sapphire-deep: hsl(218, 78%, 34%);
+  --ab-crystal-cyan: hsl(189, 92%, 70%);
+  --ab-brass-gold: hsl(42, 94%, 64%);
+  --ab-amber-warm: hsl(35, 92%, 58%);
+  --ab-cryo-teal: hsl(176, 84%, 60%);
+  --ab-text-main: hsl(210, 45%, 96%);
+  --ab-text-muted: hsl(214, 26%, 76%);
+}
+
+#screen-bastion {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 22%, hsl(218, 52%, 16%), var(--ab-bg-deep));
+  color: var(--ab-text-main);
+  touch-action: none;
+  user-select: none;
+}
+
+#bastion-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* Portal Hero Card Accent for Arc Bastion */
+.hero-card.bastion-hero,
+#hero-bastion {
+  border-color: hsla(42, 90%, 62%, 0.48);
+  box-shadow: 0 16px 40px hsla(220, 68%, 6%, 0.55);
+}
+
+.live-tag.sapphire-brass {
+  background: linear-gradient(135deg, hsla(212, 88%, 54%, 0.28), hsla(42, 92%, 56%, 0.28));
+  border: 1px solid hsla(42, 94%, 66%, 0.58);
+  color: hsl(44, 100%, 84%);
+}
+
+.play-btn-giant.sapphire-cta {
+  background: linear-gradient(135deg, hsl(210, 88%, 52%), hsl(192, 86%, 46%), hsl(42, 92%, 56%));
+  color: hsl(222, 60%, 8%);
+  font-weight: 800;
+  box-shadow: 0 10px 28px hsla(198, 90%, 48%, 0.38);
+}
+
+/* Glassmorphic Bastion HUD Pills */
+#screen-bastion .hud-btn,
+[data-realm="arc_bastion"] .hud-btn {
+  background: var(--ab-surface);
+  border: 1px solid var(--ab-border);
+  color: var(--ab-text-main);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+#ab-shard-pill,
+#screen-bastion .shard-hud-pill {
+  background: linear-gradient(135deg, hsla(42, 74%, 20%, 0.9), hsla(220, 48%, 16%, 0.9));
+  border: 1px solid var(--ab-border-brass);
+  color: var(--ab-brass-gold);
+  font-weight: 800;
+  box-shadow: 0 6px 18px hsla(222, 62%, 6%, 0.45);
+}
+
+#ab-wonder-chip,
+#screen-bastion .hud-wonder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.34rem 0.76rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, hsla(216, 56%, 18%, 0.9), hsla(40, 62%, 20%, 0.86));
+  border: 1px solid var(--ab-border-brass);
+  color: var(--ab-text-main);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+#ab-wonder-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--ab-crystal-cyan);
+}
+
+#ab-zone-bar,
+#screen-bastion .hud-zone-pill {
+  background: var(--ab-surface);
+  border: 1px solid var(--ab-border);
+  color: var(--ab-text-main);
+}
+
+/* Slipstream Speed-Boost Pill */
+#ab-boost-pill {
+  display: none;
+  align-items: center;
+  gap: 0.44rem;
+  padding: 0.32rem 0.74rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, hsla(208, 72%, 20%, 0.92), hsla(42, 78%, 22%, 0.88));
+  border: 1px solid hsla(190, 92%, 68%, 0.56);
+  color: var(--ab-crystal-cyan);
+  font-size: 0.8rem;
+  font-weight: 800;
+  box-shadow: 0 0 18px hsla(192, 92%, 60%, 0.32);
+}
+
+#ab-boost-pill.active {
+  display: inline-flex;
+}
+
+#ab-boost-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--ab-sapphire), var(--ab-crystal-cyan), var(--ab-brass-gold));
+}
+
+/* Signature 0.08x Crystal Bullet-Time Tactician Button */
+#ab-bullettime-btn,
+.ab-bullettime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.4rem 0.84rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, hsla(196, 68%, 18%, 0.92), hsla(224, 52%, 16%, 0.92));
+  border: 1px solid hsla(189, 92%, 70%, 0.54);
+  color: var(--ab-crystal-cyan);
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+#ab-bullettime-btn:hover,
+.ab-bullettime-pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--ab-brass-gold);
+}
+
+#ab-bullettime-btn.is-active,
+#ab-bullettime-btn[aria-pressed="true"],
+.ab-bullettime-pill.is-active {
+  background: linear-gradient(135deg, hsla(189, 88%, 28%, 0.95), hsla(42, 84%, 26%, 0.92));
+  border-color: hsl(44, 100%, 74%);
+  color: hsl(48, 100%, 92%);
+  box-shadow: 0 0 22px hsla(189, 94%, 66%, 0.52);
+  animation: abCrystalPulse 2.1s ease-in-out infinite;
+}
+
+/* Siege-Rover Toggle Pill (6x6 Siege-Ballista vs Prism Rail-Hover Skiff) */
+#ab-rig-btn,
+.rig-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.84rem;
+  border-radius: 999px;
+  background: var(--ab-surface);
+  border: 1px solid var(--ab-border);
+  color: var(--ab-text-main);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+#ab-rig-btn:hover,
+.rig-toggle-pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--ab-brass-gold);
+}
+
+#ab-rig-btn.is-ballista,
+.rig-toggle-pill.is-ballista {
+  border-color: hsla(42, 92%, 62%, 0.62);
+  background: linear-gradient(135deg, hsla(214, 58%, 20%, 0.92), hsla(38, 52%, 18%, 0.9));
+}
+
+#ab-rig-btn.is-skiff,
+.rig-toggle-pill.is-skiff {
+  border-color: hsla(189, 90%, 68%, 0.64);
+  background: linear-gradient(135deg, hsla(192, 62%, 19%, 0.92), hsla(228, 46%, 20%, 0.9));
+}
+
+/* Field Expedition Waypoint Tracker Pill */
+#ab-expedition-pill,
+.ab-expedition-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.76rem;
+  border-radius: 999px;
+  background: var(--ab-surface-soft);
+  border: 1px solid var(--ab-border-brass);
+  color: var(--ab-brass-gold);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Live 2-Player Co-Op Partner Pill & Sky-Flare Button */
+#ab-partner-pill,
+#screen-bastion .partner-pill,
+[data-realm="arc_bastion"] .partner-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.34rem 0.74rem;
+  border-radius: 999px;
+  background: var(--ab-surface);
+  border: 1px solid hsla(189, 86%, 66%, 0.52);
+  color: var(--ab-text-main);
+  box-shadow: 0 6px 20px hsla(222, 62%, 6%, 0.48);
+}
+
+#ab-flare-btn,
+#screen-bastion .flare-btn,
+[data-realm="arc_bastion"] .flare-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.3rem 0.68rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, hsla(42, 86%, 24%, 0.9), hsla(208, 62%, 20%, 0.9));
+  border: 1px solid var(--ab-border-brass);
+  color: var(--ab-brass-gold);
+  font-weight: 700;
+}
+
+/* Overdrive Surge Banner & Victory Stamp Card */
+#screen-bastion .surge-banner,
+[data-realm="arc_bastion"] .surge-banner,
+.ab-surge-banner {
+  background: linear-gradient(90deg, hsl(212, 82%, 34%), hsl(190, 84%, 38%), hsl(42, 94%, 54%));
+  color: hsl(222, 60%, 8%);
+  font-weight: 800;
+  border: 1px solid hsla(46, 100%, 80%, 0.76);
+  box-shadow: 0 8px 26px hsla(196, 86%, 48%, 0.4);
+}
+
+.victory-stamp-card.is-bastion,
+#screen-bastion .victory-stamp-card,
+[data-realm="arc_bastion"] .victory-stamp-card {
+  background: linear-gradient(145deg, hsla(220, 56%, 14%, 0.94), hsla(206, 54%, 18%, 0.92));
+  border: 1.5px solid hsla(42, 94%, 66%, 0.68);
+  box-shadow: 0 14px 36px hsla(220, 70%, 6%, 0.58);
+}
+
+/* Encounter Dock Sapphire-Brass Accent inside Arc Bastion */
+#screen-bastion .encounter-dock,
+[data-realm="arc_bastion"] .encounter-dock {
+  background: linear-gradient(160deg, hsla(222, 54%, 13%, 0.94), hsla(214, 48%, 17%, 0.92));
+  border: 1.5px solid hsla(192, 88%, 66%, 0.44);
+  box-shadow: 0 18px 42px hsla(224, 68%, 5%, 0.62);
+}
+
+#screen-bastion .commit-btn,
+[data-realm="arc_bastion"] .commit-btn {
+  background: linear-gradient(135deg, hsl(208, 88%, 50%), hsl(189, 86%, 48%), hsl(42, 92%, 56%));
+  color: hsl(222, 62%, 8%);
+  font-weight: 800;
+}
+
+@keyframes abCrystalPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 16px hsla(189, 92%, 64%, 0.42);
+  }
+  50% {
+    box-shadow: 0 0 28px hsla(42, 96%, 66%, 0.62);
+  }
+}
+
+/* Mobile Ergonomics: Tuck steering thumbstick cleanly when Encounter Dock is open */
+@media (max-width: 760px) {
+  #screen-bastion.dock-open .drive-cluster {
+    opacity: 0.25;
+    pointer-events: none;
+    transform: translateY(14px) scale(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ab-bullettime-btn.is-active,
+  .ab-bullettime-pill.is-active {
+    animation: none;
+  }
+  #ab-wonder-chip,
+  #ab-bullettime-btn,
+  #ab-rig-btn {
+    transition: none;
+  }
+}

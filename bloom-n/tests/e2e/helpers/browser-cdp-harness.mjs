@@ -615,6 +615,7 @@ export async function installRealmAdapterSpies(page) {
     window.__adapterSpy = {
       frostwake: makeBucket(),
       oddroot: makeBucket(),
+      arc_bastion: makeBucket(),
     };
     const hookClass = (Cls, bucket) => {
       if (!Cls || !Cls.prototype) return false;
@@ -665,6 +666,7 @@ export async function installRealmAdapterSpies(page) {
 
     const fwMod = await import("./frostwake/frostwake-3d.js").catch(() => null);
     const orMod = await import("./oddroot/oddroot-3d.js").catch(() => null);
+    const abMod = await import("./bastion/bastion-3d.js").catch(() => null);
     if (fwMod?.FrostwakeWorld3D) {
       fwMod.FrostwakeWorld3D.prototype.__e2eSpiedName = "frostwake";
       hookClass(fwMod.FrostwakeWorld3D, window.__adapterSpy.frostwake);
@@ -675,21 +677,33 @@ export async function installRealmAdapterSpies(page) {
       hookClass(orMod.OddrootWorld3D, window.__adapterSpy.oddroot);
       orMod.OddrootWorld3D.prototype.__e2eSpiedBucket = window.__adapterSpy.oddroot;
     }
+    if (abMod?.BastionWorld3D) {
+      abMod.BastionWorld3D.prototype.__e2eSpiedName = "arc_bastion";
+      hookClass(abMod.BastionWorld3D, window.__adapterSpy.arc_bastion);
+      abMod.BastionWorld3D.prototype.__e2eSpiedBucket = window.__adapterSpy.arc_bastion;
+    }
     return {
       frostwakeHooked: Boolean(fwMod?.FrostwakeWorld3D),
       oddrootHooked: Boolean(orMod?.OddrootWorld3D),
+      bastionHooked: Boolean(abMod?.BastionWorld3D),
       fwHasDockPause: typeof fwMod?.FrostwakeWorld3D?.prototype?.setEncounterDockOpen === "function",
       orHasDockPause: typeof orMod?.OddrootWorld3D?.prototype?.setEncounterDockOpen === "function",
+      abHasDockPause: typeof abMod?.BastionWorld3D?.prototype?.setEncounterDockOpen === "function",
     };
   });
 }
 
 /**
- * Launches "frostwake" or "oddroot" from #screen-portal via contract/semantic controls
+ * Launches "frostwake", "oddroot", or "arc_bastion" from #screen-portal via contract/semantic controls
  * and verifies an active screen with a healthy WebGL context.
  */
 export async function launchRealmFromPortal(page, realmId) {
-  const screenId = realmId === "oddroot" ? "screen-oddroot" : "screen-frostwake";
+  const screenId =
+    realmId === "oddroot"
+      ? "screen-oddroot"
+      : realmId === "arc_bastion"
+      ? "screen-bastion"
+      : "screen-frostwake";
   const existsInDom = await page.eval((sid) => Boolean(document.getElementById(sid)), screenId);
   assert.equal(existsInDom, true, `Expected #${screenId} section to exist in bloom-n/index.html`);
 
@@ -703,6 +717,13 @@ export async function launchRealmFromPortal(page, realmId) {
     const directSelectors =
       rId === "frostwake"
         ? ["#btn-launch-frostwake", "[data-launch-realm='frostwake']", "[data-realm='frostwake'] button.play-btn-giant"]
+        : rId === "arc_bastion"
+        ? [
+            "#btn-launch-bastion",
+            "[data-launch-realm='arc_bastion']",
+            "[data-realm='arc_bastion'] button.play-btn-giant",
+            "#hero-bastion button.play-btn-giant",
+          ]
         : [
             "#btn-launch-oddroot",
             "[data-launch-realm='oddroot']",
@@ -717,7 +738,12 @@ export async function launchRealmFromPortal(page, realmId) {
         return { step: "direct", text: btn.textContent.trim() };
       }
     }
-    const kw = rId === "oddroot" ? /oddroot|alchemy sanctuary/i : /frostwake|terra-rigs/i;
+    const kw =
+      rId === "oddroot"
+        ? /oddroot|alchemy sanctuary/i
+        : rId === "arc_bastion"
+        ? /arc bastion|siegesmiths/i
+        : /frostwake|terra-rigs/i;
     const candidates = [
       ...document.querySelectorAll("#screen-portal button, #screen-portal article, #screen-portal .realm-card"),
     ];
@@ -745,7 +771,7 @@ export async function launchRealmFromPortal(page, realmId) {
       const btn = [...modal.querySelectorAll("button")].find(
         (b) =>
           !b.hasAttribute("data-close") &&
-          /play|launch|enter|drive|explore|oddroot|sanctuary|frostwake/i.test(b.textContent || "")
+          /play|launch|enter|drive|explore|command|bastion|oddroot|sanctuary|frostwake/i.test(b.textContent || "")
       );
       if (btn) btn.click();
     }
@@ -786,7 +812,7 @@ export async function exitRealmToPortal(page) {
     if (!activeScreen || activeScreen.id === "screen-portal") return true;
     const btn = [
       ...activeScreen.querySelectorAll(
-        "#hud-exit-btn, #oddroot-exit-btn, [id*='exit'], [data-action*='exit'], .hud-top button"
+        "#hud-exit-btn, #oddroot-exit-btn, #bastion-exit-btn, [id*='exit'], [data-action*='exit'], .hud-top button"
       ),
     ].find((b) => isVisible(b) && /hub|portal|exit|←/i.test(b.textContent || ""));
     if (btn) {
@@ -819,9 +845,9 @@ export async function cruiseToNextEncounterDock(page, { timeoutMs = 6500 } = {})
     const activeScreen = document.querySelector(".screen.active") || document;
     const autoBtn = [
       ...activeScreen.querySelectorAll(
-        "#btn-autopilot, #oddroot-autopilot-btn, [id*='autopilot'], [data-action*='autopilot'], button.drive-pill, button"
+        "#btn-autopilot, #oddroot-autopilot-btn, #bastion-autopilot-btn, [id*='autopilot'], [data-action*='autopilot'], button.drive-pill, button"
       ),
-    ].find((b) => isVisible(b) && /cruise|autopilot|gate|shrine|cauldron|🧭/i.test(b.textContent || ""));
+    ].find((b) => isVisible(b) && /cruise|autopilot|gate|shrine|battery|cauldron|🧭/i.test(b.textContent || ""));
     if (autoBtn) autoBtn.click();
   });
 

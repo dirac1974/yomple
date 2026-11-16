@@ -17,6 +17,8 @@ import {
   OddrootWorld3D,
   getSanctuaryJournalEntries,
   SANCTUARY_ISLANDS,
+  SANCTUARY_BRIDGES,
+  SHRINE_ANCHORS,
   ODDROOT_MOUNT_SPECS,
   SHARED_COIN_IDS,
 } from "../oddroot/oddroot-3d.js";
@@ -115,7 +117,9 @@ test("Suite 1: Vendored Three.js r170 headless scene graph, Toon+Fresnel materia
   assert.ok(world.scene.children.length >= 8);
   assert.ok(world.toonGradientTex.isDataTexture);
   assert.equal(world.observatoryRings.length, 6);
-  assert.equal(SANCTUARY_ISLANDS.length, 6);
+  assert.equal(SANCTUARY_ISLANDS.length, 8);
+  assert.equal(SANCTUARY_BRIDGES.length, 9);
+  assert.equal(SHRINE_ANCHORS.length, 4);
 
   // Verify Fresnel rim shader hook on Toon materials
   let foundRimMaterial = false;
@@ -1160,3 +1164,262 @@ test("Suite 13: F21 Live 2-Player 3D Co-Op — partner 60fps lerp, status auras,
   world.syncRemotePartners([]);
   assert.equal(world.coop.partners.size, 0);
 });
+
+test("Suite 14: Outer Archipelago Biomes & 3-Way Cross-Realm Clockwork Charm — grotto & skyroot walkability, autopilot routing, Soaring Updraft Wind Rings (Glider & Boar) & oddroot_clockwork_charm", () => {
+  const events = [];
+  const audio = new OddrootAudio();
+  const world = new OddrootWorld3D({
+    canvas: createMockCanvas(),
+    audio,
+    onOppositionEvent: (e) => events.push(e),
+  });
+
+  // 1. Verify original 6 islands + grotto & skyroot + continuous bridge walkability
+  assert.deepEqual(
+    SANCTUARY_ISLANDS.map((i) => i.id),
+    ["center", "south", "west", "east", "north", "obs", "grotto", "skyroot"]
+  );
+  const grottoIsl = SANCTUARY_ISLANDS.find((i) => i.id === "grotto");
+  const skyrootIsl = SANCTUARY_ISLANDS.find((i) => i.id === "skyroot");
+  assert.deepEqual(grottoIsl, {
+    id: "grotto",
+    name: "Sunken Starlight Grotto",
+    x: -41,
+    z: 10,
+    radius: 11.5,
+    topY: 0.8,
+  });
+  assert.deepEqual(skyrootIsl, {
+    id: "skyroot",
+    name: "Sky-Root Windward Spire",
+    x: 41,
+    z: 10,
+    radius: 11.5,
+    topY: 1.8,
+  });
+
+  // Sample 20 points along both new outer bridges -> 100% solid ground, zero chasm gaps
+  for (const brIdx of [7, 8]) {
+    const br = SANCTUARY_BRIDGES[brIdx];
+    for (let k = 0; k <= 20; k++) {
+      const u = k / 20;
+      const sx = br.ax + (br.bx - br.ax) * u;
+      const sz = br.az + (br.bz - br.az) * u;
+      assert.equal(
+        world._sampleArchipelago(sx, sz).onGround,
+        true,
+        `Bridge ${brIdx} sample u=${u} at (${sx.toFixed(1)}, ${sz.toFixed(1)}) must be solid ground`
+      );
+    }
+  }
+
+  // Autopilot routing across grotto <-> west <-> center and skyroot <-> east <-> north <-> obs
+  assert.deepEqual(world._findIslandRoute("grotto", "center"), ["grotto", "west", "center"]);
+  assert.deepEqual(world._findIslandRoute("skyroot", "obs"), ["skyroot", "east", "north", "obs"]);
+  const wpsFromGrotto = world._buildAutopilotWaypoints(-41, 10, 0, 0);
+  assert.ok(wpsFromGrotto.length >= 5);
+
+  // 2. Verify OddrootOuterBiomes landmarks & getActiveBiome()
+  assert.ok(world.scene.getObjectByName("OddrootOuterBiomes"));
+  assert.ok(world.grottoLagoonPools.length >= 2);
+  assert.ok(world.grottoSporeCaps.length >= 4);
+  assert.ok(world.skyrootWindRings.length >= 3);
+
+  world.rigState.x = 0;
+  world.rigState.z = 0;
+  assert.equal(world.getActiveBiome().id, "world_tree_heart");
+
+  world.rigState.x = -41;
+  world.rigState.z = 10;
+  assert.equal(world.getActiveBiome().id, "starlight_grotto");
+
+  world.rigState.x = 41;
+  world.rigState.z = 10;
+  assert.equal(world.getActiveBiome().id, "skyroot_canopy");
+
+  // 3. Golden Soaring Updraft Wind Rings give exhilarating upward lift & speed shimmer to BOTH Glider & Boar!
+  world.applyLoadout({ games: { oddroot: { equippedMount: "starlight_glider" } } });
+  const ring0 = world.skyrootWindRings[0];
+  world.rigState.x = ring0.x;
+  world.rigState.z = ring0.z;
+  world.rigState.y = 1.8 + 0.55;
+  world.rigState.speed = 2.0;
+  world.step(1 / 60);
+
+  const windEvts = events.filter((e) => e.type === "skyroot_wind_ring");
+  assert.equal(windEvts.length, 1);
+  assert.equal(windEvts[0].shardsEarned, 3);
+  assert.equal(world.rigState.glidingAirborne, true);
+  assert.ok(world.rigState.speed >= 15.2);
+  assert.ok(world.rigState.y > 1.8 + 0.9, "Wind ring must lift Starlight Glider upward");
+  assert.equal(world.getSlipstreamBoostState().active, true);
+
+  // Cooldown guard prevents duplicate +3💎 at same ring
+  world.rigState.x = ring0.x;
+  world.rigState.z = ring0.z;
+  world.step(0.05);
+  assert.equal(events.filter((e) => e.type === "skyroot_wind_ring").length, 1);
+
+  // Switch to Bramble-Boar and ride through Ring 1 -> also receives upward lift & speed boost!
+  world.setMountMode("bramble_boar");
+  world._skyrootLiftTimer = 0;
+  const ring1 = world.skyrootWindRings[1];
+  world.rigState.x = ring1.x;
+  world.rigState.z = ring1.z;
+  world.rigState.y = 1.8 + 0.55;
+  world.rigState.speed = 1.0;
+  world.step(1 / 60);
+  assert.equal(events.filter((e) => e.type === "skyroot_wind_ring").length, 2);
+  assert.ok(world.rigState.speed >= 15.2);
+  assert.ok(world.rigState.y > 1.8 + 0.9, "Wind ring must also lift Bramble-Boar upward");
+
+  // 4. 3-Way Cross-Realm Ornament: spinning golden Clockwork Gear-Charm (oddroot_clockwork_charm)
+  assert.equal(world.avatarGroup.getObjectByName("oddroot_clockwork_charm") || null, null);
+  world.applyLoadout(
+    { games: { oddroot: { equippedMount: "starlight_glider" } } },
+    { clockworkCrestUnlocked: true }
+  );
+  const gliderCharm = world.avatarGroup.getObjectByName("oddroot_clockwork_charm");
+  assert.ok(gliderCharm, "oddroot_clockwork_charm must mount on Starlight Glider staff");
+  const outerBefore = world.clockworkCharmOuter.rotation.z;
+  const innerBefore = world.clockworkCharmInner.rotation.z;
+  world.step(0.05);
+  assert.notEqual(world.clockworkCharmOuter.rotation.z, outerBefore);
+  assert.notEqual(world.clockworkCharmInner.rotation.z, innerBefore);
+
+  world.setMountMode("bramble_boar");
+  assert.ok(
+    world.avatarGroup.getObjectByName("oddroot_clockwork_charm"),
+    "oddroot_clockwork_charm must remain mounted when switching to Bramble-Boar"
+  );
+
+  world.applyLoadout(
+    { games: { oddroot: { equippedMount: "bramble_boar" } } },
+    { clockworkCrestUnlocked: false }
+  );
+  assert.equal(world.avatarGroup.getObjectByName("oddroot_clockwork_charm") || null, null);
+});
+
+test("Suite 15: 3D Field Expeditions & Roblox Simulation Snapshot Parity — OddrootExpeditionBeacons, shard-timing guardrails, single-counted completion & getRobloxSimSnapshot()", () => {
+  const events = [];
+  const activities = [];
+  const world = new OddrootWorld3D({
+    canvas: createMockCanvas(),
+    audio: new OddrootAudio(),
+    onWorldActivity: (amount, bonusFlux, metricKey) => {
+      activities.push({ amount, bonusFlux, metricKey });
+    },
+    onOppositionEvent: (e) => events.push(e),
+  });
+
+  const prog = { games: { oddroot: { expeditionsCompleted: 0 } } };
+  world.applyLoadout(prog);
+
+  assert.ok(world.scene.getObjectByName("OddrootExpeditionBeacons"));
+  assert.equal(world.expeditionBeacons.length, 3);
+  assert.equal(world.expeditionBeacons.every((b) => b.group.visible), true);
+
+  const exp0 = world.getFieldExpeditionState();
+  assert.equal(exp0.expeditionId, "or_grotto_pearls");
+  const [wp0, wp1, wp2] = exp0.waypoints;
+
+  // CRITICAL SHARD TIMING GUARDRAILS: zero waypoint collection while dock open, shrine active, rigAnim active, or autopilot active
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.rigState.speed = 0;
+
+  world.setEncounterDockOpen(true);
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0);
+  world.setEncounterDockOpen(false);
+
+  world.autopilotTarget = { x: 0, z: 0, waypoints: [{ x: 0, z: 0 }], wpIndex: 0 };
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0);
+  world.autopilotTarget = null;
+
+  world.rigAnim = {
+    kind: "updraft_lift",
+    t: 0,
+    dur: 0.55,
+    startX: wp0.x,
+    startY: 1.35,
+    startZ: wp0.z,
+    endX: wp0.x,
+    endY: 1.35,
+    endZ: wp0.z,
+  };
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0);
+  world.rigAnim = null;
+
+  world.activeGateSlot = { x: wp0.x, z: wp0.z, rotY: 0, cleared: false };
+  world._gateAutoPause = true;
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 0);
+  world.activeGateSlot = null;
+  world._gateAutoPause = false;
+
+  assert.equal(events.filter((e) => e.type?.startsWith("expedition_")).length, 0);
+  assert.equal(activities.filter((a) => a.metricKey === "expeditionsCompleted").length, 0);
+
+  // Free-roam collection of Waypoint 1 & Waypoint 2 (+2💎 each via onOppositionEvent)
+  world.rigState.x = wp0.x;
+  world.rigState.z = wp0.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 1);
+  assert.equal(world.expeditionBeacons[0].group.visible, false);
+
+  world.rigState.x = wp1.x;
+  world.rigState.z = wp1.z;
+  world.step(1 / 60);
+  assert.equal(world.getFieldExpeditionState().collectedCount, 2);
+  assert.equal(world.expeditionBeacons[1].group.visible, false);
+
+  const wpEvts = events.filter((e) => e.type === "expedition_waypoint");
+  assert.equal(wpEvts.length, 2);
+  assert.equal(wpEvts[0].shardsEarned, 2);
+  assert.equal(wpEvts[1].shardsEarned, 2);
+
+  // Free-roam collection of Waypoint 3 -> completes expedition, single-counts +14💎, rotates to Sky-Root Updrafts & respawns beacons
+  world.rigState.x = wp2.x;
+  world.rigState.z = wp2.z;
+  world.step(1 / 60);
+
+  const expAfter = world.getFieldExpeditionState();
+  assert.equal(expAfter.completedTotal, 1);
+  assert.equal(expAfter.expeditionId, "or_skyroot_updrafts");
+  assert.equal(prog.games.oddroot.expeditionsCompleted, 1);
+  assert.equal(world.expeditionBeacons.every((b) => b.group.visible), true);
+  assert.equal(world.expeditionBeacons[0].group.position.x, expAfter.waypoints[0].x);
+
+  const expActs = activities.filter((a) => a.metricKey === "expeditionsCompleted");
+  const compEvts = events.filter((e) => e.type === "expedition_complete");
+  assert.equal(expActs.length, 1);
+  assert.equal(expActs[0].bonusFlux, 14);
+  assert.equal(compEvts.length, 1);
+  assert.equal(compEvts[0].shardsEarned, 0, "Completion shards must not be double-counted");
+
+  // Roblox simulation snapshot parity (3.5 studs/m & mathPaused reflection)
+  world.rigState.x = 40;
+  world.rigState.z = 10;
+  const snapLive = world.getRobloxSimSnapshot();
+  assert.equal(snapLive.v, 1);
+  assert.equal(snapLive.realmId, "oddroot");
+  assert.equal(snapLive.pose.studsX, 140);
+  assert.equal(snapLive.pose.studsZ, 35);
+  assert.equal(snapLive.biomeId, "skyroot_canopy");
+  assert.equal(snapLive.mathPaused, false);
+  assert.equal(snapLive.expedition.id, "or_skyroot_updrafts");
+
+  world.setEncounterDockOpen(true);
+  const snapPaused = world.getRobloxSimSnapshot();
+  assert.equal(snapPaused.mathPaused, true);
+  assert.equal(Object.is(world.simTimeState.oppositionDt, 0.0), true);
+});
+
+

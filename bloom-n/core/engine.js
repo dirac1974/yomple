@@ -78,11 +78,11 @@ export const SUB_GAMES = [
     order: 4,
     title: "Arc Bastion: Siegesmiths",
     subtitle: "3D Bullet-Time Fortress & Trajectory Defense",
-    status: "preview",
-    badge: "REALM 4 · ROADMAP",
+    status: "live",
+    badge: "REALM 3 · PLAY NOW · 3D LIVE",
     banner: "assets/realm4-bastion.jpg",
     accent: "#5aa9ff",
-    blurb: "Freeze beast raids in 0.08x bullet-time and dial glowing parabolic arc shields.",
+    blurb: "Freeze contraption raids in 0.08x bullet-time, aim prism rails, and burst clockwork walkers into golden gears.",
   },
 ];
 
@@ -270,6 +270,90 @@ export const ODDROOT_UPGRADES = [
     cost: 230,
     icon: "👑",
     shortDesc: "Radiant starlight sanctuary aura",
+  },
+];
+
+export const BASTION_RIGS = [
+  {
+    id: "iron_ballista",
+    aliases: ["ballista"],
+    name: "6x6 Siege-Ballista Rover",
+    tag: "Heavy Mortar & Gear-Ram",
+    icon: "🛡️",
+    defaultFor: "david",
+    plowWidth: 3.2,
+    topSpeed: 17.8,
+    turnRate: 2.6,
+    primaryHex: 0x5aa9ff,
+    secondaryHex: 0x202b44,
+    glowHex: 0xffd166,
+  },
+  {
+    id: "prism_rail_skiff",
+    aliases: ["rail_skiff"],
+    name: "Prism Rail-Hover Skiff",
+    tag: "0.08x Tactician Sniper",
+    icon: "⚡",
+    defaultFor: "sarah",
+    plowWidth: 2.9,
+    topSpeed: 19.4,
+    turnRate: 3.1,
+    primaryHex: 0x7ee8fa,
+    secondaryHex: 0x1d2542,
+    glowHex: 0xf7b955,
+  },
+];
+
+export const BASTION_CHASSIS = BASTION_RIGS;
+
+export const BASTION_UPGRADES = [
+  {
+    id: "ab_cryo_mortar",
+    aliases: [],
+    name: "Cryo-Gel Mortar",
+    cost: 45,
+    icon: "❄️",
+    shortDesc: "Wider cryo-gel splash slows walkers",
+  },
+  {
+    id: "ab_prism_pierce",
+    aliases: [],
+    name: "Quad-Pierce Rail",
+    cost: 70,
+    icon: "⚡",
+    shortDesc: "Twin-prism beam pierces contraptions",
+  },
+  {
+    id: "ab_auto_turret",
+    aliases: [],
+    name: "Clockwork Sentinel",
+    cost: 95,
+    icon: "⚙️",
+    shortDesc: "Friendly brass turret guards ramparts",
+  },
+  {
+    id: "ab_angle_mirrors",
+    aliases: [],
+    name: "3D Ricochet Mirrors",
+    cost: 130,
+    icon: "🪞",
+    shortDesc: "Golden bounce shields along canyon",
+  },
+  {
+    id: "ab_chronos_harp",
+    aliases: [],
+    name: "Starlight Time-Harp",
+    cost: 175,
+    icon: "⏳",
+    shortDesc: "Musical 0.08x aura & golden gears",
+  },
+  {
+    id: "ab_citadel_crown",
+    aliases: [],
+    name: "Sky-Citadel Trim",
+    cost: 240,
+    icon: "👑",
+    shortDesc: "Radiant sapphire & gold bastion hull",
   },
 ];
 
@@ -723,6 +807,7 @@ export function createInitialProgress(preset = "auto") {
   let calibrated = false;
   const equippedChassis = preset === "sarah" ? "aurora_sled" : "terra_dozer";
   const equippedMount = preset === "sarah" ? "starlight_glider" : "bramble_boar";
+  const equippedBastionRig = preset === "sarah" ? "prism_rail_skiff" : "iron_ballista";
 
   if (preset === "david") {
     calibrated = true;
@@ -778,6 +863,7 @@ export function createInitialProgress(preset = "auto") {
         snowClearedM2: 0,
         rimeCreepsCleared: 0,
         foxDensThawed: 0,
+        expeditionsCompleted: 0,
         bestWaveSec: null,
         ghostFrames: [],
         ghostBest: null,
@@ -791,11 +877,22 @@ export function createInitialProgress(preset = "auto") {
         sanctuaryUpgrades: [],
         blightClearedM2: 0,
         blightClearedCount: 0,
+        expeditionsCompleted: 0,
         longestVineGrindM: 0,
         bestCircuitSec: null,
         ghostFrames: [],
         ghostBest: null,
         mosaicForged: false,
+      },
+      arc_bastion: {
+        equippedRig: equippedBastionRig,
+        bastionUpgrades: [],
+        contraptionsShattered: 0,
+        cryoGelSplats: 0,
+        expeditionsCompleted: 0,
+        bestRaidSec: null,
+        ghostFrames: [],
+        ghostBest: null,
       },
     },
     nodes,
@@ -3766,6 +3863,7 @@ export function getCrossRealmUnlocks(progress) {
   const upg = new Set([
     ...(p.ownedUpgrades || []),
     ...(p.games?.oddroot?.sanctuaryUpgrades || []),
+    ...(p.games?.arc_bastion?.bastionUpgrades || []),
   ]);
   const hatched = new Set([
     ...(p.games?.oddroot?.hatchedCreatures || []),
@@ -3778,7 +3876,8 @@ export function getCrossRealmUnlocks(progress) {
       (nodes["W1.2"]?.stage || 0) >= 2 ||
       (nodes["W1.3"]?.stage || 0) >= 2 ||
       hatched.has("zero_g_toad") ||
-      hatched.has("astro_toad")
+      hatched.has("astro_toad") ||
+      upg.has("ab_cryo_mortar")
   );
 
   const snowLiliesHit = Boolean(
@@ -3793,14 +3892,22 @@ export function getCrossRealmUnlocks(progress) {
     p.games?.oddroot?.mosaicForged ||
       (nodes["W6.3"]?.stage || 0) >= 2 ||
       upg.has("celestial_crown") ||
-      upg.has("or_antler_crown")
+      upg.has("or_antler_crown") ||
+      upg.has("ab_citadel_crown")
   );
 
   const auroraTrimHit = Boolean(
     mosaicHit ||
       upg.has("wide_blade") ||
       upg.has("or_tusk_plow") ||
+      upg.has("ab_prism_pierce") ||
       (rec.bestOverdriveStreak || 0) >= 3
+  );
+
+  const clockworkHit = Boolean(
+    upg.has("ab_auto_turret") ||
+      upg.has("ab_chronos_harp") ||
+      (p.games?.arc_bastion?.contraptionsShattered || 0) >= 5
   );
 
   const frostwakePlowTrim = mosaicHit ? "golden_mosaic" : subZeroHit ? "cryo_buoyancy" : "standard";
@@ -3819,6 +3926,7 @@ export function getCrossRealmUnlocks(progress) {
     astroToadCabMascot: subZeroHit,
     cryoToadMascot: subZeroHit,
     cryoBuoyancyTrim: subZeroHit,
+    cryoCannonUnlocked: subZeroHit,
     subZeroAbyssUnlocked: subZeroHit,
     subZeroUnlocked: subZeroHit,
     snowLiliesUnlocked: snowLiliesHit,
@@ -3826,9 +3934,12 @@ export function getCrossRealmUnlocks(progress) {
     goldenMosaicTrimUnlocked: mosaicHit,
     goldenMosaicPlowTrim: mosaicHit,
     goldenMosaicTrim: mosaicHit,
+    bastionMosaicTrim: mosaicHit,
     mosaicUnlocked: mosaicHit,
     auroraBladeTrimUnlocked: auroraTrimHit,
     frostwakePlowTrim,
+    clockworkCrestUnlocked: clockworkHit,
+    clockworkSentinelSynced: clockworkHit,
     silverMoonLantern: moonHit,
     moonLanternUnlocked: moonHit,
     titanAstrolabeSynced: astrolabeHit,
@@ -3859,6 +3970,7 @@ export function computeArchitectLevel(progress) {
   const uniqueUpgrades = new Set([
     ...(p.ownedUpgrades || []),
     ...(p.games?.oddroot?.sanctuaryUpgrades || []),
+    ...(p.games?.arc_bastion?.bastionUpgrades || []),
   ]).size;
   const hatchedCount = new Set([
     ...(p.games?.oddroot?.hatchedCreatures || []),
@@ -3867,10 +3979,15 @@ export function computeArchitectLevel(progress) {
   const mystCount = (p.discoveredMysteries || []).length;
   const snowM2 = Math.max(p.snowClearedM2 || 0, p.games?.frostwake?.snowClearedM2 || 0);
   const blightM2 = p.games?.oddroot?.blightClearedM2 || 0;
+  const expeditionsDone =
+    (p.games?.frostwake?.expeditionsCompleted || 0) +
+    (p.games?.oddroot?.expeditionsCompleted || 0) +
+    (p.games?.arc_bastion?.expeditionsCompleted || 0);
   const realmActions =
     (p.games?.oddroot?.cauldronsBrewed || 0) +
     (p.games?.frostwake?.rimeCreepsCleared || 0) +
-    (p.games?.oddroot?.blightClearedCount || 0);
+    (p.games?.oddroot?.blightClearedCount || 0) +
+    (p.games?.arc_bastion?.contraptionsShattered || 0);
 
   const xp = Math.max(
     0,
@@ -3880,6 +3997,7 @@ export function computeArchitectLevel(progress) {
         mystCount * 75 +
         uniqueUpgrades * 50 +
         hatchedCount * 55 +
+        expeditionsDone * 40 +
         Math.floor((snowM2 + blightM2) / 25) * 5 +
         realmActions * 8
     )
@@ -3989,11 +4107,15 @@ export function computeHeroTitle(progress) {
   const myst = p.discoveredMysteries || [];
   const orGame = p.games?.oddroot || {};
   const fwGame = p.games?.frostwake || {};
+  const abGame = p.games?.arc_bastion || {};
 
   if (orGame.mosaicForged || (p.nodes?.["W6.3"]?.stage || 0) >= 2) return "Mosaic Slab Master";
   if ((p.nodes?.["W2.1"]?.stage || 0) >= 3 && (p.nodes?.["W2.2"]?.stage || 0) >= 2) return "Grand Pattern Architect";
   if (myst.includes("moon_center") && myst.includes("astrolabe_lock")) return "Moonwell Astrolabe Keeper";
   if ((r.bestOverdriveStreak || 0) >= 4) return "Mental Overdrive Ace";
+  if ((abGame.contraptionsShattered || 0) >= 8 || (abGame.bastionUpgrades || []).length >= 3) {
+    return "Sky-Bastion Siegesmith";
+  }
   if ((r.deepestSubZero || 0) >= 100) return "Sub-Zero Architect";
   if ((orGame.cauldronsBrewed || 0) >= 6 || (orGame.hatchedCreatures || []).length >= 3) return "Sanctuary Alchemist";
   if (myst.includes("astrolabe_lock")) return "Astrolabe Navigator";
@@ -4092,7 +4214,7 @@ export function mergeProgress(a, b) {
 
   // Weekly sunshine merge
   const wsA = a.weeklySunshine || { weekKey: "", days: [] };
-  const wsB = b.weeklySunshine || { weekKey: "", days: [] };
+  const wsB = a.weeklySunshine && b.weeklySunshine ? b.weeklySunshine : b.weeklySunshine || { weekKey: "", days: [] };
   let weeklySunshine = { weekKey: "", days: [] };
   if (wsA.weekKey && wsA.weekKey === wsB.weekKey) {
     weeklySunshine = {
@@ -4105,7 +4227,7 @@ export function mergeProgress(a, b) {
     weeklySunshine = { weekKey: wsA.weekKey || "", days: Array.from(new Set(wsA.days || [])).sort() };
   }
 
-  // Deep games.frostwake & games.oddroot merge
+  // Deep games.frostwake, games.oddroot & games.arc_bastion merge
   const fwA = a.games?.frostwake || {};
   const fwB = b.games?.frostwake || {};
   const fwOlder = older.games?.frostwake || {};
@@ -4123,6 +4245,12 @@ export function mergeProgress(a, b) {
   const orOlder = older.games?.oddroot || {};
   const orNewer = newer.games?.oddroot || {};
   const orRun = mergeBestTimedRun(orOlder, orNewer, "bestCircuitSec");
+
+  const abA = a.games?.arc_bastion || {};
+  const abB = b.games?.arc_bastion || {};
+  const abOlder = older.games?.arc_bastion || {};
+  const abNewer = newer.games?.arc_bastion || {};
+  const abRun = mergeBestTimedRun(abOlder, abNewer, "bestRaidSec");
 
   const hatchedCreatures = Array.from(
     new Set([
@@ -4184,6 +4312,7 @@ export function mergeProgress(a, b) {
         snowClearedM2: mergedSnowM2,
         rimeCreepsCleared: Math.max(fwA.rimeCreepsCleared || 0, fwB.rimeCreepsCleared || 0),
         foxDensThawed: Math.max(fwA.foxDensThawed || 0, fwB.foxDensThawed || 0),
+        expeditionsCompleted: Math.max(fwA.expeditionsCompleted || 0, fwB.expeditionsCompleted || 0),
         bestWaveSec: fwRun.bestSec,
         ghostFrames: fwRun.ghostFrames,
         ghostBest: fwRun.ghostBest,
@@ -4199,6 +4328,7 @@ export function mergeProgress(a, b) {
         sanctuaryUpgrades: Array.from(new Set([...(orA.sanctuaryUpgrades || []), ...(orB.sanctuaryUpgrades || [])])),
         blightClearedM2: Math.max(orA.blightClearedM2 || 0, orB.blightClearedM2 || 0),
         blightClearedCount: Math.max(orA.blightClearedCount || 0, orB.blightClearedCount || 0),
+        expeditionsCompleted: Math.max(orA.expeditionsCompleted || 0, orB.expeditionsCompleted || 0),
         longestVineGrindM,
         bestCircuitSec: orRun.bestSec,
         ghostFrames: orRun.ghostFrames,
@@ -4207,6 +4337,18 @@ export function mergeProgress(a, b) {
           typeof orA.mosaicForged === "number" || typeof orB.mosaicForged === "number"
             ? Math.max(Number(orA.mosaicForged) || 0, Number(orB.mosaicForged) || 0)
             : Boolean(orA.mosaicForged || orB.mosaicForged),
+      },
+      arc_bastion: {
+        ...abOlder,
+        ...abNewer,
+        equippedRig: abNewer.equippedRig || abOlder.equippedRig || "iron_ballista",
+        bastionUpgrades: Array.from(new Set([...(abA.bastionUpgrades || []), ...(abB.bastionUpgrades || [])])),
+        contraptionsShattered: Math.max(abA.contraptionsShattered || 0, abB.contraptionsShattered || 0),
+        cryoGelSplats: Math.max(abA.cryoGelSplats || 0, abB.cryoGelSplats || 0),
+        expeditionsCompleted: Math.max(abA.expeditionsCompleted || 0, abB.expeditionsCompleted || 0),
+        bestRaidSec: abRun.bestSec,
+        ghostFrames: abRun.ghostFrames,
+        ghostBest: abRun.ghostBest,
       },
     },
     nodes: mergedNodes,
@@ -4226,7 +4368,12 @@ export function computeNextWonderTeaser(progress, session = null, realmId = "fro
     ...(p.games?.oddroot?.sanctuaryUpgrades || []),
     ...(p.ownedUpgrades || []),
   ]);
+  const ownedAb = new Set([
+    ...(p.games?.arc_bastion?.bastionUpgrades || []),
+    ...(p.ownedUpgrades || []),
+  ]);
   const isOddroot = realmId === "oddroot";
+  const isBastion = realmId === "arc_bastion";
 
   // 1. Overdrive streak on the brink of summoning the Sky-Whale
   if ((session?.overdriveStreak || 0) === 2) {
@@ -4271,16 +4418,17 @@ export function computeNextWonderTeaser(progress, session = null, realmId = "fro
     };
   }
 
-  // 4. Ready-to-forge or nearly affordable Workshop / Garage upgrade
-  const catalog = isOddroot ? ODDROOT_UPGRADES : RIG_UPGRADES;
-  const ownedSet = isOddroot ? ownedOr : ownedFw;
+  // 4. Ready-to-forge or nearly affordable Workshop / Armory / Garage upgrade
+  const catalog = isBastion ? BASTION_UPGRADES : isOddroot ? ODDROOT_UPGRADES : RIG_UPGRADES;
+  const ownedSet = isBastion ? ownedAb : isOddroot ? ownedOr : ownedFw;
+  const shopName = isBastion ? "Armory" : isOddroot ? "Workshop" : "Garage";
   const nextUpg = catalog.find((u) => !ownedSet.has(u.id));
   if (nextUpg) {
     if (shards >= nextUpg.cost) {
       return {
         icon: nextUpg.icon,
         kicker: "NEW GEAR READY TO FORGE",
-        headline: `${nextUpg.name} is ready in the ${isOddroot ? "Workshop" : "Garage"}!`,
+        headline: `${nextUpg.name} is ready in the ${shopName}!`,
         hint: nextUpg.shortDesc,
         ratio: 1.0,
         action: "garage",

@@ -417,4 +417,29 @@ export class FrostwakeAudio {
       this.tone(n, 0.3, "sine", 0.055, idx * 0.05);
     });
   }
+
+  playCrystalChime(harmonyIdx = 0) {
+    const scales = [
+      [659.25, 987.77, 1318.5],
+      [783.99, 1174.66, 1567.98],
+      [587.33, 880.0, 1318.5],
+    ];
+    const notes = scales[Math.abs(Math.floor(Number(harmonyIdx) || 0)) % scales.length];
+    notes.forEach((n, idx) => {
+      this.tone(n, 0.32, idx === 0 ? "triangle" : "sine", 0.055, idx * 0.055);
+    });
+  }
+
+  playExpeditionWaypoint(collectedCount = 1) {
+    const step = Math.max(0, Math.min(2, (Number(collectedCount) || 1) - 1));
+    const base = 783.99 + step * 98.0;
+    this.tone(base, 0.14, "sine", 0.065, 0, base * 1.25);
+    this.tone(base * 1.5, 0.22, "triangle", 0.07, 0.065);
+  }
+
+  playExpeditionComplete() {
+    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((n, idx) => {
+      this.tone(n, 0.36, idx % 2 === 0 ? "sine" : "triangle", 0.068, idx * 0.052);
+    });
+  }
 }

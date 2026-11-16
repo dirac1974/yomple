@@ -1,8 +1,8 @@
 /**
- * Bloom N — Universe Portal Controller & Dual-Realm 3D Gameplay Coordinator
- * Coordinates Frostwake: Flux Terra-Rigs (#1) and Oddroot Wilds: Alchemy Sanctuary (#2),
- * shared adaptive engine, 2-beat Fox Trick Holo-Projector, Sanctuary Evolution Journal,
- * 1-Tap Sibling Toy Borrow, and Live 2-Player Household WebSocket + BroadcastChannel Co-Op.
+ * Bloom N — Universe Portal Controller & Multi-Realm 3D Gameplay Coordinator
+ * Coordinates Frostwake: Flux Terra-Rigs (#1), Oddroot Wilds: Alchemy Sanctuary (#2),
+ * and Arc Bastion: Siegesmiths (#3), shared adaptive engine, 2-beat Fox Trick Holo-Projector,
+ * Sanctuary Evolution Journal, 1-Tap Sibling Toy Borrow, Field Expeditions, and Live 2-Player Co-Op.
  */
 
 import {
@@ -11,6 +11,8 @@ import {
   RIG_UPGRADES,
   ODDROOT_MOUNTS,
   ODDROOT_UPGRADES,
+  BASTION_RIGS,
+  BASTION_UPGRADES,
   MYSTERIES,
   WORLDS,
   GROWN_UPS_CURRICULUM,
@@ -51,18 +53,23 @@ import { FrostwakeAudio } from "./frostwake/audio.js";
 import { FrostwakeWorld3D } from "./frostwake/frostwake-3d.js";
 import { OddrootAudio } from "./oddroot/audio.js";
 import { OddrootWorld3D, getSanctuaryJournalEntries } from "./oddroot/oddroot-3d.js";
+import { BastionAudio } from "./bastion/audio.js";
+import { BastionWorld3D } from "./bastion/bastion-3d.js";
 
 const store = loadStore();
 const session = createSessionState();
 
 const frostwakeAudio = new FrostwakeAudio();
 const oddrootAudio = new OddrootAudio();
+const bastionAudio = new BastionAudio();
 frostwakeAudio.setMuted(store.muted);
 oddrootAudio.setMuted(store.muted);
+bastionAudio.setMuted(store.muted);
 
 let activeRealmId = "portal";
 let frostwakeWorld = null;
 let oddrootWorld = null;
+let bastionWorld = null;
 let activeBorrowedToy = null;
 
 let mpClient = null;
@@ -89,17 +96,21 @@ function $(id) {
 }
 
 function getActiveAudio() {
-  return activeRealmId === "oddroot" ? oddrootAudio : frostwakeAudio;
+  if (activeRealmId === "oddroot") return oddrootAudio;
+  if (activeRealmId === "arc_bastion") return bastionAudio;
+  return frostwakeAudio;
 }
 
 function getActiveWorld() {
   if (activeRealmId === "frostwake") return frostwakeWorld;
   if (activeRealmId === "oddroot") return oddrootWorld;
+  if (activeRealmId === "arc_bastion") return bastionWorld;
   return null;
 }
 
 function getActiveScreenEl() {
   if (activeRealmId === "oddroot") return $("screen-oddroot");
+  if (activeRealmId === "arc_bastion") return $("screen-bastion");
   if (activeRealmId === "frostwake") return $("screen-frostwake");
   return $("screen-portal");
 }
@@ -120,7 +131,7 @@ function isWorldUnlocked(prog, worldId) {
 
 function syncSurgeBanners() {
   const on = Boolean(session.inSurge);
-  for (const id of ["surge-banner", "oddroot-surge-banner"]) {
+  for (const id of ["surge-banner", "oddroot-surge-banner", "bastion-surge-banner"]) {
     const el = $(id);
     if (!el) continue;
     el.classList.toggle("on", on);
@@ -150,8 +161,10 @@ function handleWonderTeaserAction(teaser) {
     return;
   }
   if (activeRealmId === "portal") {
+    const prefersBastion = (prog.games?.arc_bastion?.batteriesCleared || 0) > 0 && prog.games?.arc_bastion?.equippedRig === "prism_rail_skiff";
     const prefersOddroot = prog.games?.oddroot?.equippedMount === "starlight_glider";
-    if (prefersOddroot) launchOddroot();
+    if (prefersBastion) launchBastion();
+    else if (prefersOddroot) launchOddroot();
     else launchFrostwake();
   } else {
     const target = getActiveWorld()?.engageAutopilotToNextGate?.();
@@ -163,7 +176,12 @@ function renderPortalNextWonder(prog) {
   const card = $("portal-next-wonder");
   if (!card) return;
   const preferredRealm =
-    prog.games?.oddroot?.equippedMount === "starlight_glider" ? "oddroot" : "frostwake";
+    (prog.games?.arc_bastion?.batteriesCleared || 0) > (prog.games?.oddroot?.cauldronsBrewed || 0) &&
+    prog.games?.arc_bastion?.equippedRig === "prism_rail_skiff"
+      ? "arc_bastion"
+      : prog.games?.oddroot?.equippedMount === "starlight_glider"
+      ? "oddroot"
+      : "frostwake";
   const teaser = computeNextWonderTeaser(prog, session, preferredRealm);
   const pct = Math.max(12, Math.min(100, Math.round((teaser.ratio || 0.35) * 100)));
   const ctaLabel =
@@ -207,12 +225,16 @@ function renderHudWonderChip(elId, prog, realmId) {
   };
 }
 
+function getActiveShardPillId() {
+  if (activeRealmId === "oddroot") return "or-shard-pill";
+  if (activeRealmId === "arc_bastion") return "ab-shard-pill";
+  return "fw-shard-pill";
+}
+
 function pulseActiveShardPill() {
-  const pillId = activeRealmId === "oddroot" ? "or-shard-pill" : "fw-shard-pill";
-  const pill = $(pillId);
+  const pill = $(getActiveShardPillId());
   if (!pill) return;
   pill.classList.remove("shard-pop");
-  // Trigger crisp spring reflow
   void pill.offsetWidth;
   pill.classList.add("shard-pop");
   clearTimeout(shardPopTimer);
@@ -225,7 +247,7 @@ function spawnFlyingShardBurst(count = 10, originYRatio = 0.56) {
     pulseActiveShardPill();
     return;
   }
-  const targetEl = $(activeRealmId === "oddroot" ? "or-shard-pill" : "fw-shard-pill");
+  const targetEl = $(getActiveShardPillId());
   const targetRect = targetEl?.getBoundingClientRect?.();
   const vw = Math.max(320, window.innerWidth || 1024);
   const vh = Math.max(240, window.innerHeight || 720);
@@ -291,12 +313,21 @@ function updateSlipstreamHudFrame() {
   const world = getActiveWorld();
   const st = world?.getSlipstreamBoostState?.() || { active: false, ratio: 0, multiplier: 1, overdrive: false };
   const isOddroot = activeRealmId === "oddroot";
-  const activePill = $(isOddroot ? "or-boost-pill" : "fw-boost-pill");
-  const inactivePill = $(isOddroot ? "fw-boost-pill" : "or-boost-pill");
-  const activeFill = $(isOddroot ? "or-boost-fill" : "fw-boost-fill");
+  const isBastion = activeRealmId === "arc_bastion";
+  const pillMap = {
+    frostwake: { pill: $("fw-boost-pill"), fill: $("fw-boost-fill") },
+    oddroot: { pill: $("or-boost-pill"), fill: $("or-boost-fill") },
+    arc_bastion: { pill: $("ab-boost-pill"), fill: $("ab-boost-fill") },
+  };
+  for (const [rKey, pair] of Object.entries(pillMap)) {
+    if (rKey !== activeRealmId && pair.pill) {
+      pair.pill.classList.remove("active", "overdrive");
+    }
+  }
+  const activePair = pillMap[activeRealmId] || pillMap.frostwake;
+  const activePill = activePair.pill;
+  const activeFill = activePair.fill;
   const screenFx = $("slipstream-screen-fx");
-
-  if (inactivePill) inactivePill.classList.remove("active", "overdrive");
 
   if (st.active && activeRealmId !== "portal") {
     const multStr = (st.multiplier || 1.38).toFixed(1);
@@ -305,7 +336,9 @@ function updateSlipstreamHudFrame() {
       activePill.classList.toggle("overdrive", Boolean(st.overdrive));
       const lbl = activePill.querySelector(".boost-pill-label");
       if (lbl) {
-        lbl.textContent = isOddroot
+        lbl.textContent = isBastion
+          ? `🚀 Prism Slipstream · ${multStr}×`
+          : isOddroot
           ? `🚀 Starlight Slipstream · ${multStr}×`
           : `🚀 Cryo-Plasma Boost · ${multStr}×`;
       }
@@ -341,6 +374,7 @@ function triggerHudVictoryCelebration(res) {
   const shardsEl = $("victory-stamp-shards");
   const boostEl = $("victory-stamp-boost");
   const isOddroot = activeRealmId === "oddroot";
+  const isBastion = activeRealmId === "arc_bastion";
   const isClear = res.outcome === "clear";
   const isOverdrive = Boolean(res.overdrive);
 
@@ -348,7 +382,9 @@ function triggerHudVictoryCelebration(res) {
     kickerEl.textContent = isOverdrive
       ? "⚡ MENTAL OVERDRIVE · 1.5× FLUX!"
       : isClear
-      ? isOddroot
+      ? isBastion
+        ? "✦ SIEGE BATTERY LOCKED!"
+        : isOddroot
         ? "✦ SANCTUARY SHRINE AWAKENED!"
         : "✦ CRYO-TEMPLE AWAKENED!"
       : "🦊 AURORA SYNTHESIS SEALED!";
@@ -362,7 +398,9 @@ function triggerHudVictoryCelebration(res) {
   if (boostEl) {
     if (isClear) {
       const multLabel = isOverdrive ? "1.5×" : "1.4×";
-      boostEl.textContent = isOddroot
+      boostEl.textContent = isBastion
+        ? `🚀 PRISM SLIPSTREAM · ${multLabel} SIEGE SURGE!`
+        : isOddroot
         ? `🚀 STARLIGHT SLIPSTREAM · ${multLabel} GLIDE BOOST!`
         : `🚀 CRYO-PLASMA BOOST · ${multLabel} RIG SURGE!`;
     } else {
@@ -371,10 +409,11 @@ function triggerHudVictoryCelebration(res) {
   }
 
   if (card) {
-    card.classList.remove("show", "is-overdrive", "is-oddroot");
+    card.classList.remove("show", "is-overdrive", "is-oddroot", "is-bastion");
     void card.offsetWidth;
     card.classList.toggle("is-overdrive", isOverdrive);
     card.classList.toggle("is-oddroot", isOddroot);
+    card.classList.toggle("is-bastion", isBastion);
     card.classList.add("show");
     clearTimeout(victoryStampTimer);
     victoryStampTimer = setTimeout(() => {
@@ -388,17 +427,45 @@ function triggerHudVictoryCelebration(res) {
   }
 }
 
+function renderHudExpeditionPill(elId, world, fallbackCompleted = 0) {
+  const el = $(elId);
+  if (!el) return;
+  const st = world?.getFieldExpeditionState?.();
+  if (!st) {
+    el.textContent = `🧭 Patrols · ${fallbackCompleted}✦`;
+    return;
+  }
+  const done = st.collectedCount ?? st.waypointIndex ?? 0;
+  const total = st.targetCount ?? st.totalWaypoints ?? 3;
+  const icon = st.icon || "🧭";
+  const shortTitle = (st.title || "Patrol").split(" ").slice(0, 2).join(" ");
+  el.textContent = `${icon} ${shortTitle} ${done}/${total}`;
+  el.title = `${st.title || "Field Expedition"}: ${st.promptShort || ""} (+${st.shardReward || 18}💎)`;
+}
+
+function syncBastionBulletTimePill() {
+  const btn = $("ab-bullettime-btn");
+  if (!btn) return;
+  const bt = bastionWorld?.getBulletTimeState?.() || { requested: false, active: false };
+  const isOn = Boolean(bt.requested);
+  btn.classList.toggle("is-active", isOn);
+  btn.setAttribute("aria-pressed", isOn ? "true" : "false");
+  btn.textContent = isOn ? "⏳ 0.08× Aura ON" : "⏳ 0.08× Time-Aura";
+}
+
 function updateAllShardAndZoneDisplays() {
   const prog = getActiveProgress(store);
   const shards = String(prog.fluxShards || 0);
   if ($("portal-shards")) $("portal-shards").textContent = shards;
   if ($("hud-shards")) $("hud-shards").textContent = shards;
   if ($("oddroot-shards")) $("oddroot-shards").textContent = shards;
+  if ($("bastion-shards")) $("bastion-shards").textContent = shards;
   if ($("garage-shards")) $("garage-shards").textContent = shards;
 
   const streak = String(session.overdriveStreak || 0);
   if ($("hud-streak")) $("hud-streak").textContent = streak;
   if ($("oddroot-streak")) $("oddroot-streak").textContent = streak;
+  if ($("bastion-streak")) $("bastion-streak").textContent = streak;
 
   const arch = computeArchitectLevel(prog);
   if ($("portal-architect-pill")) {
@@ -414,6 +481,7 @@ function updateAllShardAndZoneDisplays() {
   renderPortalZoneProgress(wp);
   renderHudZonePill("fw-zone-bar", wp);
   renderHudZonePill("or-zone-bar", wp);
+  renderHudZonePill("ab-zone-bar", wp);
 
   const zoneRatio =
     wp.worldId === "W0"
@@ -424,10 +492,28 @@ function updateAllShardAndZoneDisplays() {
         );
   frostwakeWorld?.setZoneProgressRatio?.(zoneRatio);
   oddrootWorld?.setZoneProgressRatio?.(zoneRatio);
+  bastionWorld?.setZoneProgressRatio?.(zoneRatio);
 
   renderPortalNextWonder(prog);
   renderHudWonderChip("fw-wonder-chip", prog, "frostwake");
   renderHudWonderChip("or-wonder-chip", prog, "oddroot");
+  renderHudWonderChip("ab-wonder-chip", prog, "arc_bastion");
+
+  renderHudExpeditionPill(
+    "fw-expedition-pill",
+    frostwakeWorld,
+    prog.games?.frostwake?.expeditionsCompleted || 0
+  );
+  renderHudExpeditionPill(
+    "or-expedition-pill",
+    oddrootWorld,
+    prog.games?.oddroot?.expeditionsCompleted || 0
+  );
+  renderHudExpeditionPill(
+    "ab-expedition-pill",
+    bastionWorld,
+    prog.games?.arc_bastion?.expeditionsCompleted || 0
+  );
 
   const worldLabel = `${wp.rankLabel} · ${wp.worldName}`;
   if ($("portal-active-world-label")) {
@@ -436,8 +522,12 @@ function updateAllShardAndZoneDisplays() {
   if ($("portal-oddroot-world-label")) {
     $("portal-oddroot-world-label").textContent = `Sanctuary Frontier: ${worldLabel}`;
   }
+  if ($("portal-bastion-world-label")) {
+    $("portal-bastion-world-label").textContent = `Citadel Frontier: ${worldLabel}`;
+  }
   if ($("hud-world-btn")) $("hud-world-btn").textContent = `${worldLabel} ▾`;
   if ($("oddroot-world-btn")) $("oddroot-world-btn").textContent = `${worldLabel} ▾`;
+  if ($("bastion-world-btn")) $("bastion-world-btn").textContent = `${worldLabel} ▾`;
 
   if (oddrootWorld && oddrootWorld.rigState?.siphonOrbs) {
     const orbs = oddrootWorld.rigState.siphonOrbs;
@@ -455,6 +545,16 @@ function updateAllShardAndZoneDisplays() {
     mountBtn.classList.toggle("is-boar", mountSpec.id === "bramble_boar");
     mountBtn.classList.toggle("is-glider", mountSpec.id === "starlight_glider");
   }
+
+  const eqBastionRig = prog.games?.arc_bastion?.equippedRig || "iron_ballista";
+  const bastionSpec = BASTION_RIGS.find((r) => r.id === eqBastionRig) || BASTION_RIGS[0];
+  const abRigBtn = $("ab-rig-btn");
+  if (abRigBtn) {
+    abRigBtn.textContent = `${bastionSpec.icon} ${bastionSpec.name}`;
+    abRigBtn.classList.toggle("is-ballista", bastionSpec.id === "iron_ballista");
+    abRigBtn.classList.toggle("is-skiff", bastionSpec.id === "prism_rail_skiff");
+  }
+  syncBastionBulletTimePill();
 }
 
 function renderPortalZoneProgress(wp) {
@@ -509,6 +609,7 @@ function renderPortal() {
   $("portal-mute-btn").textContent = muteIcon;
   $("hud-mute-btn").textContent = muteIcon;
   if ($("oddroot-mute-btn")) $("oddroot-mute-btn").textContent = muteIcon;
+  if ($("bastion-mute-btn")) $("bastion-mute-btn").textContent = muteIcon;
 
   updateAllShardAndZoneDisplays();
 
@@ -560,10 +661,37 @@ function renderPortal() {
     }
   }
 
-  // Sister Sub-Games (#3 Stardrift + Astrolabes, #4 Arc Bastion)
+  // Arc Bastion Siege-Rover Quick Picker
+  const bastionRow = $("portal-bastion-picker");
+  if (bastionRow) {
+    bastionRow.innerHTML = "";
+    const curRig = prog.games?.arc_bastion?.equippedRig || "iron_ballista";
+    for (const r of BASTION_RIGS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `rig-chip${curRig === r.id ? " selected" : ""}`;
+      btn.textContent = `${r.icon} ${r.name}`;
+      btn.onclick = () => {
+        bastionAudio.playDetentClick?.(14);
+        prog.games = prog.games || {};
+        prog.games.arc_bastion = prog.games.arc_bastion || {};
+        prog.games.arc_bastion.equippedRig = r.id;
+        activeBorrowedToy = null;
+        saveStore(store);
+        if (bastionWorld) {
+          bastionWorld.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+        }
+        renderPortal();
+      };
+      bastionRow.appendChild(btn);
+    }
+  }
+
+  // Sister Sub-Games (Stardrift + Astrolabes, plus any non-hero realm cards)
   const sisGrid = $("sister-realms-grid");
   sisGrid.innerHTML = "";
-  for (const sg of SUB_GAMES.slice(2)) {
+  const heroIds = new Set(["frostwake", "oddroot", "arc_bastion"]);
+  for (const sg of SUB_GAMES.filter((g) => !heroIds.has(g.id))) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "realm-card";
@@ -692,6 +820,7 @@ function disconnectMultiplayer() {
   }
   renderPartnerPill("frostwake", []);
   renderPartnerPill("oddroot", []);
+  renderPartnerPill("arc_bastion", []);
 }
 
 function getLocalCoopStatus() {
@@ -717,7 +846,13 @@ function publishImmediateMultiplayerState(overrideStatus = null) {
 }
 
 function renderPartnerPill(realmId, peers = []) {
-  const pill = $(realmId === "oddroot" ? "or-partner-pill" : "fw-partner-pill");
+  const pillId =
+    realmId === "oddroot"
+      ? "or-partner-pill"
+      : realmId === "arc_bastion"
+      ? "ab-partner-pill"
+      : "fw-partner-pill";
+  const pill = $(pillId);
   if (!pill) return;
   if (!Array.isArray(peers) || peers.length === 0) {
     pill.style.display = "none";
@@ -749,7 +884,12 @@ function renderPartnerPill(realmId, peers = []) {
 function connectRealmMultiplayer(realmId) {
   disconnectMultiplayer();
   const prof = getActiveProfile(store);
-  const world = realmId === "oddroot" ? oddrootWorld : frostwakeWorld;
+  const world =
+    realmId === "oddroot"
+      ? oddrootWorld
+      : realmId === "arc_bastion"
+      ? bastionWorld
+      : frostwakeWorld;
   if (!world) return;
 
   mpClient = createMultiplayerClient({
@@ -863,6 +1003,7 @@ function handleOppositionEvent(ev) {
 function launchFrostwake(overrideWorldId = null) {
   closeEncounterDock();
   if (oddrootWorld) oddrootWorld.stop();
+  if (bastionWorld) bastionWorld.stop();
   frostwakeAudio.unlock();
 
   const prog = getActiveProgress(store);
@@ -875,6 +1016,7 @@ function launchFrostwake(overrideWorldId = null) {
   activeRealmId = "frostwake";
   $("screen-portal").classList.remove("active");
   $("screen-oddroot").classList.remove("active");
+  $("screen-bastion")?.classList.remove("active");
   $("screen-frostwake").classList.add("active");
   attachSharedOverlaysToScreen($("screen-frostwake"));
 
@@ -884,13 +1026,21 @@ function launchFrostwake(overrideWorldId = null) {
       audio: frostwakeAudio,
       onWorldActivity: (amount, bonusFlux, metricKey) => {
         const p = getActiveProgress(store);
+        p.games = p.games || {};
+        p.games.frostwake = p.games.frostwake || {};
         if (metricKey === "snowClearedM2" && amount > 0) {
           p.snowClearedM2 = Math.round((p.snowClearedM2 || 0) + amount);
-          if (p.games?.frostwake) p.games.frostwake.snowClearedM2 = p.snowClearedM2;
-        } else if (metricKey === "rimeCreepsCleared" && p.games?.frostwake) {
+          p.games.frostwake.snowClearedM2 = p.snowClearedM2;
+        } else if (metricKey === "rimeCreepsCleared") {
           p.games.frostwake.rimeCreepsCleared = (p.games.frostwake.rimeCreepsCleared || 0) + amount;
-        } else if (metricKey === "foxDensThawed" && p.games?.frostwake) {
+        } else if (metricKey === "foxDensThawed") {
           p.games.frostwake.foxDensThawed = (p.games.frostwake.foxDensThawed || 0) + amount;
+        } else if (metricKey === "expeditionsCompleted" && amount > 0) {
+          p.games.frostwake.expeditionsCompleted = Math.max(
+            Number(p.games.frostwake.expeditionsCompleted) || 0,
+            frostwakeWorld?.getFieldExpeditionState?.()?.completedTotal ||
+              (Number(p.games.frostwake.expeditionsCompleted) || 0) + amount
+          );
         }
         if (bonusFlux > 0) {
           p.fluxShards += bonusFlux;
@@ -916,12 +1066,13 @@ function launchFrostwake(overrideWorldId = null) {
   frostwakeWorld.start();
   connectRealmMultiplayer("frostwake");
   renderPortal();
-  showToast("Carve snow, smash Rime-Creeps, or tap Cruise to Gate!");
+  showToast("Carve snow, explore geysers & crystal ridges, or tap Cruise to Gate!");
 }
 
 function launchOddroot(overrideWorldId = null) {
   closeEncounterDock();
   if (frostwakeWorld) frostwakeWorld.stop();
+  if (bastionWorld) bastionWorld.stop();
   oddrootAudio.unlock();
 
   const prog = getActiveProgress(store);
@@ -934,6 +1085,7 @@ function launchOddroot(overrideWorldId = null) {
   activeRealmId = "oddroot";
   $("screen-portal").classList.remove("active");
   $("screen-frostwake").classList.remove("active");
+  $("screen-bastion")?.classList.remove("active");
   $("screen-oddroot").classList.add("active");
   attachSharedOverlaysToScreen($("screen-oddroot"));
 
@@ -948,6 +1100,12 @@ function launchOddroot(overrideWorldId = null) {
         if (metricKey === "blightClearedM2" && amount > 0) {
           p.games.oddroot.blightClearedM2 = Math.round((p.games.oddroot.blightClearedM2 || 0) + amount);
           p.games.oddroot.blightClearedCount = (p.games.oddroot.blightClearedCount || 0) + 1;
+        } else if (metricKey === "expeditionsCompleted" && amount > 0) {
+          p.games.oddroot.expeditionsCompleted = Math.max(
+            Number(p.games.oddroot.expeditionsCompleted) || 0,
+            oddrootWorld?.getFieldExpeditionState?.()?.completedTotal ||
+              (Number(p.games.oddroot.expeditionsCompleted) || 0) + amount
+          );
         }
         if (bonusFlux > 0) {
           p.fluxShards += bonusFlux;
@@ -999,7 +1157,75 @@ function launchOddroot(overrideWorldId = null) {
   oddrootWorld.start();
   connectRealmMultiplayer("oddroot");
   renderPortal();
-  showToast("Harvest glowing orbs, clear Blight, or tap Cruise to Shrine!");
+  showToast("Harvest orbs, glide sky-root rings, or tap Cruise to Shrine!");
+}
+
+function launchBastion(overrideWorldId = null) {
+  closeEncounterDock();
+  if (frostwakeWorld) frostwakeWorld.stop();
+  if (oddrootWorld) oddrootWorld.stop();
+  bastionAudio.unlock?.();
+
+  const prog = getActiveProgress(store);
+  if (overrideWorldId) {
+    if (!prog.unlockedWorlds.includes(overrideWorldId)) prog.unlockedWorlds.push(overrideWorldId);
+    prog.activeWorld = overrideWorldId;
+    saveStore(store);
+  }
+
+  activeRealmId = "arc_bastion";
+  $("screen-portal").classList.remove("active");
+  $("screen-frostwake").classList.remove("active");
+  $("screen-oddroot").classList.remove("active");
+  $("screen-bastion")?.classList.add("active");
+  attachSharedOverlaysToScreen($("screen-bastion"));
+
+  if (!bastionWorld) {
+    bastionWorld = new BastionWorld3D({
+      canvas: $("bastion-canvas"),
+      audio: bastionAudio,
+      onWorldActivity: (amount, bonusFlux, metricKey) => {
+        const p = getActiveProgress(store);
+        p.games = p.games || {};
+        p.games.arc_bastion = p.games.arc_bastion || {};
+        if (metricKey === "contraptionsShattered" && amount > 0) {
+          p.games.arc_bastion.contraptionsShattered =
+            (p.games.arc_bastion.contraptionsShattered || 0) + amount;
+        } else if (metricKey === "cryoGelSplats" && amount > 0) {
+          p.games.arc_bastion.cryoGelSplats =
+            (p.games.arc_bastion.cryoGelSplats || 0) + amount;
+        } else if (metricKey === "expeditionsCompleted" && amount > 0) {
+          p.games.arc_bastion.expeditionsCompleted = Math.max(
+            Number(p.games.arc_bastion.expeditionsCompleted) || 0,
+            bastionWorld?.getFieldExpeditionState?.()?.completedTotal ||
+              (Number(p.games.arc_bastion.expeditionsCompleted) || 0) + amount
+          );
+        }
+        if (bonusFlux > 0) {
+          p.fluxShards += bonusFlux;
+          p.unsyncedFlux = (p.unsyncedFlux || 0) + bonusFlux;
+          bastionAudio.playSnowShardTick?.();
+        }
+        updateAllShardAndZoneDisplays();
+        saveStore(store);
+      },
+      onApproachGate: (enc) => openEncounterDock(enc),
+      onLeaveGate: () => closeEncounterDock(),
+      onMysteryFound: handleMysteryFound,
+      onGaragePadEntered: () => openGarageModal(),
+      onOppositionEvent: handleOppositionEvent,
+      onSharedCoinGrabbed: handleSharedCoinGrabbed,
+    });
+  }
+
+  bastionWorld.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+  bastionWorld.setObservatoryTier(store.householdWonder?.observatoryTier || 1);
+  bastionWorld.resize();
+  spawnActiveWave();
+  bastionWorld.start();
+  connectRealmMultiplayer("arc_bastion");
+  renderPortal();
+  showToast("Command the citadel, toggle 0.08× Time-Aura, or tap Cruise to Gate!");
 }
 
 function exitRealmToHub() {
@@ -1015,17 +1241,20 @@ function exitRealmToHub() {
     cancelAnimationFrame(boostHudRafId);
     boostHudRafId = 0;
   }
-  $("victory-stamp-card")?.classList.remove("show", "is-overdrive", "is-oddroot");
+  $("victory-stamp-card")?.classList.remove("show", "is-overdrive", "is-oddroot", "is-bastion");
   $("slipstream-screen-fx")?.classList.remove("active", "overdrive");
   $("fw-boost-pill")?.classList.remove("active", "overdrive");
   $("or-boost-pill")?.classList.remove("active", "overdrive");
+  $("ab-boost-pill")?.classList.remove("active", "overdrive");
   closeEncounterDock();
   disconnectMultiplayer();
   if (frostwakeWorld) frostwakeWorld.stop();
   if (oddrootWorld) oddrootWorld.stop();
+  if (bastionWorld) bastionWorld.stop();
   activeRealmId = "portal";
   $("screen-frostwake").classList.remove("active");
   $("screen-oddroot").classList.remove("active");
+  $("screen-bastion")?.classList.remove("active");
   $("screen-portal").classList.add("active");
   renderPortal();
 }
@@ -1082,9 +1311,11 @@ function closeEncounterDock() {
 
   frostwakeWorld?.setEncounterDockOpen?.(false);
   oddrootWorld?.setEncounterDockOpen?.(false);
+  bastionWorld?.setEncounterDockOpen?.(false);
 
   $("screen-frostwake")?.classList.remove("dock-open");
   $("screen-oddroot")?.classList.remove("dock-open");
+  $("screen-bastion")?.classList.remove("dock-open");
   $("encounter-dock")?.classList.remove("open");
 
   publishImmediateMultiplayerState(session.inSurge ? "surge" : "roaming");
@@ -1240,17 +1471,24 @@ function paintEncounterDock() {
   }
 
   const isOddroot = activeRealmId === "oddroot";
+  const isBastion = activeRealmId === "arc_bastion";
   const commitVerb =
     enc.encounterType === "holo_ramp" || enc.encounterType === "rainbow_arch"
-      ? isOddroot
+      ? isBastion
+        ? "🚀 Fire Parabolic Mortar"
+        : isOddroot
         ? "🌿 Grow Vine-Bridge"
         : "🚀 Launch Across Curve"
       : enc.encounterType === "astrolabe_shrine"
       ? "✨ Lock Sky-Astrolabe"
       : enc.encounterType === "harpoon_cliff"
-      ? isOddroot
+      ? isBastion
+        ? "⚡ Fire Prism Rail"
+        : isOddroot
         ? "🌟 Cast Starlight Vine"
         : "🪝 Fire Cliff Harpoon"
+      : isBastion
+      ? "🎯 Fire Siege Battery"
       : isOddroot
       ? "🧪 Brew Sanctuary Shrine"
       : "⚡ Ram Cryo-Gate";
@@ -1302,6 +1540,9 @@ function handleCommit() {
   if (res.outcome === "clear") {
     if (activeRealmId === "oddroot") {
       prog.games.oddroot.cauldronsBrewed = (prog.games.oddroot.cauldronsBrewed || 0) + 1;
+    } else if (activeRealmId === "arc_bastion") {
+      prog.games.arc_bastion = prog.games.arc_bastion || {};
+      prog.games.arc_bastion.batteriesCleared = (prog.games.arc_bastion.batteriesCleared || 0) + 1;
     }
     recordWeeklySunshine(prog);
     audio.playClear?.(res.overdrive);
@@ -1418,6 +1659,13 @@ function openWhoModal() {
   openModal("modal-who");
 }
 
+function applyLoadoutAcrossAllActiveWorlds(prog) {
+  const unlocks = getCrossRealmUnlocks(prog);
+  frostwakeWorld?.applyLoadout(prog, unlocks, activeBorrowedToy);
+  oddrootWorld?.applyLoadout(prog, unlocks, activeBorrowedToy);
+  bastionWorld?.applyLoadout(prog, unlocks, activeBorrowedToy);
+}
+
 function openGarageModal() {
   const prog = getActiveProgress(store);
   $("garage-shards").textContent = String(prog.fluxShards || 0);
@@ -1466,6 +1714,31 @@ function openGarageModal() {
     }
   }
 
+  // Arc Bastion Siege-Rovers
+  const abRow = $("garage-bastion-rigs-row");
+  if (abRow) {
+    abRow.innerHTML = "";
+    const curRig = prog.games?.arc_bastion?.equippedRig || "iron_ballista";
+    for (const r of BASTION_RIGS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `rig-chip${curRig === r.id ? " selected" : ""}`;
+      b.textContent = `${r.icon} ${r.name} (${r.tag})`;
+      b.onclick = () => {
+        prog.games = prog.games || {};
+        prog.games.arc_bastion = prog.games.arc_bastion || {};
+        prog.games.arc_bastion.equippedRig = r.id;
+        activeBorrowedToy = null;
+        getActiveAudio().playDetentClick?.(15);
+        saveStore(store);
+        bastionWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+        openGarageModal();
+        renderPortal();
+      };
+      abRow.appendChild(b);
+    }
+  }
+
   // Frostwake Upgrades
   const grid = $("garage-upgrades-grid");
   grid.innerHTML = "";
@@ -1489,8 +1762,7 @@ function openGarageModal() {
       prog.ownedUpgrades.push(upg.id);
       getActiveAudio().playClear?.(true);
       saveStore(store);
-      frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
-      oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+      applyLoadoutAcrossAllActiveWorlds(prog);
       openGarageModal();
       renderPortal();
     };
@@ -1530,8 +1802,7 @@ function openGarageModal() {
         }
         getActiveAudio().playClear?.(true);
         saveStore(store);
-        oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
-        frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+        applyLoadoutAcrossAllActiveWorlds(prog);
         openGarageModal();
         renderPortal();
       };
@@ -1540,12 +1811,60 @@ function openGarageModal() {
     }
   }
 
+  // Arc Bastion Siegesmith Upgrades
+  const abGrid = $("garage-bastion-upgrades-grid");
+  if (abGrid) {
+    abGrid.innerHTML = "";
+    const abOwnedSet = new Set([
+      ...(prog.ownedUpgrades || []),
+      ...(prog.games?.arc_bastion?.bastionUpgrades || []),
+    ]);
+    for (const upg of BASTION_UPGRADES) {
+      const owned = abOwnedSet.has(upg.id);
+      const canBuy = !owned && (prog.fluxShards || 0) >= upg.cost;
+      const card = document.createElement("div");
+      card.className = `upg-card${owned ? " owned" : ""}`;
+      card.innerHTML = `
+        <div style="font-weight:900">${upg.icon} ${upg.name}</div>
+        <div style="font-size:0.8rem;color:var(--ink-soft);font-weight:700">${upg.shortDesc}</div>
+      `;
+      const buyBtn = document.createElement("button");
+      buyBtn.type = "button";
+      buyBtn.className = "upg-buy-btn";
+      buyBtn.textContent = owned ? "✓ Active on Citadel" : `Install · 💎 ${upg.cost}`;
+      buyBtn.disabled = owned || !canBuy;
+      buyBtn.onclick = () => {
+        if (abOwnedSet.has(upg.id) || prog.fluxShards < upg.cost) return;
+        prog.fluxShards -= upg.cost;
+        prog.ownedUpgrades.push(upg.id);
+        prog.games = prog.games || {};
+        prog.games.arc_bastion = prog.games.arc_bastion || {};
+        prog.games.arc_bastion.bastionUpgrades = prog.games.arc_bastion.bastionUpgrades || [];
+        if (!prog.games.arc_bastion.bastionUpgrades.includes(upg.id)) {
+          prog.games.arc_bastion.bastionUpgrades.push(upg.id);
+        }
+        getActiveAudio().playClear?.(true);
+        saveStore(store);
+        applyLoadoutAcrossAllActiveWorlds(prog);
+        openGarageModal();
+        renderPortal();
+      };
+      card.appendChild(buyBtn);
+      abGrid.appendChild(card);
+    }
+  }
+
   // 1-Tap Sibling Toy Borrow (+5💎 Gift to Sibling!)
   const borrowBox = $("garage-borrow-box");
   if (borrowBox) {
     borrowBox.innerHTML = "";
     const siblings = (store.profiles || []).filter((p) => p.username !== store.activeUsername);
-    const targetRealm = activeRealmId === "oddroot" ? "oddroot" : "frostwake";
+    const targetRealm =
+      activeRealmId === "arc_bastion"
+        ? "arc_bastion"
+        : activeRealmId === "oddroot"
+        ? "oddroot"
+        : "frostwake";
     for (const sib of siblings) {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -1556,8 +1875,7 @@ function openGarageModal() {
         if (res.ok) {
           activeBorrowedToy = res.borrowedToy;
           getActiveAudio().playClear?.(true);
-          frostwakeWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
-          oddrootWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), activeBorrowedToy);
+          applyLoadoutAcrossAllActiveWorlds(prog);
           renderPortal();
           showToast(`🤝 Borrowed ${sib.name}'s loadout! Sent +5💎 gift!`, 3000);
           openGarageModal();
@@ -1602,12 +1920,16 @@ function openJournalModal() {
 }
 
 function openSisterRealmModal(sg) {
+  if (sg.id === "arc_bastion") {
+    launchBastion();
+    return;
+  }
   $("realm-modal-title").textContent = sg.title;
   const isAstrolabe = sg.id === "stardrift";
   $("realm-modal-body").innerHTML = `
     <img src="${sg.banner}" alt="${sg.title}" style="width:100%;border-radius:18px;margin-bottom:12px" />
     <p style="margin:0 0 10px;color:var(--ink-soft);font-weight:700;line-height:1.45">
-      ${sg.blurb} Every beacon lit in <strong>Frostwake</strong> and <strong>Oddroot Wilds</strong> shares one unified
+      ${sg.blurb} Every beacon lit in <strong>Frostwake</strong>, <strong>Oddroot Wilds</strong>, and <strong>Arc Bastion</strong> shares one unified
       <code>Bloomⁿ</code> constellation, carrying your Flux Shards, Spirit Creatures, and Hero Titles across realms.
     </p>
     ${
@@ -1619,9 +1941,12 @@ function openSisterRealmModal(sg) {
              <button type="button" id="btn-try-astrolabe-or" class="play-btn-giant emerald-cta" style="flex:1">
                🌙 Moonwell Astrolabes in Oddroot (Rank V)
              </button>
+             <button type="button" id="btn-try-astrolabe-ab" class="play-btn-giant sapphire-cta" style="flex:1">
+               🛡️ Citadel Astrolabes in Arc Bastion (Rank V)
+             </button>
            </div>`
         : `<div style="padding:10px 14px;border-radius:14px;background:rgba(255,255,255,0.06);font-weight:800;font-size:0.88rem;color:var(--amber)">
-             Scheduled in Bloomⁿ Wave ${sg.order} — build your constellation in Frostwake &amp; Oddroot now!
+             Scheduled in Bloomⁿ Wave ${sg.order} — build your constellation across Frostwake, Oddroot &amp; Arc Bastion now!
            </div>`
     }
   `;
@@ -1638,6 +1963,13 @@ function openSisterRealmModal(sg) {
     orBtn.onclick = () => {
       closeModal("modal-realm");
       launchOddroot("W5");
+    };
+  }
+  const abBtn = $("btn-try-astrolabe-ab");
+  if (abBtn) {
+    abBtn.onclick = () => {
+      closeModal("modal-realm");
+      launchBastion("W5");
     };
   }
 }
@@ -1686,6 +2018,11 @@ function openGrownUpsModal() {
     ? session.shelvedLog.map((s) => `${s.nodeId}: ${s.eq}`).join(" · ")
     : "None this session";
 
+  const totalClearedArea =
+    (prog.snowClearedM2 || 0) +
+    (prog.games?.oddroot?.blightClearedM2 || 0) +
+    (prog.games?.arc_bastion?.contraptionsShattered || 0) * 8;
+
   $("grownups-content").innerHTML = `
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:12px;border-radius:16px;background:rgba(255,255,255,0.06);margin-bottom:12px">
       <div><strong>Player:</strong> ${prof ? `${prof.avatar} ${prof.name}` : "—"}</div>
@@ -1700,7 +2037,7 @@ function openGrownUpsModal() {
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
       <div class="rec-box"><span>Avg Plan Time</span><strong>${avgPlan}s</strong></div>
       <div class="rec-box"><span>1-Shot Overdrive</span><strong>${overdrivePct}%</strong></div>
-      <div class="rec-box"><span>World Cleared</span><strong>${(prog.snowClearedM2 || 0) + (prog.games?.oddroot?.blightClearedM2 || 0)}m²</strong></div>
+      <div class="rec-box"><span>World Cleared</span><strong>${totalClearedArea}m²</strong></div>
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border-radius:16px;background:hsla(172,78%,52%,0.12);margin-bottom:12px">
@@ -1736,7 +2073,7 @@ function openGrownUpsModal() {
   };
 }
 
-/* ==================== INPUT WIRING (DUAL JOYSTICKS + KEYBOARD) ==================== */
+/* ==================== INPUT WIRING (REALM JOYSTICKS + KEYBOARD) ==================== */
 function syncDriveVector() {
   const world = getActiveWorld();
   if (!world) return;
@@ -1796,6 +2133,7 @@ function bindThumbstick(zoneId, knobId) {
 function setupJoystickAndKeys() {
   bindThumbstick("joy-zone", "joy-knob");
   bindThumbstick("oddroot-joy-zone", "oddroot-joy-knob");
+  bindThumbstick("bastion-joy-zone", "bastion-joy-knob");
 
   window.addEventListener("keydown", (e) => {
     if (document.activeElement && document.activeElement.tagName === "INPUT") {
@@ -1810,6 +2148,11 @@ function setupJoystickAndKeys() {
     if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") keys.left = true;
     if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") keys.right = true;
     if (e.key === " ") keys.boost = true;
+    if ((e.key === "q" || e.key === "Q") && activeRealmId === "arc_bastion" && bastionWorld) {
+      const bt = bastionWorld.toggleBulletTime();
+      syncBastionBulletTimePill();
+      showToast(bt.requested ? "⏳ 0.08× Crystal Bullet-Time Aura ON!" : "⏳ Full-speed Citadel clock restored!");
+    }
     if (e.key === "Enter" && currentEncounter) handleCommit();
     syncDriveVector();
   });
@@ -1830,14 +2173,17 @@ async function init() {
 
   $("btn-launch-frostwake").onclick = () => launchFrostwake();
   $("btn-launch-oddroot").onclick = () => launchOddroot();
+  if ($("btn-launch-bastion")) $("btn-launch-bastion").onclick = () => launchBastion();
 
   $("hud-exit-btn").onclick = () => exitRealmToHub();
   $("oddroot-exit-btn").onclick = () => exitRealmToHub();
+  if ($("bastion-exit-btn")) $("bastion-exit-btn").onclick = () => exitRealmToHub();
 
   $("portal-who-btn").onclick = () => openWhoModal();
   $("portal-garage-btn").onclick = () => openGarageModal();
   $("hud-garage-btn").onclick = () => openGarageModal();
   $("oddroot-workshop-btn").onclick = () => openGarageModal();
+  if ($("bastion-armory-btn")) $("bastion-armory-btn").onclick = () => openGarageModal();
 
   $("portal-journal-btn").onclick = () => openJournalModal();
   $("oddroot-journal-btn").onclick = () => openJournalModal();
@@ -1850,6 +2196,7 @@ async function init() {
   };
   $("hud-world-btn").onclick = openWorldPicker;
   $("oddroot-world-btn").onclick = openWorldPicker;
+  if ($("bastion-world-btn")) $("bastion-world-btn").onclick = openWorldPicker;
 
   $("hud-snow-btn").onclick = () => {
     frostwakeWorld?.resetFreshSnow?.();
@@ -1876,19 +2223,78 @@ async function init() {
     updateAllShardAndZoneDisplays();
   };
 
+  if ($("ab-bullettime-btn")) {
+    $("ab-bullettime-btn").onclick = () => {
+      bastionAudio.unlock?.();
+      const bt = bastionWorld?.toggleBulletTime?.();
+      syncBastionBulletTimePill();
+      if (bt) {
+        showToast(
+          bt.requested
+            ? "⏳ 0.08× Crystal Bullet-Time Aura ON — contraptions slowed!"
+            : "⏳ Citadel clock restored to 1.0× speed!"
+        );
+      }
+    };
+  }
+
+  if ($("ab-rig-btn")) {
+    $("ab-rig-btn").onclick = () => {
+      const prog = getActiveProgress(store);
+      prog.games = prog.games || {};
+      prog.games.arc_bastion = prog.games.arc_bastion || {};
+      const cur = prog.games.arc_bastion.equippedRig || "iron_ballista";
+      const next = cur === "iron_ballista" ? "prism_rail_skiff" : "iron_ballista";
+      prog.games.arc_bastion.equippedRig = next;
+      activeBorrowedToy = null;
+      bastionAudio.playDetentClick?.(16);
+      saveStore(store);
+      bastionWorld?.applyLoadout(prog, getCrossRealmUnlocks(prog), null);
+      updateAllShardAndZoneDisplays();
+    };
+  }
+
+  if ($("bastion-pulse-btn")) {
+    $("bastion-pulse-btn").onclick = () => {
+      bastionAudio.unlock?.();
+      const prog = getActiveProgress(store);
+      const hasPierce =
+        prog.games?.arc_bastion?.equippedRig === "prism_rail_skiff" ||
+        (prog.ownedUpgrades || []).includes("ab_prism_pierce") ||
+        (prog.games?.arc_bastion?.bastionUpgrades || []).includes("ab_prism_pierce");
+      if (hasPierce) {
+        const res = bastionWorld?.triggerRealmQuickAction?.();
+        const hits = res?.hitCount || 0;
+        showToast(
+          hits > 0
+            ? `⚡ Piercing Prism Rail shattered ${hits} contraption${hits === 1 ? "" : "s"}!`
+            : "⚡ Piercing Prism Rail swept the canyon!"
+        );
+      } else {
+        bastionWorld?.resetFreshSnow?.();
+        bastionAudio.playClear?.(false);
+        showToast("⚙️ Fresh Golden Gear-Pods deployed across the ramparts!");
+      }
+      updateAllShardAndZoneDisplays();
+    };
+  }
+
   $("fw-flare-btn").onclick = () => triggerFriendlyFlare();
   $("or-flare-btn").onclick = () => triggerFriendlyFlare();
+  if ($("ab-flare-btn")) $("ab-flare-btn").onclick = () => triggerFriendlyFlare();
 
   const toggleMute = () => {
     store.muted = !store.muted;
     frostwakeAudio.setMuted(store.muted);
     oddrootAudio.setMuted(store.muted);
+    bastionAudio.setMuted(store.muted);
     saveStore(store, false);
     renderPortal();
   };
   $("portal-mute-btn").onclick = toggleMute;
   $("hud-mute-btn").onclick = toggleMute;
   $("oddroot-mute-btn").onclick = toggleMute;
+  if ($("bastion-mute-btn")) $("bastion-mute-btn").onclick = toggleMute;
 
   const triggerAutopilot = () => {
     getActiveAudio().unlock?.();
@@ -1908,8 +2314,9 @@ async function init() {
   };
   $("btn-autopilot").onclick = triggerAutopilot;
   $("oddroot-autopilot-btn").onclick = triggerAutopilot;
+  if ($("bastion-autopilot-btn")) $("bastion-autopilot-btn").onclick = triggerAutopilot;
 
-  for (const boostId of ["btn-boost", "oddroot-boost-btn"]) {
+  for (const boostId of ["btn-boost", "oddroot-boost-btn", "bastion-boost-btn"]) {
     const b = $(boostId);
     if (!b) continue;
     b.addEventListener("pointerdown", () => {

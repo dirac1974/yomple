@@ -32,6 +32,13 @@ import {
   HorizonWonderAndRelicSystem,
   createSoftGlowTexture,
 } from "../core/vfx-3d.js";
+import {
+  computeSimulationTimeScale,
+  resolveActiveBiome,
+  createFieldExpeditionState,
+  stepFieldExpedition,
+  exportRobloxSimSnapshot,
+} from "../core/world-sim.js";
 
 export {
   getSanctuaryJournalEntries,
@@ -49,6 +56,8 @@ export const SANCTUARY_ISLANDS = [
   { id: "east", name: "East Conservatory Looms", x: 24, z: -12, radius: 12.0, topY: 1.2 },
   { id: "north", name: "North Starlight Cliff", x: 0, z: -30, radius: 13.0, topY: 2.0 },
   { id: "obs", name: "Northern Observatory Ridge", x: 0, z: -60, radius: 11.5, topY: 3.6 },
+  { id: "grotto", name: "Sunken Starlight Grotto", x: -41, z: 10, radius: 11.5, topY: 0.8 },
+  { id: "skyroot", name: "Sky-Root Windward Spire", x: 41, z: 10, radius: 11.5, topY: 1.8 },
 ];
 
 export const SANCTUARY_BRIDGES = [
@@ -59,6 +68,8 @@ export const SANCTUARY_BRIDGES = [
   { ax: -16.5, az: -18.0, ay: 1.2, bx: -9.8, bz: -24.0, by: 1.95, width: 4.2 },
   { ax: 16.5, az: -18.0, ay: 1.2, bx: 9.8, bz: -24.0, by: 1.95, width: 4.2 },
   { ax: 0, az: -41.5, ay: 2.0, bx: 0, bz: -49.5, by: 3.55, width: 4.6 },
+  { ax: -30.5, az: -3.6, ay: 1.18, bx: -34.8, bz: 1.9, by: 0.82, width: 4.8 },
+  { ax: 30.5, az: -3.6, ay: 1.18, bx: 34.8, bz: 1.9, by: 1.78, width: 4.8 },
 ];
 
 export const SHRINE_ANCHORS = [
@@ -125,15 +136,33 @@ const AUTOPILOT_BRIDGE_TRANSITIONS = {
     { x: 0, z: -51.0 },
     { x: 0, z: -39.5 },
   ],
+  "west->grotto": [
+    { x: -29.8, z: -4.5 },
+    { x: -35.6, z: 3.0 },
+  ],
+  "grotto->west": [
+    { x: -35.6, z: 3.0 },
+    { x: -29.8, z: -4.5 },
+  ],
+  "east->skyroot": [
+    { x: 29.8, z: -4.5 },
+    { x: 35.6, z: 3.0 },
+  ],
+  "skyroot->east": [
+    { x: 35.6, z: 3.0 },
+    { x: 29.8, z: -4.5 },
+  ],
 };
 
 const AUTOPILOT_ISLAND_ADJ = {
   south: ["center"],
   center: ["south", "west", "east", "north"],
-  west: ["center", "north"],
-  east: ["center", "north"],
+  west: ["center", "north", "grotto"],
+  east: ["center", "north", "skyroot"],
   north: ["center", "west", "east", "obs"],
   obs: ["north"],
+  grotto: ["west"],
+  skyroot: ["east"],
 };
 
 export const WORKSHOP_PAD_COORD = { x: -7.5, y: 0.42, z: 23.5 };
@@ -344,6 +373,28 @@ export class OddrootWorld3D {
     this._inWorkshopPad = false;
     this._offEdgeSec = 0;
     this._chasmGlideTimer = 0;
+    this._skyrootLiftTimer = 0;
+
+    this.bulletTimeRequested = false;
+    this._lastSimDt = 1 / 60;
+    this.simTimeState = computeSimulationTimeScale({
+      dt: 1 / 60,
+      encounterDockOpen: false,
+      activeGateSlot: false,
+      bulletTimeRequested: false,
+      realmId: "oddroot",
+    });
+    this.fieldExpedition = createFieldExpeditionState("oddroot", 0);
+
+    this.grottoLagoonPools = [];
+    this.grottoSporeCaps = [];
+    this.skyrootWindRings = [];
+    this.expeditionBeacons = [];
+    this.expeditionBurstMesh = null;
+    this._expeditionBurstTimer = 0;
+    this.clockworkCharm = null;
+    this.clockworkCharmOuter = null;
+    this.clockworkCharmInner = null;
 
     this.rigAnim = null;
     this.guardianAnim = null;
@@ -489,6 +540,8 @@ export class OddrootWorld3D {
 
     this._buildCelestialAtmosphere();
     this._buildSanctuaryArchipelago();
+    this._buildOuterArchipelagoBiomes();
+    this._buildExpeditionBeacons();
     this._buildWorldTreeMoonwellAndObservatory();
     this._buildHarvestableThickets();
     this._buildSiphonProjectilePool();
@@ -1283,6 +1336,436 @@ export class OddrootWorld3D {
     this.scene.add(this.workshopPadGroup);
   }
 
+  _buildOuterArchipelagoBiomes() {
+    this.outerBiomesGroup = new THREE.Group();
+    this.outerBiomesGroup.name = "OddrootOuterBiomes";
+    this.scene.add(this.outerBiomesGroup);
+
+    // 1. Sunken Starlight Grotto (-41, 10, topY = 0.8): glowing lagoon crystal pools, giant spore-caps & moss-crystal bridge trim
+    const grottoGrp = new THREE.Group();
+    grottoGrp.name = "SunkenStarlightGrotto";
+    this.outerBiomesGroup.add(grottoGrp);
+
+    const grottoStoneMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+      color: 0x26545c,
+      emissive: 0x0f2f38,
+      emissiveIntensity: 0.36,
+      rimColor: 0x62f5e4,
+      rimIntensity: 0.5,
+    });
+    const grottoCrystalCyanMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+      color: 0x62f5e4,
+      emissive: 0x14b8a6,
+      emissiveIntensity: 0.85,
+      rimColor: 0xffffff,
+      rimIntensity: 0.68,
+    });
+    const grottoCrystalVioletMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+      color: 0xc084fc,
+      emissive: 0x7e22ce,
+      emissiveIntensity: 0.78,
+      rimColor: 0xffe599,
+      rimIntensity: 0.62,
+    });
+
+    // Living moss-and-crystal clusters flanking the west <-> grotto bridge
+    const grottoBridge = SANCTUARY_BRIDGES[7];
+    if (grottoBridge) {
+      for (let s = 0; s < 4; s++) {
+        const u = (s + 0.5) / 4;
+        const bx = grottoBridge.ax + (grottoBridge.bx - grottoBridge.ax) * u;
+        const by = grottoBridge.ay + (grottoBridge.by - grottoBridge.ay) * u;
+        const bz = grottoBridge.az + (grottoBridge.bz - grottoBridge.az) * u;
+        for (const side of [-1, 1]) {
+          const cluster = new THREE.Mesh(
+            new THREE.ConeGeometry(0.24, 0.78, 6),
+            (s + (side > 0 ? 1 : 0)) % 2 === 0 ? grottoCrystalCyanMat : grottoCrystalVioletMat
+          );
+          cluster.position.set(bx + side * 2.35, by + 0.32, bz + side * 0.45);
+          cluster.rotation.z = -side * 0.22;
+          grottoGrp.add(cluster);
+        }
+      }
+    }
+
+    this.grottoLagoonPools = [];
+    const lagoonSpecs = [
+      { x: -41.0, z: 9.8, r: 3.8, col: 0x3bf0c5 },
+      { x: -36.0, z: 13.4, r: 2.3, col: 0x62f5e4 },
+    ];
+    for (let i = 0; i < lagoonSpecs.length; i++) {
+      const ls = lagoonSpecs[i];
+      const py = 0.8;
+      const poolGrp = new THREE.Group();
+      poolGrp.position.set(ls.x, py, ls.z);
+
+      const rimTorus = new THREE.Mesh(
+        new THREE.TorusGeometry(ls.r, 0.28, 8, 28),
+        grottoStoneMat
+      );
+      rimTorus.rotation.x = Math.PI / 2;
+      rimTorus.position.y = 0.08;
+      poolGrp.add(rimTorus);
+
+      const waterMat = new THREE.MeshBasicMaterial({
+        color: ls.col,
+        transparent: true,
+        opacity: 0.78,
+      });
+      const waterDisc = new THREE.Mesh(new THREE.CircleGeometry(ls.r * 0.96, 28), waterMat);
+      waterDisc.rotation.x = -Math.PI / 2;
+      waterDisc.position.y = 0.04;
+      poolGrp.add(waterDisc);
+
+      const rippleMat = new THREE.MeshBasicMaterial({
+        color: 0xb8fff6,
+        transparent: true,
+        opacity: 0.52,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const rippleMesh = new THREE.Mesh(
+        new THREE.RingGeometry(ls.r * 0.35, ls.r * 0.52, 26),
+        rippleMat
+      );
+      rippleMesh.rotation.x = -Math.PI / 2;
+      rippleMesh.position.y = 0.07;
+      poolGrp.add(rippleMesh);
+
+      for (let c = 0; c < 5; c++) {
+        const ang = (c / 5) * Math.PI * 2 + i * 0.6;
+        const crystal = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.32 + (c % 2) * 0.12, 0),
+          c % 2 === 0 ? grottoCrystalCyanMat : grottoCrystalVioletMat
+        );
+        crystal.scale.set(0.8, 1.8, 0.8);
+        crystal.position.set(
+          Math.cos(ang) * (ls.r + 0.15),
+          0.38,
+          Math.sin(ang) * (ls.r + 0.15)
+        );
+        poolGrp.add(crystal);
+      }
+
+      grottoGrp.add(poolGrp);
+      this.grottoLagoonPools.push({
+        group: poolGrp,
+        rippleMesh,
+        rippleMat,
+        waterMat,
+        phase: i * 1.7,
+      });
+    }
+
+    this.grottoSporeCaps = [];
+    const giantCapSpecs = [
+      { x: -46.2, z: 6.0, h: 4.4, capR: 2.45, col: 0x3bf0c5, phase: 0.0 },
+      { x: -45.8, z: 14.2, h: 4.8, capR: 2.75, col: 0xc084fc, phase: 1.5 },
+      { x: -38.4, z: 18.0, h: 3.9, capR: 2.15, col: 0x62f5e4, phase: 3.1 },
+      { x: -34.2, z: 9.0, h: 3.6, capR: 1.95, col: 0xffd166, phase: 4.6 },
+    ];
+    const giantStemMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+      color: 0xe6f7f2,
+      emissive: 0x1e4d45,
+      emissiveIntensity: 0.42,
+      rimColor: 0x62f5e4,
+      rimIntensity: 0.45,
+    });
+    for (const sc of giantCapSpecs) {
+      const capGrp = new THREE.Group();
+      capGrp.position.set(sc.x, 0.8, sc.z);
+
+      const stem = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.28, 0.46, sc.h, 10),
+        giantStemMat
+      );
+      stem.position.y = sc.h * 0.5;
+      capGrp.add(stem);
+
+      const capMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+        color: sc.col,
+        emissive: sc.col,
+        emissiveIntensity: 0.72,
+        rimColor: 0xffffff,
+        rimIntensity: 0.68,
+      });
+      const capDome = new THREE.Mesh(
+        new THREE.ConeGeometry(sc.capR, sc.capR * 0.68, 16),
+        capMat
+      );
+      capDome.position.y = sc.h + sc.capR * 0.24;
+      capGrp.add(capDome);
+
+      const gillRing = new THREE.Mesh(
+        new THREE.TorusGeometry(sc.capR * 0.74, 0.08, 8, 22),
+        grottoCrystalCyanMat
+      );
+      gillRing.rotation.x = Math.PI / 2;
+      gillRing.position.y = sc.h - 0.08;
+      capGrp.add(gillRing);
+
+      grottoGrp.add(capGrp);
+      this.grottoSporeCaps.push({
+        group: capGrp,
+        capDome,
+        capMat,
+        gillRing,
+        baseHeight: sc.h,
+        phase: sc.phase,
+      });
+    }
+
+    // 2. Sky-Root Windward Spire (41, 10, topY = 1.8): living root-bridge, windward spire & Golden Soaring Updraft Wind Rings
+    const skyrootGrp = new THREE.Group();
+    skyrootGrp.name = "SkyRootWindwardSpire";
+    this.outerBiomesGroup.add(skyrootGrp);
+
+    const livingRootMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+      color: 0x6e4726,
+      emissive: 0x2b1808,
+      emissiveIntensity: 0.3,
+      rimColor: 0xffd166,
+      rimIntensity: 0.48,
+    });
+    const windGoldMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+      color: 0xffd166,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 0.92,
+      rimColor: 0xffffff,
+      rimIntensity: 0.74,
+    });
+
+    // Braided living root arches along the east <-> skyroot bridge
+    const skyrootBridge = SANCTUARY_BRIDGES[8];
+    if (skyrootBridge) {
+      for (let s = 0; s < 3; s++) {
+        const u = (s + 0.5) / 3;
+        const bx = skyrootBridge.ax + (skyrootBridge.bx - skyrootBridge.ax) * u;
+        const by = skyrootBridge.ay + (skyrootBridge.by - skyrootBridge.ay) * u;
+        const bz = skyrootBridge.az + (skyrootBridge.bz - skyrootBridge.az) * u;
+        const rootTendrilArch = new THREE.Mesh(
+          new THREE.TorusGeometry(2.65, 0.14, 8, 20, Math.PI),
+          livingRootMat
+        );
+        rootTendrilArch.position.set(bx, by + 0.1, bz);
+        rootTendrilArch.rotation.y = Math.atan2(
+          skyrootBridge.bx - skyrootBridge.ax,
+          skyrootBridge.bz - skyrootBridge.az
+        );
+        skyrootGrp.add(rootTendrilArch);
+      }
+    }
+
+    // Sculpted Windward Living Root-Spire on the outer skyroot cliff rim
+    const spireGrp = new THREE.Group();
+    spireGrp.position.set(46.8, 1.8, 11.2);
+    const spireTrunk = new THREE.Mesh(
+      new THREE.ConeGeometry(2.1, 8.6, 10),
+      livingRootMat
+    );
+    spireTrunk.position.y = 4.3;
+    spireGrp.add(spireTrunk);
+
+    for (let r = 0; r < 3; r++) {
+      const coil = new THREE.Mesh(
+        new THREE.TorusGeometry(1.75 - r * 0.35, 0.12, 8, 22),
+        windGoldMat
+      );
+      coil.rotation.x = Math.PI / 2 + 0.22 * (r % 2 === 0 ? 1 : -1);
+      coil.position.y = 2.2 + r * 2.1;
+      spireGrp.add(coil);
+    }
+
+    this.skyrootSpireCrown = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.92, 0),
+      windGoldMat
+    );
+    this.skyrootSpireCrown.position.y = 9.4;
+    spireGrp.add(this.skyrootSpireCrown);
+
+    this.skyrootSpireHalo = new THREE.Mesh(
+      new THREE.TorusGeometry(1.65, 0.08, 8, 28),
+      grottoCrystalCyanMat
+    );
+    this.skyrootSpireHalo.position.y = 9.4;
+    this.skyrootSpireHalo.rotation.x = Math.PI * 0.32;
+    spireGrp.add(this.skyrootSpireHalo);
+    skyrootGrp.add(spireGrp);
+
+    // Golden Soaring Updraft Wind Rings on Sky-Root Windward Spire
+    this.skyrootWindRings = [];
+    const windRingSpecs = [
+      { x: 36.5, z: 6.8, rotY: 0.45, radius: 4.2 },
+      { x: 41.5, z: 11.5, rotY: 0.15, radius: 4.2 },
+      { x: 39.0, z: 16.2, rotY: -0.35, radius: 4.2 },
+    ];
+    for (let i = 0; i < windRingSpecs.length; i++) {
+      const wr = windRingSpecs[i];
+      const ringGrp = new THREE.Group();
+      ringGrp.name = `SkyrootWindRing_${i}`;
+      ringGrp.position.set(wr.x, 1.8 + 1.85, wr.z);
+      ringGrp.rotation.y = wr.rotY;
+
+      const outerMat = createOddrootToonRimMaterial(this.toonGradientTex, {
+        color: 0xffd166,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 0.95,
+        rimColor: 0xffffff,
+        rimIntensity: 0.78,
+      });
+      const outerRing = new THREE.Mesh(
+        new THREE.TorusGeometry(2.15, 0.15, 10, 28),
+        outerMat
+      );
+      ringGrp.add(outerRing);
+
+      const innerMat = new THREE.MeshBasicMaterial({
+        color: 0x62f5e4,
+        transparent: true,
+        opacity: 0.76,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const innerRing = new THREE.Mesh(
+        new THREE.TorusGeometry(1.62, 0.08, 8, 24),
+        innerMat
+      );
+      ringGrp.add(innerRing);
+
+      const pedestal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.65, 0.36, 8),
+        livingRootMat
+      );
+      pedestal.position.y = -1.68;
+      ringGrp.add(pedestal);
+
+      skyrootGrp.add(ringGrp);
+      this.skyrootWindRings.push({
+        index: i,
+        x: wr.x,
+        y: 1.8,
+        z: wr.z,
+        radius: wr.radius,
+        cooldown: 0,
+        group: ringGrp,
+        outerRing,
+        innerRing,
+        outerMat,
+      });
+    }
+  }
+
+  _buildExpeditionBeacons() {
+    this.expeditionBeaconGroup = new THREE.Group();
+    this.expeditionBeaconGroup.name = "OddrootExpeditionBeacons";
+    this.scene.add(this.expeditionBeaconGroup);
+
+    this.expeditionBeacons = [];
+    for (let i = 0; i < 3; i++) {
+      const bGrp = new THREE.Group();
+      bGrp.name = `OddrootExpeditionBeacon_${i}`;
+
+      const outerMat = new THREE.MeshBasicMaterial({
+        color: 0xffd166,
+        transparent: true,
+        opacity: 0.86,
+      });
+      const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.12, 8, 24), outerMat);
+      outerRing.rotation.x = Math.PI / 2;
+      outerRing.position.y = 0.35;
+      bGrp.add(outerRing);
+
+      const innerMat = new THREE.MeshBasicMaterial({
+        color: 0x3bf0c5,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const innerRing = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.08, 8, 20), innerMat);
+      innerRing.rotation.x = Math.PI / 2;
+      innerRing.position.y = 1.15;
+      bGrp.add(innerRing);
+
+      const needleMat = new THREE.MeshBasicMaterial({
+        color: 0xaef6ff,
+        transparent: true,
+        opacity: 0.44,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const needle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.3, 9.5, 10), needleMat);
+      needle.position.y = 4.9;
+      bGrp.add(needle);
+
+      const crownGem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.45, 0),
+        createOddrootToonRimMaterial(this.toonGradientTex, {
+          color: 0xffd166,
+          emissive: 0x3bf0c5,
+          emissiveIntensity: 0.88,
+          rimColor: 0xffffff,
+          rimIntensity: 0.7,
+        })
+      );
+      crownGem.position.y = 2.35;
+      bGrp.add(crownGem);
+
+      this.expeditionBeaconGroup.add(bGrp);
+      this.expeditionBeacons.push({
+        index: i,
+        group: bGrp,
+        outerRing,
+        innerRing,
+        needle,
+        crownGem,
+      });
+    }
+
+    const burstMat = new THREE.MeshBasicMaterial({
+      color: 0xffd166,
+      transparent: true,
+      opacity: 0.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.expeditionBurstMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(1.6, 0.2, 8, 24),
+      burstMat
+    );
+    this.expeditionBurstMesh.rotation.x = Math.PI / 2;
+    this.expeditionBurstMesh.visible = false;
+    this.expeditionBeaconGroup.add(this.expeditionBurstMesh);
+
+    this._syncExpeditionBeacons();
+  }
+
+  _syncExpeditionBeacons() {
+    if (!this.expeditionBeacons || !this.fieldExpedition) return;
+    const waypoints = Array.isArray(this.fieldExpedition.waypoints)
+      ? this.fieldExpedition.waypoints
+      : [];
+    for (let i = 0; i < this.expeditionBeacons.length; i++) {
+      const slot = this.expeditionBeacons[i];
+      const wp = waypoints[i];
+      if (!wp || wp.collected) {
+        slot.group.visible = false;
+        continue;
+      }
+      const gy = this._groundHeightAt(wp.x, wp.z);
+      slot.group.position.set(wp.x, gy + 0.08, wp.z);
+      slot.group.visible = true;
+    }
+  }
+
+  _triggerExpeditionBurst(wx, wy, wz) {
+    if (!this.expeditionBurstMesh) return;
+    this.expeditionBurstMesh.position.set(wx, wy + 0.6, wz);
+    this.expeditionBurstMesh.scale.setScalar(1.0);
+    this.expeditionBurstMesh.material.opacity = 0.9;
+    this.expeditionBurstMesh.visible = true;
+    this._expeditionBurstTimer = 0.58;
+  }
+
   _buildWorldTreeMoonwellAndObservatory() {
     // 1. Central Moonwell Pond at (0, 0) ("the moon is in the middle")
     this.moonwellGroup = new THREE.Group();
@@ -1972,7 +2455,27 @@ export class OddrootWorld3D {
           (progress?.records?.deepestSubZero || 0) >= 100 ||
           mysteries.has("subzero_abyss")
       ),
+      clockworkCrestUnlocked: Boolean(
+        cx.clockworkCrestUnlocked ||
+          cx.clockworkSentinelSynced ||
+          mergedUpgrades.has("ab_auto_turret") ||
+          mergedUpgrades.has("ab_chronos_harp") ||
+          (progress?.games?.arc_bastion?.bastionUpgrades || []).includes("ab_auto_turret") ||
+          (progress?.games?.arc_bastion?.bastionUpgrades || []).includes("ab_chronos_harp") ||
+          (progress?.games?.arc_bastion?.contraptionsShattered || 0) >= 5 ||
+          progress?.games?.bastion?.clockworkCrestUnlocked ||
+          mergedUpgrades.has("bastion_clockwork_crest")
+      ),
     };
+
+    const completedExpCount = Math.max(
+      0,
+      Math.floor(Number(oddState.expeditionsCompleted) || 0)
+    );
+    if (!this.fieldExpedition || this.fieldExpedition.completedTotal !== completedExpCount) {
+      this.fieldExpedition = createFieldExpeditionState("oddroot", completedExpCount);
+      this._syncExpeditionBeacons();
+    }
 
     this.rigState.rawMountVariant = rawMount;
     this.rigState.mountId = mountId;
@@ -2687,6 +3190,20 @@ export class OddrootWorld3D {
       pommel.position.set(0, -0.98, 0);
       this.siphonStaffGroup.add(pommel);
     }
+
+    if (cx.clockworkCrestUnlocked) {
+      const charm = this._createClockworkCharmMesh(goldBrassMat, trimMat);
+      charm.group.position.set(0, 0.56, 0.14);
+      this.siphonStaffGroup.add(charm.group);
+      this.clockworkCharm = charm.group;
+      this.clockworkCharmOuter = charm.outerGear;
+      this.clockworkCharmInner = charm.innerGear;
+    } else {
+      this.clockworkCharm = null;
+      this.clockworkCharmOuter = null;
+      this.clockworkCharmInner = null;
+    }
+
     grp.add(this.siphonStaffGroup);
 
     // Companion Crystal Fox
@@ -2725,6 +3242,7 @@ export class OddrootWorld3D {
     grp.userData.mountId = normMount;
     grp.userData.goldenMosaicTrim = Boolean(cx.goldenMosaicTrimUnlocked);
     grp.userData.auroraTrim = Boolean(cx.auroraBladeTrimUnlocked);
+    grp.userData.clockworkCharm = Boolean(cx.clockworkCrestUnlocked);
 
     grp.position.set(this.rigState.x, this.rigState.y, this.rigState.z);
     grp.rotation.y = this.rigState.heading;
@@ -2732,6 +3250,35 @@ export class OddrootWorld3D {
     this.avatarGroup = grp;
     this.rigGroup = grp;
     return grp;
+  }
+
+  _createClockworkCharmMesh(goldBrassMat, trimMat) {
+    const group = new THREE.Group();
+    group.name = "oddroot_clockwork_charm";
+
+    const outerGear = new THREE.Group();
+    outerGear.add(new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.036, 8, 20), goldBrassMat));
+    for (let t = 0; t < 8; t++) {
+      const ang = (t / 8) * Math.PI * 2;
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.085, 0.045), goldBrassMat);
+      tooth.position.set(Math.cos(ang) * 0.27, Math.sin(ang) * 0.27, 0);
+      tooth.rotation.z = ang;
+      outerGear.add(tooth);
+    }
+    group.add(outerGear);
+
+    const innerGear = new THREE.Group();
+    innerGear.add(new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.025, 8, 16), trimMat));
+    for (let t = 0; t < 6; t++) {
+      const ang = (t / 6) * Math.PI * 2;
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.24, 0.035), goldBrassMat);
+      spoke.rotation.z = ang;
+      innerGear.add(spoke);
+    }
+    innerGear.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.065, 0), trimMat));
+    group.add(innerGear);
+
+    return { group, outerGear, innerGear };
   }
 
   rebuildRig(mountId, upgrades) {
@@ -2781,6 +3328,188 @@ export class OddrootWorld3D {
 
   setZoneProgressRatio(ratio) {
     this.horizonWonder?.setZoneProgress(ratio);
+  }
+
+  getActiveBiome() {
+    return resolveActiveBiome("oddroot", this.rigState.x, this.rigState.z);
+  }
+
+  getFieldExpeditionState() {
+    if (!this.fieldExpedition) {
+      this.fieldExpedition = createFieldExpeditionState("oddroot", 0);
+    }
+    return this.fieldExpedition;
+  }
+
+  getRobloxSimSnapshot() {
+    const timeScaleState = computeSimulationTimeScale({
+      dt: this._lastSimDt || 1 / 60,
+      encounterDockOpen: this.encounterDockOpen,
+      activeGateSlot: Boolean(this.activeGateSlot || this._gateAutoPause),
+      bulletTimeRequested: Boolean(this.bulletTimeRequested),
+      realmId: "oddroot",
+    });
+    this.simTimeState = timeScaleState;
+    return exportRobloxSimSnapshot({
+      realmId: "oddroot",
+      vehicleState: this.rigState,
+      timeScaleState,
+      expeditionState: this.getFieldExpeditionState(),
+    });
+  }
+
+  _stepOuterArchipelagoBiomes(dt, pausedForMath) {
+    const t = this.elapsedTime;
+
+    for (const pool of this.grottoLagoonPools || []) {
+      const cycle = (t * 0.44 + pool.phase) % 1;
+      pool.rippleMesh.scale.setScalar(0.75 + cycle * 1.15);
+      pool.rippleMat.opacity = 0.52 * (1 - cycle);
+      pool.waterMat.opacity = 0.72 + Math.sin(t * 2.1 + pool.phase) * 0.08;
+    }
+
+    for (const sc of this.grottoSporeCaps || []) {
+      const pulse = 1.0 + Math.sin(t * 2.2 + sc.phase) * 0.05;
+      sc.capDome.scale.set(pulse, 1.0 + Math.cos(t * 2.2 + sc.phase) * 0.04, pulse);
+      sc.capMat.emissiveIntensity = 0.68 + Math.sin(t * 2.6 + sc.phase) * 0.16;
+      sc.gillRing.rotation.z = t * 0.65 + sc.phase;
+    }
+
+    if (this.skyrootSpireCrown) {
+      this.skyrootSpireCrown.rotation.y = t * 1.8;
+      this.skyrootSpireCrown.position.y = 9.4 + Math.sin(t * 2.6) * 0.25;
+    }
+    if (this.skyrootSpireHalo) {
+      this.skyrootSpireHalo.rotation.z = t * 2.2;
+      this.skyrootSpireHalo.rotation.y = -t * 1.3;
+    }
+
+    for (const ring of this.skyrootWindRings || []) {
+      if (ring.cooldown > 0) {
+        ring.cooldown = Math.max(0, ring.cooldown - dt);
+      }
+      ring.outerRing.rotation.z = t * 2.1 + ring.index;
+      ring.innerRing.rotation.z = -t * 3.4 - ring.index;
+      ring.outerMat.emissiveIntensity = 0.85 + Math.sin(t * 4.2 + ring.index) * 0.2;
+
+      if (!pausedForMath && !this.rigAnim && !this.autopilotTarget && ring.cooldown <= 0) {
+        const dRing = Math.hypot(this.rigState.x - ring.x, this.rigState.z - ring.z);
+        if (dRing <= ring.radius) {
+          ring.cooldown = 6.5;
+          this._skyrootLiftTimer = 0.88;
+          this.rigState.glidingAirborne = true;
+          this.rigState.y += 0.65;
+          if (this.avatarGroup) {
+            this.avatarGroup.position.y = this.rigState.y;
+          }
+          this.rigState.speed = Math.max(Number(this.rigState.speed) || 0, 15.2);
+          this.slipstreamVfx?.triggerClearBoost({
+            x: this.rigState.x,
+            y: this.rigState.y,
+            z: this.rigState.z,
+            overdrive: false,
+          });
+          if (typeof this.audio?.playWindRingBoost === "function") {
+            this.audio.playWindRingBoost();
+          } else {
+            this.audio?.playUpdraftLift?.();
+          }
+          this.onOppositionEvent?.({
+            type: "skyroot_wind_ring",
+            kind: "skyroot_wind_ring",
+            shardsEarned: 3,
+            message: "🌬️ Sky-Root Wind Ring! +3💎",
+          });
+        }
+      }
+    }
+  }
+
+  _stepFieldExpedition(dt) {
+    const t = this.elapsedTime;
+    if (!this.fieldExpedition) {
+      this.fieldExpedition = createFieldExpeditionState("oddroot", 0);
+      this._syncExpeditionBeacons();
+    }
+
+    for (const slot of this.expeditionBeacons || []) {
+      if (!slot.group.visible) continue;
+      slot.outerRing.rotation.z = t * 1.5 + slot.index;
+      slot.innerRing.rotation.z = -t * 2.1 - slot.index;
+      slot.innerRing.position.y = 1.15 + Math.sin(t * 3.2 + slot.index) * 0.22;
+      slot.crownGem.rotation.y = t * 2.8 + slot.index;
+      slot.crownGem.position.y = 2.35 + Math.sin(t * 3.8 + slot.index) * 0.26;
+    }
+
+    if (this._expeditionBurstTimer > 0 && this.expeditionBurstMesh) {
+      this._expeditionBurstTimer = Math.max(0, this._expeditionBurstTimer - dt);
+      const u = 1 - this._expeditionBurstTimer / 0.58;
+      this.expeditionBurstMesh.scale.setScalar(1.0 + u * 2.8);
+      this.expeditionBurstMesh.material.opacity = Math.max(0, 0.9 * (1 - u));
+      if (this._expeditionBurstTimer <= 0) {
+        this.expeditionBurstMesh.visible = false;
+      }
+    }
+
+    // CRITICAL SHARD TIMING GUARDRAIL: only evaluate waypoint collection during pure free-roam!
+    if (
+      !this.encounterDockOpen &&
+      !this.activeGateSlot &&
+      !this._gateAutoPause &&
+      !this.rigAnim &&
+      !this.autopilotTarget
+    ) {
+      const res = stepFieldExpedition(this.fieldExpedition, this.rigState.x, this.rigState.z);
+      this.fieldExpedition = res.state;
+      if (res.justCollectedWaypoint) {
+        const wp = res.justCollectedWaypoint;
+        this._triggerExpeditionBurst(wp.x, this._groundHeightAt(wp.x, wp.z) + 0.1, wp.z);
+        this._syncExpeditionBeacons();
+
+        if (res.justCompletedExpedition) {
+          if (typeof this.audio?.playExpeditionComplete === "function") {
+            this.audio.playExpeditionComplete();
+          } else {
+            this.audio?.playClear?.(false);
+          }
+          this.onWorldActivity(1, res.shardsEarned, "expeditionsCompleted");
+          this._persistOddrootProgressMutation((oddState) => {
+            oddState.expeditionsCompleted = res.state.completedTotal;
+          });
+          this.onOppositionEvent?.({
+            type: "expedition_complete",
+            kind: "expedition_complete",
+            shardsEarned: 0,
+            message:
+              "🌟 Expedition Complete: " +
+              res.justCompletedExpedition.title +
+              "! +" +
+              res.shardsEarned +
+              "💎",
+          });
+        } else {
+          if (typeof this.audio?.playExpeditionWaypoint === "function") {
+            this.audio.playExpeditionWaypoint(res.state.collectedCount);
+          } else {
+            this.audio?.playSiphonPop?.(1.18);
+          }
+          this.onOppositionEvent?.({
+            type: "expedition_waypoint",
+            kind: "expedition_waypoint",
+            shardsEarned: res.shardsEarned,
+            message:
+              res.state.icon +
+              " " +
+              wp.label +
+              " (" +
+              res.state.collectedCount +
+              "/" +
+              res.state.targetCount +
+              ") +2💎",
+          });
+        }
+      }
+    }
   }
 
   triggerGuardianAwakening(worldId = "W1") {
@@ -2902,8 +3631,14 @@ export class OddrootWorld3D {
       for (const m of mouths) {
         waypoints.push({ x: m.x, z: m.z });
       }
-      if (toIsl === "center" && i < islRoute.length - 2) {
-        waypoints.push({ x: 0, z: -6.0 });
+      if (i < islRoute.length - 2) {
+        if (toIsl === "center") {
+          waypoints.push({ x: 0, z: -6.0 });
+        } else if (toIsl === "west") {
+          waypoints.push({ x: -23.5, z: -9.5 });
+        } else if (toIsl === "east") {
+          waypoints.push({ x: 23.5, z: -9.5 });
+        }
       }
     }
     waypoints.push({ x: tx, z: tz });
@@ -3418,6 +4153,7 @@ export class OddrootWorld3D {
   }
 
   _update(dt) {
+    this._lastSimDt = dt;
     // 1. Active Cinematic Animations (Vine Grind or Updraft Cushion Lift)
     if (
       this.rigAnim &&
@@ -3429,6 +4165,7 @@ export class OddrootWorld3D {
     }
 
     if (this.rigAnim) {
+      this._skyrootLiftTimer = 0;
       this.rigAnim.t += dt;
       const p = Math.min(1, this.rigAnim.t / Math.max(0.1, this.rigAnim.dur));
 
@@ -3543,6 +4280,15 @@ export class OddrootWorld3D {
     if (this.chestStarBrooch) {
       this.chestStarBrooch.rotation.z = Math.sin(this.elapsedTime * 2.2) * 0.14;
     }
+    if (this.clockworkCharm) {
+      this.clockworkCharm.rotation.y = Math.sin(this.elapsedTime * 1.8) * 0.22;
+    }
+    if (this.clockworkCharmOuter) {
+      this.clockworkCharmOuter.rotation.z += dt * 2.5;
+    }
+    if (this.clockworkCharmInner) {
+      this.clockworkCharmInner.rotation.z -= dt * 3.8;
+    }
 
     this.audio?.updateMovementHum?.(speedMag / 18.0, this.rigState.mountId);
 
@@ -3648,20 +4394,30 @@ export class OddrootWorld3D {
     // 5. Shrine Gate Proximity Hysteresis
     this._updateShrineProximity();
 
-    // 6. Step Active Blight/Gloom Opposition (100% frozen when isOppositionPaused() === true!)
+    // 6. Step Active Blight/Gloom Opposition, Sim Timescale, Outer Biomes & Expeditions!
+    const pausedForMath = this.isOppositionPaused();
+    this.simTimeState = computeSimulationTimeScale({
+      dt,
+      encounterDockOpen: this.encounterDockOpen,
+      activeGateSlot: Boolean(this.activeGateSlot || this._gateAutoPause),
+      bulletTimeRequested: Boolean(this.bulletTimeRequested),
+      realmId: "oddroot",
+    });
     this.blightSystem.step(dt, {
-      paused: this.isOppositionPaused(),
+      paused: pausedForMath,
       menagerie: this.menagerie,
       onWorldActivity: this.onWorldActivity,
     });
 
-    // 7. Step Shrines, Menagerie & Live 2-Player Co-Op
+    // 7. Step Shrines, Menagerie, Outer Archipelago Biomes, Field Expeditions & Live 2-Player Co-Op
     this.shrines.update(dt, this.elapsedTime);
     this.menagerie.step(dt, this.elapsedTime, {
       audio: this.audio,
       onWorldActivity: this.onWorldActivity,
       onOppositionEvent: this.onOppositionEvent,
     });
+    this._stepOuterArchipelagoBiomes(dt, pausedForMath);
+    this._stepFieldExpedition(dt);
     this.coop.step(dt, this.elapsedTime, this.rigState);
 
     // 8. Guardian Awakening, Overdrive Sky-Whale & Self-Ghost Replay/Record
@@ -3880,6 +4636,17 @@ export class OddrootWorld3D {
       return;
     }
 
+    if (this._skyrootLiftTimer > 0) {
+      this._skyrootLiftTimer = Math.max(0, this._skyrootLiftTimer - dt);
+      this.rigState.glidingAirborne = true;
+      const liftPhase = 1 - this._skyrootLiftTimer / 0.88;
+      const liftArc = Math.sin(liftPhase * Math.PI) * 2.25;
+      const targetLiftY = Math.max(nextSample.groundY, groundSample.groundY) + 0.55 + liftArc;
+      this.rigState.y += (targetLiftY - this.rigState.y) * (1 - Math.exp(-16 * dt));
+      this._offEdgeSec = 0;
+      return;
+    }
+
     if (nextSample.onGround) {
       this._offEdgeSec = 0;
       this.rigState.glidingAirborne = false;
@@ -3896,7 +4663,7 @@ export class OddrootWorld3D {
         (hasGlideWings || this.rigState.mountId === "starlight_glider") &&
         Math.abs(this.rigState.speed) > 2.2 &&
         this._offEdgeSec < maxGlideWindow &&
-        Math.hypot(this.rigState.x, this.rigState.z) < 66;
+        Math.hypot(this.rigState.x, this.rigState.z) < 72;
 
       if (canGlide) {
         this.rigState.glidingAirborne = true;

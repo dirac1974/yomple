@@ -5,10 +5,11 @@
   <meta name="referrer" content="no-referrer" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Bloom N · Yomple 3D Worlds</title>
-  <meta name="description" content="Bloom N — 3D adventure realms inside Yomple: Frostwake Terra-Rigs and Oddroot Alchemy Sanctuary." />
+  <meta name="description" content="Bloom N — 3D adventure realms inside Yomple: Frostwake Terra-Rigs, Oddroot Alchemy Sanctuary, and Arc Bastion Siegesmiths." />
   <link rel="icon" href="../favicon.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="styles-oddroot.css" />
+  <link rel="stylesheet" href="styles-bastion.css" />
 </head>
 <body>
   <!-- ==================== SCREEN 1: BLOOM N PORTAL HUB ==================== -->
@@ -74,9 +75,25 @@
             </div>
           </div>
         </article>
+
+        <!-- Featured Sub-Game #3: Arc Bastion: Siegesmiths -->
+        <article class="hero-card bastion-hero" id="hero-bastion" data-realm="arc_bastion" style="background-image: url('assets/realm4-bastion.jpg')">
+          <span class="live-tag sapphire-brass">REALM 3 · PLAY NOW · 60FPS 3D</span>
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <h1>Arc Bastion: Siegesmiths</h1>
+              <p>Command a 6×6 Siege-Ballista or Prism Rail-Skiff across a sky-citadel, dial 0.08× Crystal Bullet-Time, fire parabolic cryo-mortars, and shatter clockwork contraptions.</p>
+              <div id="portal-bastion-picker" class="rig-quick-row"></div>
+            </div>
+            <div class="hero-cta-box">
+              <button type="button" id="btn-launch-bastion" data-launch-realm="arc_bastion" class="play-btn-giant sapphire-cta">▶ Command Arc Bastion 3D</button>
+              <div id="portal-bastion-world-label" class="world-pill-sub">Citadel Frontier: Rank I · Sub-Zero Core</div>
+            </div>
+          </div>
+        </article>
       </div>
 
-      <!-- Sister Sub-Games Inside Bloom N (#3 Stardrift + Astrolabes, #4 Arc Bastion) -->
+      <!-- Sister Sub-Games Inside Bloom N (Stardrift + Astrolabes) -->
       <div class="sec-head">
         <h2>More Realms Inside Bloom<sup>n</sup></h2>
         <span>One shared mastery brain &amp; live 2-player household co-op across realms</span>
@@ -146,6 +163,7 @@
         <button type="button" id="hud-world-btn" class="hud-btn gold">Rank I · Sub-Zero Core ▾</button>
         <div id="fw-zone-bar" class="hud-zone-pill"></div>
         <div id="fw-wonder-chip" class="hud-wonder-chip" role="button" tabindex="0"></div>
+        <div id="fw-expedition-pill" class="hud-expedition-pill"></div>
         <div id="fw-boost-pill" class="slipstream-boost-pill" aria-hidden="true">
           <span class="boost-pill-label">🚀 Cryo-Boost</span>
           <span class="boost-pill-bar"><span id="fw-boost-fill" class="boost-pill-fill"></span></span>
@@ -228,6 +246,7 @@
         <button type="button" id="oddroot-world-btn" class="hud-btn gold">Rank I · Sub-Zero Core ▾</button>
         <div id="or-zone-bar" class="hud-zone-pill"></div>
         <div id="or-wonder-chip" class="hud-wonder-chip" role="button" tabindex="0"></div>
+        <div id="or-expedition-pill" class="hud-expedition-pill"></div>
         <div id="or-boost-pill" class="slipstream-boost-pill" aria-hidden="true">
           <span class="boost-pill-label">🚀 Starlight Slipstream</span>
           <span class="boost-pill-bar"><span id="or-boost-fill" class="boost-pill-fill"></span></span>
@@ -266,6 +285,49 @@
     </div>
   </section>
 
+  <!-- ==================== SCREEN 4: ARC BASTION 60FPS 3D WORLD ==================== -->
+  <section id="screen-bastion" class="screen" data-realm="arc_bastion">
+    <canvas id="bastion-canvas"></canvas>
+
+    <div class="hud-top">
+      <div class="hud-group">
+        <button type="button" id="bastion-exit-btn" class="hud-btn">← Bloomⁿ Hub</button>
+        <button type="button" id="bastion-world-btn" class="hud-btn gold">Rank I · Sub-Zero Core ▾</button>
+        <div id="ab-zone-bar" class="hud-zone-pill"></div>
+        <div id="ab-wonder-chip" class="hud-wonder-chip" role="button" tabindex="0"></div>
+        <div id="ab-expedition-pill" class="ab-expedition-pill"></div>
+        <div id="ab-boost-pill" class="slipstream-boost-pill" aria-hidden="true">
+          <span class="boost-pill-label">🚀 Prism Slipstream</span>
+          <span class="boost-pill-bar"><span id="ab-boost-fill" class="boost-pill-fill"></span></span>
+        </div>
+      </div>
+      <div class="hud-group">
+        <div id="ab-partner-pill" class="partner-pill" style="display:none"></div>
+        <button type="button" id="ab-flare-btn" class="hud-btn flare-btn">🎆 Flare</button>
+        <button type="button" id="ab-bullettime-btn" class="ab-bullettime-pill" aria-pressed="false">⏳ 0.08× Time-Aura</button>
+        <button type="button" id="ab-rig-btn" class="rig-toggle-pill is-ballista">🛡️ Siege-Ballista</button>
+        <div id="ab-shard-pill" class="hud-btn gold shard-hud-pill">💎 <span id="bastion-shards">30</span></div>
+        <div class="hud-btn">⚡ <span id="bastion-streak">0</span></div>
+        <button type="button" id="bastion-armory-btn" class="hud-btn">🛠️ Armory</button>
+        <button type="button" id="bastion-pulse-btn" class="hud-btn">⚡ Prism Pulse</button>
+        <button type="button" id="bastion-mute-btn" class="hud-btn" aria-label="Toggle sound">🔊</button>
+      </div>
+    </div>
+
+    <div id="bastion-surge-banner" class="surge-banner ab-surge-banner">✨ CITADEL CHRONOS OVERDRIVE · 1.5× FLUX ✨</div>
+
+    <!-- Bottom-Left Arc Bastion Tactile Thumbstick & 1-Tap Battery Autopilot -->
+    <div class="drive-cluster">
+      <div id="bastion-joy-zone" class="joy-zone" aria-label="Citadel steering joystick">
+        <div id="bastion-joy-knob" class="joy-knob"></div>
+      </div>
+      <div class="drive-quick-col">
+        <button type="button" id="bastion-autopilot-btn" class="drive-pill">🧭 Cruise to Gate</button>
+        <button type="button" id="bastion-boost-btn" class="drive-pill boost">⚡ Siege Boost</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ==================== MODAL: PLAYER SWITCHER ==================== -->
   <div id="modal-who" class="modal-backdrop">
     <div class="modal-sheet">
@@ -290,22 +352,25 @@
     </div>
   </div>
 
-  <!-- ==================== MODAL: 3D RIG GARAGE & SANCTUARY WORKSHOP ==================== -->
+  <!-- ==================== MODAL: 3D RIG GARAGE, WORKSHOP & SIEGESMITH ARMORY ==================== -->
   <div id="modal-garage" class="modal-backdrop">
     <div class="modal-sheet">
       <div class="modal-top">
-        <h2 id="garage-modal-title">🛠️ Terra-Rig Garage &amp; Sanctuary Workshop</h2>
+        <h2 id="garage-modal-title">🛠️ Terra-Rig Garage, Sanctuary Workshop &amp; Armory</h2>
         <button type="button" class="close-btn" data-close="modal-garage">Close</button>
       </div>
       <p style="margin:0 0 10px;color:var(--ink-soft);font-size:0.88rem;font-weight:700">
         Switch rigs &amp; mounts anytime — upgrades transform live 3D terrain &amp; opposition! Available: <strong style="color:var(--amber)">💎 <span id="garage-shards">30</span></strong>
       </p>
       <div id="garage-chassis-row" class="rig-quick-row" style="margin-bottom:10px"></div>
-      <div id="garage-mounts-row" class="rig-quick-row" style="margin-bottom:14px"></div>
+      <div id="garage-mounts-row" class="rig-quick-row" style="margin-bottom:10px"></div>
+      <div id="garage-bastion-rigs-row" class="rig-quick-row" style="margin-bottom:14px"></div>
       <div class="garage-subhead">❄️ Frostwake Rig Upgrades</div>
       <div id="garage-upgrades-grid" class="upgrade-list"></div>
       <div class="garage-subhead" style="margin-top:14px">🌿 Oddroot Sanctuary Upgrades</div>
       <div id="garage-oddroot-upgrades-grid" class="upgrade-list"></div>
+      <div class="garage-subhead" style="margin-top:14px">🛡️ Arc Bastion Siegesmith Upgrades</div>
+      <div id="garage-bastion-upgrades-grid" class="upgrade-list"></div>
       <div id="garage-borrow-box" class="borrow-banner-box"></div>
     </div>
   </div>

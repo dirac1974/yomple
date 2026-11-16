@@ -379,4 +379,27 @@ export class OddrootAudio {
       );
     });
   }
+
+  playWindRingBoost() {
+    if (this.muted) return;
+    this.noiseBurst(0.22, 1360, 1.3, 0.035, 0);
+    [440.0, 659.25, 880.0, 1318.5].forEach((n, idx) => {
+      this.tone(n, 0.22, idx % 2 === 0 ? "sine" : "triangle", 0.058, idx * 0.042);
+    });
+  }
+
+  playExpeditionWaypoint(collectedCount = 1) {
+    if (this.muted) return;
+    const step = Math.max(0, Math.min(2, (Number(collectedCount) || 1) - 1));
+    const base = 783.99 + step * 98.0;
+    this.tone(base, 0.14, "sine", 0.065, 0, base * 1.25);
+    this.tone(base * 1.5, 0.22, "triangle", 0.07, 0.065);
+  }
+
+  playExpeditionComplete() {
+    if (this.muted) return;
+    [523.25, 659.25, 783.99, 1046.5, 1567.98].forEach((n, idx) => {
+      this.tone(n, 0.36, idx % 2 === 0 ? "sine" : "triangle", 0.068, idx * 0.052);
+    });
+  }
 }

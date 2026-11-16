@@ -26,6 +26,13 @@ import {
   HorizonWonderAndRelicSystem,
   createSoftGlowTexture,
 } from "../core/vfx-3d.js";
+import {
+  computeSimulationTimeScale,
+  resolveActiveBiome,
+  createFieldExpeditionState,
+  stepFieldExpedition,
+  exportRobloxSimSnapshot,
+} from "../core/world-sim.js";
 
 export const VALLEY_SIZE = 184;
 export const VALLEY_HALF = VALLEY_SIZE / 2;
@@ -197,6 +204,27 @@ export class FrostwakeWorld3D {
     this._quadrantWhaleTriggered = false;
     this.lastGhostWaveResult = null;
 
+    this.bulletTimeRequested = false;
+    this._lastSimDt = 1 / 60;
+    this.simTimeState = computeSimulationTimeScale({
+      dt: 1 / 60,
+      encounterDockOpen: false,
+      activeGateSlot: false,
+      bulletTimeRequested: false,
+      realmId: "frostwake",
+    });
+    this.fieldExpedition = createFieldExpeditionState("frostwake", 0);
+    this._calderaHopTimer = 0;
+    this.calderaGeyserVents = [];
+    this.calderaSteamRings = [];
+    this.singingCrystalChimes = [];
+    this.causewayPylons = [];
+    this.expeditionBeacons = [];
+    this._expeditionBurstTimer = 0;
+    this.clockworkCrest = null;
+    this.clockworkCrestOuter = null;
+    this.clockworkCrestInner = null;
+
     this._tmpMat4 = new THREE.Matrix4();
     this._tmpPos = new THREE.Vector3();
     this._tmpQuat = new THREE.Quaternion();
@@ -306,6 +334,8 @@ export class FrostwakeWorld3D {
     this._buildMoonSanctuaryAndObservatory();
     this._buildFrostGuardian();
     this._buildLiftGaragePad();
+    this._buildOuterFrontierBiomes();
+    this._buildExpeditionBeacons();
     this._buildAlpinePines();
     this._buildRimIceCrystalClusters();
     this._buildSnowfallParticles();
@@ -1133,6 +1163,425 @@ export class FrostwakeWorld3D {
     this.scene.add(g);
   }
 
+  _buildOuterFrontierBiomes() {
+    const outerRoot = new THREE.Group();
+    outerRoot.name = "FrostwakeOuterBiomes";
+    this.outerBiomesGroup = outerRoot;
+    this.calderaGeyserVents = [];
+    this.calderaSteamRings = [];
+    this.singingCrystalChimes = [];
+    this.causewayPylons = [];
+
+    // 1. Thermal Geyser Caldera around (-44, 22): hot-spring pools, amber rim stones, steam rings & Updraft Geyser Vents
+    const calderaGrp = new THREE.Group();
+    calderaGrp.name = "ThermalGeyserCaldera";
+    const poolMat = new THREE.MeshStandardMaterial({
+      color: 0x3bf0c5,
+      emissive: 0x14b8a6,
+      emissiveIntensity: 0.92,
+      roughness: 0.14,
+      metalness: 0.18,
+      transparent: true,
+      opacity: 0.88,
+    });
+    const amberStoneMat = new THREE.MeshStandardMaterial({
+      color: 0xf4a62a,
+      emissive: 0xd97706,
+      emissiveIntensity: 0.46,
+      roughness: 0.55,
+      metalness: 0.18,
+      flatShading: true,
+    });
+    const plumeMat = new THREE.MeshBasicMaterial({
+      color: 0x8ef3ff,
+      transparent: true,
+      opacity: 0.44,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const rimStoneGeo = new THREE.DodecahedronGeometry(0.58, 0);
+    const steamRingGeo = new THREE.TorusGeometry(1.12, 0.11, 8, 20);
+    steamRingGeo.rotateX(Math.PI / 2);
+
+    const calderaSpecs = [
+      { id: "caldera_vent_0", x: -44, z: 22, poolR: 3.4 },
+      { id: "caldera_vent_1", x: -50, z: 25, poolR: 2.85 },
+      { id: "caldera_vent_2", x: -39, z: 27, poolR: 2.75 },
+    ];
+
+    calderaSpecs.forEach((sp, vIdx) => {
+      const vy = this._baseHeight(sp.x, sp.z);
+      const ventGrp = new THREE.Group();
+      ventGrp.name = sp.id;
+      ventGrp.position.set(sp.x, vy, sp.z);
+
+      const poolDisc = new THREE.Mesh(
+        new THREE.CylinderGeometry(sp.poolR, sp.poolR * 0.92, 0.24, 20),
+        poolMat
+      );
+      poolDisc.position.y = 0.34;
+      ventGrp.add(poolDisc);
+
+      for (let r = 0; r < 8; r++) {
+        const ang = (r / 8) * Math.PI * 2 + vIdx * 0.4;
+        const stone = new THREE.Mesh(rimStoneGeo, amberStoneMat);
+        const sScale = 0.85 + (r % 3) * 0.18;
+        stone.scale.set(sScale * 1.15, sScale * 0.78, sScale);
+        stone.position.set(
+          Math.cos(ang) * (sp.poolR + 0.24),
+          0.42,
+          Math.sin(ang) * (sp.poolR + 0.24)
+        );
+        stone.rotation.y = ang;
+        ventGrp.add(stone);
+      }
+
+      const nozzle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.48, 0.72, 0.56, 10),
+        amberStoneMat
+      );
+      nozzle.position.y = 0.48;
+      const plumeMesh = new THREE.Mesh(
+        new THREE.ConeGeometry(0.72, 2.8, 10, 1, true),
+        plumeMat
+      );
+      plumeMesh.rotation.x = Math.PI;
+      plumeMesh.position.y = 1.85;
+      ventGrp.add(nozzle, plumeMesh);
+
+      for (let s = 0; s < 2; s++) {
+        const sMat = new THREE.MeshBasicMaterial({
+          color: 0xc4f9ff,
+          transparent: true,
+          opacity: 0.42,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const sRing = new THREE.Mesh(steamRingGeo, sMat);
+        sRing.position.y = 0.8 + s * 1.5;
+        ventGrp.add(sRing);
+        this.calderaSteamRings.push({
+          mesh: sRing,
+          mat: sMat,
+          phase: vIdx * 0.33 + s * 0.5,
+        });
+      }
+
+      calderaGrp.add(ventGrp);
+      this.calderaGeyserVents.push({
+        id: sp.id,
+        x: sp.x,
+        y: vy,
+        z: sp.z,
+        radius: 3.6,
+        cooldown: 0,
+        plumeMesh,
+        group: ventGrp,
+      });
+    });
+    outerRoot.add(calderaGrp);
+
+    // 2. Prism Ice-Crystal Ridge around (45, -10): translucent cyan/amethyst arches & Singing Crystal Chimes
+    const prismGrp = new THREE.Group();
+    prismGrp.name = "PrismIceCrystalRidge";
+    const cyanArchMat = new THREE.MeshStandardMaterial({
+      color: 0x5ce1e6,
+      emissive: 0x2ec4b6,
+      emissiveIntensity: 0.62,
+      roughness: 0.12,
+      metalness: 0.25,
+      transparent: true,
+      opacity: 0.82,
+      flatShading: true,
+    });
+    const amethystArchMat = new THREE.MeshStandardMaterial({
+      color: 0xc084fc,
+      emissive: 0x7c3aed,
+      emissiveIntensity: 0.62,
+      roughness: 0.14,
+      metalness: 0.28,
+      transparent: true,
+      opacity: 0.82,
+      flatShading: true,
+    });
+
+    const archSpecs = [
+      { x: 43, z: -4, rotY: 0.32, spanR: 4.3, amethyst: false },
+      { x: 46, z: -10, rotY: 0.0, spanR: 5.1, amethyst: true },
+      { x: 43, z: -16, rotY: -0.32, spanR: 4.3, amethyst: false },
+    ];
+    archSpecs.forEach((ar) => {
+      const ay = this._baseHeight(ar.x, ar.z);
+      const aGrp = new THREE.Group();
+      aGrp.position.set(ar.x, ay, ar.z);
+      aGrp.rotation.y = ar.rotY;
+      const archMesh = new THREE.Mesh(
+        new THREE.TorusGeometry(ar.spanR, 0.4, 8, 22, Math.PI),
+        ar.amethyst ? amethystArchMat : cyanArchMat
+      );
+      archMesh.position.y = 0.4;
+      aGrp.add(archMesh);
+
+      for (const sx of [-1, 1]) {
+        const spire = new THREE.Mesh(
+          new THREE.ConeGeometry(0.92, 6.2, 6),
+          sx < 0 ? cyanArchMat : amethystArchMat
+        );
+        spire.position.set(sx * (ar.spanR + 0.55), 2.9, 0);
+        spire.rotation.z = -sx * 0.18;
+        aGrp.add(spire);
+      }
+      prismGrp.add(aGrp);
+    });
+
+    const chimeSpecs = [
+      { id: "prism_chime_0", x: 41.5, z: -4.5 },
+      { id: "prism_chime_1", x: 45.0, z: -10.0 },
+      { id: "prism_chime_2", x: 41.5, z: -15.5 },
+    ];
+    chimeSpecs.forEach((ch, cIdx) => {
+      const cy = this._baseHeight(ch.x, ch.z);
+      const cGrp = new THREE.Group();
+      cGrp.name = ch.id;
+      cGrp.position.set(ch.x, cy, ch.z);
+
+      const chimeMat = new THREE.MeshStandardMaterial({
+        color: cIdx === 1 ? 0xc084fc : 0x5ce1e6,
+        emissive: cIdx === 1 ? 0x7c3aed : 0x2ec4b6,
+        emissiveIntensity: 0.68,
+        roughness: 0.14,
+        metalness: 0.35,
+        transparent: true,
+        opacity: 0.9,
+      });
+
+      const haloRing = new THREE.Mesh(
+        new THREE.TorusGeometry(1.22, 0.09, 8, 20),
+        chimeMat
+      );
+      haloRing.rotation.x = Math.PI / 2;
+      haloRing.position.y = 3.55;
+      cGrp.add(haloRing);
+
+      const rods = [];
+      for (let r = -1; r <= 1; r++) {
+        const rod = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.13, 0.23, 2.15 - Math.abs(r) * 0.28, 6),
+          chimeMat
+        );
+        rod.position.set(r * 0.56, 2.35 + Math.abs(r) * 0.14, 0);
+        cGrp.add(rod);
+        rods.push(rod);
+      }
+
+      prismGrp.add(cGrp);
+      this.singingCrystalChimes.push({
+        id: ch.id,
+        index: cIdx,
+        x: ch.x,
+        y: cy,
+        z: ch.z,
+        baseColorHex: cIdx === 1 ? 0xc084fc : 0x5ce1e6,
+        baseEmissiveHex: cIdx === 1 ? 0x7c3aed : 0x2ec4b6,
+        chimeMat,
+        haloRing,
+        rods,
+        group: cGrp,
+        pulseTimer: 0,
+        audioCooldown: 0,
+        pulsingGold: false,
+        chimeCount: 0,
+      });
+    });
+    outerRoot.add(prismGrp);
+
+    // 3. Northern Observatory Causeway leading toward (0, -56): sequential starlight beacon pylons
+    const causewayGrp = new THREE.Group();
+    causewayGrp.name = "NorthernObservatoryCauseway";
+    const pylonStoneMat = new THREE.MeshStandardMaterial({
+      color: 0x1d3554,
+      roughness: 0.42,
+      metalness: 0.3,
+      flatShading: true,
+    });
+    const pylonStagesZ = [-38, -44, -50, -56];
+    pylonStagesZ.forEach((pz, stageIdx) => {
+      for (const sx of [-6.8, 6.8]) {
+        const py = this._baseHeight(sx, pz);
+        const pGrp = new THREE.Group();
+        pGrp.name = `causeway_pylon_${stageIdx}_${sx < 0 ? "W" : "E"}`;
+        pGrp.position.set(sx, py, pz);
+
+        const shaft = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.36, 0.58, 4.4, 6),
+          pylonStoneMat
+        );
+        shaft.position.y = 2.2;
+
+        const orbMat = new THREE.MeshStandardMaterial({
+          color: 0x3b5d80,
+          emissive: 0x15304a,
+          emissiveIntensity: 0.22,
+          roughness: 0.18,
+          metalness: 0.38,
+        });
+        const crownOrb = new THREE.Mesh(new THREE.OctahedronGeometry(0.48, 0), orbMat);
+        crownOrb.position.y = 5.05;
+
+        const ringMesh = new THREE.Mesh(
+          new THREE.TorusGeometry(0.68, 0.065, 8, 18),
+          orbMat
+        );
+        ringMesh.rotation.x = Math.PI / 2;
+        ringMesh.position.y = 4.55;
+
+        pGrp.add(shaft, crownOrb, ringMesh);
+        causewayGrp.add(pGrp);
+        this.causewayPylons.push({
+          stageIndex: stageIdx,
+          x: sx,
+          y: py,
+          z: pz,
+          lit: false,
+          intensity: 0.22,
+          orbMat,
+          crownOrb,
+          ringMesh,
+          group: pGrp,
+        });
+      }
+    });
+    outerRoot.add(causewayGrp);
+
+    this.scene.add(outerRoot);
+  }
+
+  _buildExpeditionBeacons() {
+    const grp = new THREE.Group();
+    grp.name = "FrostwakeExpeditionBeacons";
+    this.expeditionBeaconGroup = grp;
+    this.expeditionBeacons = [];
+
+    const goldRingMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xf4a62a,
+      emissiveIntensity: 0.95,
+      roughness: 0.18,
+      metalness: 0.45,
+    });
+    const turquoiseRingMat = new THREE.MeshStandardMaterial({
+      color: 0x45f0df,
+      emissive: 0x2ec4b6,
+      emissiveIntensity: 0.95,
+      roughness: 0.18,
+      metalness: 0.35,
+    });
+    const needleMat = new THREE.MeshBasicMaterial({
+      color: 0x8ef3ff,
+      transparent: true,
+      opacity: 0.46,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const bGrp = new THREE.Group();
+      bGrp.name = `FrostwakeExpeditionBeacon_${i}`;
+
+      const outerRing = new THREE.Mesh(
+        new THREE.TorusGeometry(1.72, 0.11, 8, 26),
+        goldRingMat
+      );
+      outerRing.rotation.x = Math.PI / 2;
+      outerRing.position.y = 0.55;
+
+      const innerRing = new THREE.Mesh(
+        new THREE.TorusGeometry(1.14, 0.08, 8, 22),
+        turquoiseRingMat
+      );
+      innerRing.rotation.x = Math.PI / 2;
+      innerRing.position.y = 1.15;
+
+      const needle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.22, 9.2, 8, 1, true),
+        needleMat
+      );
+      needle.position.y = 4.8;
+
+      const crownGem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.42, 0),
+        goldRingMat
+      );
+      crownGem.position.y = 2.35;
+
+      bGrp.add(outerRing, innerRing, needle, crownGem);
+      grp.add(bGrp);
+      this.expeditionBeacons.push({
+        index: i,
+        waypointId: null,
+        collected: false,
+        group: bGrp,
+        outerRing,
+        innerRing,
+        needle,
+        crownGem,
+      });
+    }
+
+    const burstMat = new THREE.MeshBasicMaterial({
+      color: 0xffd166,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    this.expeditionBurstMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(1.45, 0.14, 8, 26),
+      burstMat
+    );
+    this.expeditionBurstMesh.rotation.x = Math.PI / 2;
+    this.expeditionBurstMesh.visible = false;
+    grp.add(this.expeditionBurstMesh);
+
+    this.scene.add(grp);
+    this._syncExpeditionBeacons();
+  }
+
+  _syncExpeditionBeacons() {
+    if (!this.expeditionBeacons || !this.fieldExpedition) return;
+    const waypoints = Array.isArray(this.fieldExpedition.waypoints)
+      ? this.fieldExpedition.waypoints
+      : [];
+    for (let i = 0; i < this.expeditionBeacons.length; i++) {
+      const slot = this.expeditionBeacons[i];
+      const wp = waypoints[i];
+      if (!wp) {
+        slot.group.visible = false;
+        slot.collected = true;
+        continue;
+      }
+      const by = this._baseHeight(wp.x, wp.z) + 0.22;
+      slot.waypointId = wp.id;
+      slot.collected = Boolean(wp.collected);
+      slot.group.position.set(wp.x, by, wp.z);
+      slot.group.visible = !wp.collected;
+    }
+  }
+
+  _triggerExpeditionBurst(wx, wy, wz) {
+    this._spawnCrystalBurst(wx, wy + 1.2, wz, 22);
+    if (this.expeditionBurstMesh) {
+      this._expeditionBurstTimer = 0.58;
+      this.expeditionBurstMesh.position.set(wx, wy + 0.65, wz);
+      this.expeditionBurstMesh.scale.setScalar(1.0);
+      this.expeditionBurstMesh.material.opacity = 0.9;
+      this.expeditionBurstMesh.visible = true;
+    }
+  }
+
   _buildAlpinePines() {
     const trunkGeo = new THREE.CylinderGeometry(0.32, 0.48, 2.2, 6);
     const coneGeo1 = new THREE.ConeGeometry(2.3, 4.4, 7);
@@ -1401,8 +1850,43 @@ export class FrostwakeWorld3D {
     return this.encounterDockOpen === true || this.activeGateSlot !== null;
   }
 
+  _persistFrostwakeExpeditionCount(completedTotal) {
+    const prog = this._boundProgressRef;
+    if (!prog || typeof prog !== "object" || Object.isFrozen(prog)) return;
+    try {
+      if (!prog.games || typeof prog.games !== "object" || Object.isFrozen(prog.games)) return;
+      if (!prog.games.frostwake || typeof prog.games.frostwake !== "object") {
+        prog.games.frostwake = {};
+      }
+      if (Object.isFrozen(prog.games.frostwake)) return;
+      const cur = Math.max(0, Math.floor(Number(prog.games.frostwake.expeditionsCompleted) || 0));
+      if (cur < completedTotal) {
+        prog.games.frostwake.expeditionsCompleted = completedTotal;
+      }
+    } catch (_) {}
+  }
+
   applyLoadout(progress = {}, crossRealmUnlocks = {}, borrowedToy = null) {
+    const prevProgressRef = this._boundProgressRef;
     this._boundProgressRef = progress || null;
+
+    const rawExpDone = progress?.games?.frostwake?.expeditionsCompleted;
+    if (Number.isFinite(Number(rawExpDone))) {
+      const targetCompleted = Math.max(0, Math.floor(Number(rawExpDone)));
+      const isNewProfileRef = progress !== prevProgressRef;
+      if (
+        !this.fieldExpedition ||
+        targetCompleted > this.fieldExpedition.completedTotal ||
+        (isNewProfileRef && targetCompleted !== this.fieldExpedition.completedTotal)
+      ) {
+        this.fieldExpedition = createFieldExpeditionState("frostwake", targetCompleted);
+        this._syncExpeditionBeacons();
+      }
+    } else if (!this.fieldExpedition) {
+      this.fieldExpedition = createFieldExpeditionState("frostwake", 0);
+      this._syncExpeditionBeacons();
+    }
+
     const baseChassis =
       progress?.games?.frostwake?.equippedChassis ||
       progress?.equippedChassis ||
@@ -1437,6 +1921,9 @@ export class FrostwakeWorld3D {
     const discoveredMysteries = Array.isArray(progress?.discoveredMysteries)
       ? progress.discoveredMysteries
       : [];
+    const bastionUpgrades = Array.isArray(progress?.games?.arc_bastion?.bastionUpgrades)
+      ? progress.games.arc_bastion.bastionUpgrades
+      : [];
     const resolvedCrossRealm = {
       astroToadCabMascot: Boolean(
         cru.astroToadCabMascot ||
@@ -1469,6 +1956,15 @@ export class FrostwakeWorld3D {
       silverMoonLantern: Boolean(
         cru.silverMoonLantern || discoveredMysteries.includes("moon_center")
       ),
+      clockworkCrestUnlocked: Boolean(
+        cru.clockworkCrestUnlocked ||
+          cru.clockworkSentinelSynced ||
+          effectiveUpgrades.includes("ab_auto_turret") ||
+          effectiveUpgrades.includes("ab_chronos_harp") ||
+          bastionUpgrades.includes("ab_auto_turret") ||
+          bastionUpgrades.includes("ab_chronos_harp") ||
+          (progress?.games?.arc_bastion?.contraptionsShattered || 0) >= 5
+      ),
     };
 
     const borrowedMeta = borrowedRig
@@ -1490,6 +1986,54 @@ export class FrostwakeWorld3D {
       this.ghostController.loadFromProgress(progress);
       this.ghostController.setChassisAppearance(effectiveChassis);
     }
+  }
+
+  _createClockworkCrestMesh() {
+    const crest = new THREE.Group();
+    crest.name = "frostwake_clockwork_crest";
+    crest.userData = { crossRealm: "frostwake_clockwork_crest" };
+
+    const brassMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xd97706,
+      emissiveIntensity: 0.85,
+      roughness: 0.22,
+      metalness: 0.72,
+    });
+    const jewelMat = new THREE.MeshStandardMaterial({
+      color: 0x45f0df,
+      emissive: 0x2ec4b6,
+      emissiveIntensity: 1.05,
+      roughness: 0.14,
+      metalness: 0.35,
+    });
+
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.34, 8), brassMat);
+    mast.position.y = -0.18;
+    crest.add(mast);
+
+    const outerGear = new THREE.Group();
+    outerGear.add(new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.055, 8, 20), brassMat));
+    for (let t = 0; t < 8; t++) {
+      const ang = (t / 8) * Math.PI * 2;
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.07), brassMat);
+      tooth.position.set(Math.cos(ang) * 0.37, Math.sin(ang) * 0.37, 0);
+      tooth.rotation.z = ang;
+      outerGear.add(tooth);
+    }
+
+    const innerGear = new THREE.Group();
+    innerGear.add(new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.036, 8, 16), jewelMat));
+    for (let s = 0; s < 4; s++) {
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.035, 0.04), brassMat);
+      spoke.rotation.z = (s / 4) * Math.PI;
+      innerGear.add(spoke);
+    }
+
+    const hubGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), jewelMat);
+    crest.add(outerGear, innerGear, hubGem);
+
+    return { crest, outerGear, innerGear };
   }
 
   _createStarlightWinchMesh() {
@@ -2126,6 +2670,19 @@ export class FrostwakeWorld3D {
       g.add(lantern);
     }
 
+    if (this.crossRealmState.clockworkCrestUnlocked) {
+      const built = this._createClockworkCrestMesh();
+      built.crest.position.set(0.58, cleanChassis === "aurora_sled" ? 2.08 : 2.82, 0.35);
+      g.add(built.crest);
+      this.clockworkCrest = built.crest;
+      this.clockworkCrestOuter = built.outerGear;
+      this.clockworkCrestInner = built.innerGear;
+    } else {
+      this.clockworkCrest = null;
+      this.clockworkCrestOuter = null;
+      this.clockworkCrestInner = null;
+    }
+
     if (this.borrowedToyState && this.borrowedToyState.active) {
       const pennant = new THREE.Group();
       pennant.name = "sibling_borrow_pennant";
@@ -2391,6 +2948,219 @@ export class FrostwakeWorld3D {
     this.horizonWonder?.setZoneProgress(clampFinite(ratio, 0, 1, 0.25));
   }
 
+  getActiveBiome() {
+    return resolveActiveBiome("frostwake", this.rigState.x, this.rigState.z);
+  }
+
+  getFieldExpeditionState() {
+    if (!this.fieldExpedition) {
+      this.fieldExpedition = createFieldExpeditionState("frostwake", 0);
+    }
+    return this.fieldExpedition;
+  }
+
+  getRobloxSimSnapshot() {
+    const timeScaleState = computeSimulationTimeScale({
+      dt: this._lastSimDt || 1 / 60,
+      encounterDockOpen: this.encounterDockOpen,
+      activeGateSlot: Boolean(this.activeGateSlot),
+      bulletTimeRequested: Boolean(this.bulletTimeRequested),
+      realmId: "frostwake",
+    });
+    this.simTimeState = timeScaleState;
+    return exportRobloxSimSnapshot({
+      realmId: "frostwake",
+      vehicleState: this.rigState,
+      timeScaleState,
+      expeditionState: this.getFieldExpeditionState(),
+    });
+  }
+
+  _stepOuterFrontierBiomes(dt, elapsed, pausedForMath) {
+    // 1. Rising steam torus rings & interactive Updraft Geyser Vents at Thermal Geyser Caldera (-44, 22)
+    for (const sr of this.calderaSteamRings || []) {
+      const cycle = (elapsed * 0.48 + sr.phase) % 1;
+      sr.mesh.position.y = 0.65 + cycle * 3.8;
+      sr.mesh.scale.setScalar(0.85 + cycle * 0.85);
+      sr.mat.opacity = 0.46 * (1 - cycle);
+    }
+
+    for (const vent of this.calderaGeyserVents || []) {
+      if (vent.cooldown > 0) {
+        vent.cooldown = Math.max(0, vent.cooldown - dt);
+      }
+      if (vent.plumeMesh) {
+        const pulse = 0.85 + Math.sin(elapsed * 5.2 + vent.x) * 0.22;
+        vent.plumeMesh.scale.set(pulse, 0.9 + Math.sin(elapsed * 4.1) * 0.2, pulse);
+      }
+      if (!pausedForMath && !this.rigAnim && !this.autopilotTarget && vent.cooldown <= 0) {
+        const dVent = Math.hypot(this.rigState.x - vent.x, this.rigState.z - vent.z);
+        if (dVent <= vent.radius) {
+          vent.cooldown = 6.5;
+          this._calderaHopTimer = 0.68;
+          this.rigState.y += 0.55;
+          if (this.rigGroup) {
+            this.rigGroup.position.y = this.rigState.y;
+          }
+          const boostedSpd = Math.max(finiteOr(this.rigState.speed, 0), 13.8);
+          this.rigState.speed = boostedSpd;
+          const fwdX = -Math.sin(finiteOr(this.rigState.heading, 0));
+          const fwdZ = -Math.cos(finiteOr(this.rigState.heading, 0));
+          this.rigState.vx = fwdX * boostedSpd;
+          this.rigState.vz = fwdZ * boostedSpd;
+          this._spawnCrystalBurst(vent.x, vent.y + 1.4, vent.z, 20);
+          this.audio?.playGeyserBurst?.();
+          this.onOppositionEvent?.({
+            type: "caldera_geyser",
+            kind: "caldera_geyser",
+            shardsEarned: 3,
+            message: "⛲ Caldera Geyser Hop! +3💎",
+          });
+        }
+      }
+    }
+
+    // 2. Singing Crystal Chimes at Prism Ice-Crystal Ridge (45, -10)
+    for (const ch of this.singingCrystalChimes || []) {
+      if (ch.audioCooldown > 0) {
+        ch.audioCooldown = Math.max(0, ch.audioCooldown - dt);
+      }
+      const dChime = Math.hypot(this.rigState.x - ch.x, this.rigState.z - ch.z);
+      if (!pausedForMath && dChime <= 6.5) {
+        ch.pulseTimer = 2.2;
+        ch.pulsingGold = true;
+        if (ch.audioCooldown <= 0) {
+          ch.audioCooldown = 3.2;
+          ch.chimeCount += 1;
+          this.audio?.playCrystalChime?.(ch.index);
+        }
+      } else if (ch.pulseTimer > 0) {
+        ch.pulseTimer = Math.max(0, ch.pulseTimer - dt);
+        if (ch.pulseTimer <= 0) {
+          ch.pulsingGold = false;
+        }
+      }
+
+      if (ch.pulsingGold) {
+        ch.chimeMat.color.setHex(0xffd166);
+        ch.chimeMat.emissive.setHex(0xf4a62a);
+        ch.chimeMat.emissiveIntensity = 1.25 + Math.sin(elapsed * 8.0 + ch.index) * 0.25;
+      } else {
+        ch.chimeMat.color.setHex(ch.baseColorHex);
+        ch.chimeMat.emissive.setHex(ch.baseEmissiveHex);
+        ch.chimeMat.emissiveIntensity = 0.65 + Math.sin(elapsed * 2.4 + ch.index) * 0.1;
+      }
+
+      ch.haloRing.rotation.z = elapsed * 1.4 + ch.index;
+      ch.rods.forEach((rod, rIdx) => {
+        const swayAmp = ch.pulsingGold ? 0.16 : 0.04;
+        rod.rotation.z = Math.sin(elapsed * 5.6 + rIdx * 1.3 + ch.index) * swayAmp;
+      });
+    }
+
+    // 3. Northern Observatory Causeway sequential starlight beacon pylons toward (0, -56)
+    const inNorthernCorridor = Math.abs(this.rigState.x) <= 22 && this.rigState.z <= -26;
+    for (const py of this.causewayPylons || []) {
+      const shouldLight = inNorthernCorridor && this.rigState.z <= py.z + 9.5;
+      if (shouldLight) {
+        py.lit = true;
+      } else if (!inNorthernCorridor) {
+        py.lit = false;
+      }
+      const targetIntensity = py.lit ? 1.35 : 0.22;
+      py.intensity += (targetIntensity - py.intensity) * Math.min(1, dt * 6.5);
+      py.orbMat.color.setHex(py.lit ? 0xffd166 : 0x3b5d80);
+      py.orbMat.emissive.setHex(py.lit ? 0x45f0df : 0x15304a);
+      py.orbMat.emissiveIntensity = py.intensity;
+      py.crownOrb.rotation.y = elapsed * (py.lit ? 2.6 : 0.8) + py.stageIndex;
+      py.ringMesh.rotation.z = elapsed * (py.lit ? 2.0 : 0.5);
+    }
+  }
+
+  _stepFieldExpedition(dt, elapsed) {
+    if (!this.fieldExpedition) {
+      this.fieldExpedition = createFieldExpeditionState("frostwake", 0);
+      this._syncExpeditionBeacons();
+    }
+
+    // Animate 3D expedition beacons
+    for (const slot of this.expeditionBeacons || []) {
+      if (!slot.group.visible) continue;
+      slot.outerRing.rotation.z = elapsed * 1.5 + slot.index;
+      slot.innerRing.rotation.z = -elapsed * 2.1 - slot.index;
+      slot.innerRing.position.y = 1.15 + Math.sin(elapsed * 3.2 + slot.index) * 0.22;
+      slot.crownGem.rotation.y = elapsed * 2.8 + slot.index;
+      slot.crownGem.position.y = 2.35 + Math.sin(elapsed * 3.8 + slot.index) * 0.26;
+    }
+
+    if (this._expeditionBurstTimer > 0 && this.expeditionBurstMesh) {
+      this._expeditionBurstTimer = Math.max(0, this._expeditionBurstTimer - dt);
+      const u = 1 - this._expeditionBurstTimer / 0.58;
+      this.expeditionBurstMesh.scale.setScalar(1.0 + u * 2.8);
+      this.expeditionBurstMesh.material.opacity = Math.max(0, 0.9 * (1 - u));
+      if (this._expeditionBurstTimer <= 0) {
+        this.expeditionBurstMesh.visible = false;
+      }
+    }
+
+    // CRITICAL SHARD TIMING GUARDRAIL: only evaluate waypoint collection during pure free-roam!
+    if (
+      !this.encounterDockOpen &&
+      !this.activeGateSlot &&
+      !this.rigAnim &&
+      !this.autopilotTarget
+    ) {
+      const res = stepFieldExpedition(this.fieldExpedition, this.rigState.x, this.rigState.z);
+      this.fieldExpedition = res.state;
+      if (res.justCollectedWaypoint) {
+        const wp = res.justCollectedWaypoint;
+        this._triggerExpeditionBurst(wp.x, this._baseHeight(wp.x, wp.z) + 0.25, wp.z);
+        this._syncExpeditionBeacons();
+
+        if (res.justCompletedExpedition) {
+          if (typeof this.audio?.playExpeditionComplete === "function") {
+            this.audio.playExpeditionComplete();
+          } else {
+            this.audio?.playCoinGrab?.();
+          }
+          this._emitWorldActivity?.(1, res.shardsEarned, "expeditionsCompleted");
+          this._persistFrostwakeExpeditionCount(res.state.completedTotal);
+          this.onOppositionEvent?.({
+            type: "expedition_complete",
+            kind: "expedition_complete",
+            shardsEarned: 0,
+            message:
+              "🌟 Expedition Complete: " +
+              res.justCompletedExpedition.title +
+              "! +" +
+              res.shardsEarned +
+              "💎",
+          });
+        } else {
+          if (typeof this.audio?.playExpeditionWaypoint === "function") {
+            this.audio.playExpeditionWaypoint(res.state.collectedCount);
+          } else {
+            this.audio?.playCoinGrab?.();
+          }
+          this.onOppositionEvent?.({
+            type: "expedition_waypoint",
+            kind: "expedition_waypoint",
+            shardsEarned: res.shardsEarned,
+            message:
+              res.state.icon +
+              " " +
+              wp.label +
+              " (" +
+              res.state.collectedCount +
+              "/" +
+              res.state.targetCount +
+              ") +2💎",
+          });
+        }
+      }
+    }
+  }
+
   playTwinBeamVisual(isRepel = false) {
     const slot =
       this.activeGateSlot || this.gateSlots.find((s) => !s.cleared) || this.gateSlots[0];
@@ -2600,6 +3370,7 @@ export class FrostwakeWorld3D {
 
   _update(dt) {
     if (!Number.isFinite(dt) || !(dt > 0)) return;
+    this._lastSimDt = dt;
     this.simElapsed += dt;
     this.elapsed = this.simElapsed;
     const elapsed = this.simElapsed;
@@ -2613,6 +3384,7 @@ export class FrostwakeWorld3D {
 
     // 1. Update Rig Motion (commit animations vs tactile driving physics)
     if (this.rigAnim) {
+      this._calderaHopTimer = 0;
       this.rigAnim.t += dt;
       const p = Math.min(1, this.rigAnim.t / this.rigAnim.dur);
 
@@ -2784,7 +3556,12 @@ export class FrostwakeWorld3D {
         const surfY = this.opposition
           ? this.opposition.computeChasmSurfaceY(this.rigState.x, this.rigState.z, baseSurf)
           : baseSurf;
-        this.rigState.y = surfY + hoverBob;
+        let hopLift = 0;
+        if (this._calderaHopTimer > 0) {
+          this._calderaHopTimer = Math.max(0, this._calderaHopTimer - dt);
+          hopLift = Math.sin((1 - this._calderaHopTimer / 0.68) * Math.PI) * 1.85;
+        }
+        this.rigState.y = surfY + hoverBob + hopLift;
 
         // Terrain-slope pitch/roll + hover-sled banking
         const eps = 0.65;
@@ -2894,6 +3671,15 @@ export class FrostwakeWorld3D {
         this.astroToadMascot.position.y =
           (this.rigState.chassisId === "aurora_sled" ? 2.25 : 2.95) +
           Math.sin(elapsed * 3.2) * 0.1;
+      }
+      if (this.clockworkCrest) {
+        this.clockworkCrest.rotation.y = Math.sin(elapsed * 1.6) * 0.24;
+      }
+      if (this.clockworkCrestOuter) {
+        this.clockworkCrestOuter.rotation.z += dt * 2.4;
+      }
+      if (this.clockworkCrestInner) {
+        this.clockworkCrestInner.rotation.z -= dt * 3.6;
       }
 
       const slipBoostActive = Boolean(this.slipstreamVfx?.isActive());
@@ -3011,8 +3797,15 @@ export class FrostwakeWorld3D {
       this.onLeaveGate();
     }
 
-    // 6. Step Active Spatial Opposition, Self-Ghost Rig, Encounters, Co-Op, Slipstream Boost & Horizon Wonder!
+    // 6. Step Active Spatial Opposition, Self-Ghost Rig, Encounters, Co-Op, Slipstream Boost, Outer Biomes & Expeditions!
     const pausedForMath = this.isOppositionPaused();
+    this.simTimeState = computeSimulationTimeScale({
+      dt,
+      encounterDockOpen: this.encounterDockOpen,
+      activeGateSlot: Boolean(this.activeGateSlot),
+      bulletTimeRequested: Boolean(this.bulletTimeRequested),
+      realmId: "frostwake",
+    });
     const plowX = this.rigState.x - Math.sin(this.rigState.heading) * 2.0;
     const plowZ = this.rigState.z - Math.cos(this.rigState.heading) * 2.0;
     if (this.opposition) {
@@ -3065,6 +3858,8 @@ export class FrostwakeWorld3D {
         }
       );
     }
+    this._stepOuterFrontierBiomes(dt, elapsed, pausedForMath);
+    this._stepFieldExpedition(dt, elapsed);
 
     // 7. Smooth Chase Camera + Slipstream Boost FOV Kick (+5.5 deg)
     if (this.camera) {

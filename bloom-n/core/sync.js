@@ -298,7 +298,9 @@ export function borrowSiblingToy(store, borrowerUser, lenderUser, realmId = "fro
   if (!lenderProg) return null;
 
   const lenderProf = (store.profiles || []).find((p) => p.username === lSlug) || null;
-  const normRealm = String(realmId || "frostwake").trim().toLowerCase() === "oddroot" ? "oddroot" : "frostwake";
+  const rawR = String(realmId || "frostwake").trim().toLowerCase();
+  const normRealm =
+    rawR === "oddroot" ? "oddroot" : rawR === "arc_bastion" ? "arc_bastion" : "frostwake";
 
   let pairSet = sessionBorrowLedger.get(store);
   if (!pairSet) {
@@ -325,12 +327,18 @@ export function borrowSiblingToy(store, borrowerUser, lenderUser, realmId = "fro
   const mountId =
     lenderProg.games?.oddroot?.equippedMount || defaultMountForName(lSlug, displayName);
   const staffId = lenderProg.games?.oddroot?.equippedStaff || "sun_siphon";
+  const bastionRigId =
+    lenderProg.games?.arc_bastion?.equippedRig ||
+    (inferPresetForName(lSlug, displayName) === "sarah" ? "prism_rail_skiff" : "iron_ballista");
 
   const fwUpgrades = Array.isArray(lenderProg.ownedUpgrades) ? lenderProg.ownedUpgrades : [];
   const orUpgrades = Array.isArray(lenderProg.games?.oddroot?.sanctuaryUpgrades)
     ? lenderProg.games.oddroot.sanctuaryUpgrades
     : [];
-  const combinedUpgrades = Array.from(new Set([...fwUpgrades, ...orUpgrades]));
+  const abUpgrades = Array.isArray(lenderProg.games?.arc_bastion?.bastionUpgrades)
+    ? lenderProg.games.arc_bastion.bastionUpgrades
+    : [];
+  const combinedUpgrades = Array.from(new Set([...fwUpgrades, ...orUpgrades, ...abUpgrades]));
 
   const hatched = Array.isArray(lenderProg.games?.oddroot?.hatchedCreatures)
     ? lenderProg.games.oddroot.hatchedCreatures
@@ -359,6 +367,7 @@ export function borrowSiblingToy(store, borrowerUser, lenderUser, realmId = "fro
     chassisId,
     mountId,
     staffId,
+    bastionRigId,
     companionId,
     upgrades: [...combinedUpgrades],
     borrowedAt: Date.now(),
@@ -375,6 +384,7 @@ export function borrowSiblingToy(store, borrowerUser, lenderUser, realmId = "fro
     giftShards,
     alreadyGifted,
     chassisId,
+    bastionRigId,
     upgrades: [...combinedUpgrades],
     frostwakeRig: {
       chassisId,
@@ -387,6 +397,10 @@ export function borrowSiblingToy(store, borrowerUser, lenderUser, realmId = "fro
       mountId,
       staffId,
       companionId,
+      upgrades: [...combinedUpgrades],
+    },
+    bastionLoadout: {
+      rigId: bastionRigId,
       upgrades: [...combinedUpgrades],
     },
   };
@@ -477,11 +491,11 @@ function cloneRealmCompact(realmObj, maxFrames) {
 
 /**
  * Bounds cross-realm `games` state (including both `ghostFrames` and `ghostBest` across
- * `frostwake` and `oddroot`) so `p_fun` is strictly `< 38 KB` without mutating live arrays!
+ * `frostwake`, `oddroot`, and `arc_bastion`) so `p_fun` is strictly `< 38 KB` without mutating live arrays!
  */
 export function compactGamesForCloud(games, maxBytes = 36000) {
   if (!games || typeof games !== "object") {
-    return { frostwake: {}, oddroot: {} };
+    return { frostwake: {}, oddroot: {}, arc_bastion: {} };
   }
   const budget = Math.min(maxBytes, MAX_FUN_BYTES - 1500);
   for (const frameCap of [120, 40, 0]) {
@@ -493,7 +507,7 @@ export function compactGamesForCloud(games, maxBytes = 36000) {
       return candidate;
     }
   }
-  return { frostwake: {}, oddroot: {} };
+  return { frostwake: {}, oddroot: {}, arc_bastion: {} };
 }
 
 function pickBestPositiveRun(olderRealm, newerRealm, secKey) {
@@ -536,7 +550,7 @@ function pickBestPositiveRun(olderRealm, newerRealm, secKey) {
 }
 
 /**
- * Pure monotonic cross-realm merge helper for `games.{frostwake, oddroot}`.
+ * Pure monotonic cross-realm merge helper for `games.{frostwake, oddroot, arc_bastion}`.
  */
 export function mergeGamesState(olderGames = {}, newerGames = {}) {
   const fwOld = olderGames?.frostwake || {};
@@ -547,11 +561,18 @@ export function mergeGamesState(olderGames = {}, newerGames = {}) {
   const orNew = newerGames?.oddroot || {};
   const orRun = pickBestPositiveRun(orOld, orNew, "bestCircuitSec");
 
+  const abOld = olderGames?.arc_bastion || {};
+  const abNew = newerGames?.arc_bastion || {};
+  const abRun = pickBestPositiveRun(abOld, abNew, "bestRaidSec");
+
   const hatchedCreatures = Array.from(
     new Set([...(orOld.hatchedCreatures || []), ...(orNew.hatchedCreatures || [])])
   );
   const sanctuaryUpgrades = Array.from(
     new Set([...(orOld.sanctuaryUpgrades || []), ...(orNew.sanctuaryUpgrades || [])])
+  );
+  const bastionUpgrades = Array.from(
+    new Set([...(abOld.bastionUpgrades || []), ...(abNew.bastionUpgrades || [])])
   );
   const creatureStages = {};
   for (const cid of new Set([
@@ -573,6 +594,7 @@ export function mergeGamesState(olderGames = {}, newerGames = {}) {
       snowClearedM2: Math.max(Number(fwOld.snowClearedM2) || 0, Number(fwNew.snowClearedM2) || 0),
       rimeCreepsCleared: Math.max(Number(fwOld.rimeCreepsCleared) || 0, Number(fwNew.rimeCreepsCleared) || 0),
       foxDensThawed: Math.max(Number(fwOld.foxDensThawed) || 0, Number(fwNew.foxDensThawed) || 0),
+      expeditionsCompleted: Math.max(Number(fwOld.expeditionsCompleted) || 0, Number(fwNew.expeditionsCompleted) || 0),
       bestWaveSec: fwRun.bestSec,
       ghostFrames: fwRun.ghostFrames,
       ghostBest: fwRun.ghostBest,
@@ -588,6 +610,7 @@ export function mergeGamesState(olderGames = {}, newerGames = {}) {
       sanctuaryUpgrades,
       blightClearedM2: Math.max(Number(orOld.blightClearedM2) || 0, Number(orNew.blightClearedM2) || 0),
       blightClearedCount: Math.max(Number(orOld.blightClearedCount) || 0, Number(orNew.blightClearedCount) || 0),
+      expeditionsCompleted: Math.max(Number(orOld.expeditionsCompleted) || 0, Number(orNew.expeditionsCompleted) || 0),
       longestVineGrindM: Math.max(Number(orOld.longestVineGrindM) || 0, Number(orNew.longestVineGrindM) || 0),
       bestCircuitSec: orRun.bestSec,
       ghostFrames: orRun.ghostFrames,
@@ -596,6 +619,21 @@ export function mergeGamesState(olderGames = {}, newerGames = {}) {
         typeof orOld.mosaicForged === "number" || typeof orNew.mosaicForged === "number"
           ? Math.max(Number(orOld.mosaicForged) || 0, Number(orNew.mosaicForged) || 0)
           : Boolean(orOld.mosaicForged || orNew.mosaicForged),
+    },
+    arc_bastion: {
+      ...abOld,
+      ...abNew,
+      equippedRig: abNew.equippedRig || abOld.equippedRig || "iron_ballista",
+      bastionUpgrades,
+      contraptionsShattered: Math.max(
+        Number(abOld.contraptionsShattered) || 0,
+        Number(abNew.contraptionsShattered) || 0
+      ),
+      cryoGelSplats: Math.max(Number(abOld.cryoGelSplats) || 0, Number(abNew.cryoGelSplats) || 0),
+      expeditionsCompleted: Math.max(Number(abOld.expeditionsCompleted) || 0, Number(abNew.expeditionsCompleted) || 0),
+      bestRaidSec: abRun.bestSec,
+      ghostFrames: abRun.ghostFrames,
+      ghostBest: abRun.ghostBest,
     },
   };
 }
@@ -828,6 +866,13 @@ export async function pushActiveCloud(store) {
       ) {
         nextProg.games.oddroot.ghostFrames = prog.games.oddroot.ghostFrames;
         nextProg.games.oddroot.ghostBest = prog.games.oddroot.ghostBest;
+      }
+      if (
+        prog.games?.arc_bastion?.ghostFrames?.length > (nextProg.games?.arc_bastion?.ghostFrames?.length || 0) &&
+        prog.games.arc_bastion.bestRaidSec === nextProg.games?.arc_bastion?.bestRaidSec
+      ) {
+        nextProg.games.arc_bastion.ghostFrames = prog.games.arc_bastion.ghostFrames;
+        nextProg.games.arc_bastion.ghostBest = prog.games.arc_bastion.ghostBest;
       }
       store.progressByUser[prof.username] = nextProg;
     }

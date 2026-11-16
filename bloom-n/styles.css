@@ -1589,8 +1589,24 @@ button:active {
   }
 }
 
+.hud-expedition-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  background: hsla(208, 48%, 14%, 0.84);
+  border: 1px solid hsla(41, 92%, 62%, 0.42);
+  color: var(--amber);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 @media (max-width: 720px) {
-  .hud-wonder-chip {
+  .hud-wonder-chip,
+  .hud-expedition-pill,
+  .ab-expedition-pill {
     display: none;
   }
   .victory-stamp-card {

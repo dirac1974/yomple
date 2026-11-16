@@ -96,10 +96,27 @@ export async function install3DSandboxHelpers(page) {
 
     async function mountWorld(realmId, callbacks = {}, width = 320, height = 240) {
       const isOddroot = realmId === "oddroot";
-      const modPath = isOddroot ? "./oddroot/oddroot-3d.js" : "./frostwake/frostwake-3d.js";
-      const audioPath = isOddroot ? "./oddroot/audio.js" : "./frostwake/audio.js";
-      const worldExport = isOddroot ? "OddrootWorld3D" : "FrostwakeWorld3D";
-      const audioExport = isOddroot ? "OddrootAudio" : "FrostwakeAudio";
+      const isBastion = realmId === "arc_bastion";
+      const modPath = isBastion
+        ? "./bastion/bastion-3d.js"
+        : isOddroot
+        ? "./oddroot/oddroot-3d.js"
+        : "./frostwake/frostwake-3d.js";
+      const audioPath = isBastion
+        ? "./bastion/audio.js"
+        : isOddroot
+        ? "./oddroot/audio.js"
+        : "./frostwake/audio.js";
+      const worldExport = isBastion
+        ? "BastionWorld3D"
+        : isOddroot
+        ? "OddrootWorld3D"
+        : "FrostwakeWorld3D";
+      const audioExport = isBastion
+        ? "BastionAudio"
+        : isOddroot
+        ? "OddrootAudio"
+        : "FrostwakeAudio";
 
       let mod;
       let audioMod;
@@ -234,6 +251,7 @@ export async function install3DSandboxHelpers(page) {
         if (!w.running) w.start?.();
         w.setDriveInputs?.(0, 0, false);
         w.setEncounterDockOpen?.(false);
+        w.setBulletTimeRequested?.(false);
         w.setSurgeMode?.(false);
         w.syncRemotePartners?.([]);
         w.syncSharedCoins?.({
@@ -245,7 +263,7 @@ export async function install3DSandboxHelpers(page) {
         if (w.rigState) {
           w.rigState.x = 0;
           w.rigState.y = 0.55;
-          w.rigState.z = ctx.realmId === "oddroot" ? 16 : 22;
+          w.rigState.z = ctx.realmId === "arc_bastion" ? 14 : ctx.realmId === "oddroot" ? 16 : 22;
           w.rigState.heading = 0; // 0 rad = North (-Z)
           w.rigState.speed = 0;
           w.rigAnim = null;
