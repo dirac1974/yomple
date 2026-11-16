@@ -12,6 +12,14 @@ import {
   BULLET_TIME_SCALE,
   computeSimulationTimeScale,
 } from "../core/world-sim.js";
+import {
+  getCharacterToonGradient,
+  getCustomSurfaceTexture,
+  createLatheProfileGeometry,
+  createBeveledWingGeometry,
+  createSplineTubeGeometry,
+  createDirigibleHullGeometry,
+} from "../core/character-graphics-3d.js";
 
 const MAX_GEAR_PARTICLES = 96;
 const MAX_CONFETTI_PARTICLES = 96;
@@ -30,6 +38,13 @@ const WALKER_LANE_SPECS = [
   { key: "walker_3", laneX: 12, startZ: -40, gateZ: -10, speed: 2.95, phase: 3.3 },
   { key: "walker_4", laneX: 20, startZ: -43, gateZ: -14, speed: 3.15, phase: 4.4 },
   { key: "walker_5", laneX: 32, startZ: -36, gateZ: -8, speed: 2.75, phase: 5.5 },
+];
+
+const GEAR_HOUND_SPECS = [
+  { key: "hound_0", laneX: -26, startZ: -45, gateZ: -13, speed: 4.15, phase: 0.5 },
+  { key: "hound_1", laneX: -16, startZ: -47, gateZ: -15, speed: 4.35, phase: 1.8 },
+  { key: "hound_2", laneX: 16, startZ: -44, gateZ: -15, speed: 4.25, phase: 3.1 },
+  { key: "hound_3", laneX: 26, startZ: -42, gateZ: -13, speed: 4.05, phase: 4.6 },
 ];
 
 const BLIMP_ORBIT_SPECS = [
@@ -92,6 +107,7 @@ export class BastionOpposition3D {
     }
 
     this.walkers = [];
+    this.gearHounds = [];
     this.blimps = [];
     this.barricades = [];
     this.gearPods = [];
@@ -122,12 +138,26 @@ export class BastionOpposition3D {
   }
 
   _buildMaterials() {
+    const toonGrad = getCharacterToonGradient();
+    const brassTex = getCustomSurfaceTexture("bastion_brass_plate");
+    const sapphireTex = getCustomSurfaceTexture("sapphire_filigree");
+
     this.brassMat = new THREE.MeshStandardMaterial({
-      color: 0xd9a441,
+      color: 0xf0c665,
+      map: brassTex,
       emissive: 0x5c3d08,
-      emissiveIntensity: 0.32,
+      emissiveIntensity: 0.24,
       roughness: 0.28,
       metalness: 0.72,
+    });
+    this.sapphireArmorMat = new THREE.MeshToonMaterial({
+      color: 0xffffff,
+      map: sapphireTex,
+      gradientMap: toonGrad,
+    });
+    this.darkIronMat = new THREE.MeshToonMaterial({
+      color: 0x263147,
+      gradientMap: toonGrad,
     });
     this.timberMat = new THREE.MeshStandardMaterial({
       color: 0x7c5333,
@@ -135,19 +165,22 @@ export class BastionOpposition3D {
       metalness: 0.14,
     });
     this.sapphireMat = new THREE.MeshStandardMaterial({
-      color: 0x4ad8ff,
+      color: 0x5ce1e6,
       emissive: 0x1d7dfa,
-      emissiveIntensity: 0.95,
-      roughness: 0.16,
-      metalness: 0.35,
+      emissiveIntensity: 1.05,
+      roughness: 0.12,
+      metalness: 0.3,
     });
-    this.parchmentMat = new THREE.MeshStandardMaterial({
-      color: 0xf6eedc,
-      emissive: 0x3b3120,
-      emissiveIntensity: 0.2,
-      roughness: 0.48,
-      metalness: 0.08,
-      flatShading: true,
+    this.amberEyeMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xff9f1c,
+      emissiveIntensity: 1.15,
+      roughness: 0.12,
+      metalness: 0.2,
+    });
+    this.parchmentMat = new THREE.MeshToonMaterial({
+      color: 0xf7efe0,
+      gradientMap: toonGrad,
     });
     this.goldPodMat = new THREE.MeshStandardMaterial({
       color: 0xffd166,
@@ -169,58 +202,179 @@ export class BastionOpposition3D {
     const g = new THREE.Group();
     g.name = "clockwork_walker_mesh";
 
-    const boiler = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.68, 0.76, 1.12, 10),
-      this.timberMat
+    // Rounded Steampunk Brass-and-Sapphire Dome Automaton Body
+    const domeBodyGeo = createLatheProfileGeometry(
+      [
+        [0.14, 0.0],
+        [0.58, 0.08],
+        [0.76, 0.38],
+        [0.78, 0.78],
+        [0.68, 1.16],
+        [0.44, 1.42],
+        [0.06, 1.52],
+      ],
+      20
     );
-    boiler.position.y = 1.28;
+    const domeBody = new THREE.Mesh(domeBodyGeo, this.brassMat);
+    domeBody.position.y = 0.84;
 
-    const domeCap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.66, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      this.brassMat
+    // Royal-sapphire filigree armor corset around mid-dome
+    const sapphireBandGeo = createLatheProfileGeometry(
+      [
+        [0.74, 0.0],
+        [0.8, 0.18],
+        [0.79, 0.48],
+        [0.71, 0.64],
+      ],
+      20
     );
-    domeCap.position.y = 1.82;
+    const sapphireBand = new THREE.Mesh(sapphireBandGeo, this.sapphireArmorMat);
+    sapphireBand.position.y = 1.16;
 
     const beltRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.74, 0.08, 8, 16),
+      new THREE.TorusGeometry(0.78, 0.068, 8, 20),
       this.brassMat
     );
     beltRing.rotation.x = Math.PI / 2;
-    beltRing.position.y = 1.28;
+    beltRing.position.y = 1.18;
 
-    const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.16, 12), this.sapphireMat);
-    visor.rotation.x = Math.PI / 2;
-    visor.position.set(0, 1.45, 0.68);
+    // Glowing Cyan Monocle Lens Eye + Curved Brass Optical Conduit
+    const monocleGroup = new THREE.Group();
+    monocleGroup.name = "walker_monocle_eye";
+    monocleGroup.position.set(0.08, 1.56, 0.72);
+    const monocleRim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.24, 0.055, 10, 18),
+      this.brassMat
+    );
+    const monocleLens = new THREE.Mesh(
+      new THREE.SphereGeometry(0.21, 14, 12),
+      this.sapphireMat
+    );
+    monocleLens.scale.set(1, 1, 0.55);
+    const monocleGlint = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    monocleGlint.position.set(0.07, 0.07, 0.11);
+    monocleGroup.add(monocleRim, monocleLens, monocleGlint);
 
-    // Wind-up key on dorsal crown
+    const opticalTube = new THREE.Mesh(
+      createSplineTubeGeometry(
+        [
+          [0.3, 1.56, 0.68],
+          [0.64, 1.48, 0.42],
+          [0.72, 1.32, -0.18],
+        ],
+        0.042,
+        10,
+        6
+      ),
+      this.brassMat
+    );
+
+    // Large Spinning Vertical Brass Dorsal Gear on the Back
+    const dorsalGear = new THREE.Group();
+    dorsalGear.name = "walker_dorsal_gear";
+    dorsalGear.position.set(0, 1.52, -0.76);
+    const gearRim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.52, 0.085, 8, 18),
+      this.brassMat
+    );
+    gearRim.rotation.y = Math.PI / 2;
+    const gearHub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.2, 0.22, 12),
+      this.sapphireMat
+    );
+    gearHub.rotation.z = Math.PI / 2;
+    dorsalGear.add(gearRim, gearHub);
+    for (let t = 0; t < 10; t++) {
+      const tooth = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.2, 0.16),
+        this.goldPodMat
+      );
+      const a = (t / 10) * Math.PI * 2;
+      tooth.position.set(0, Math.cos(a) * 0.62, Math.sin(a) * 0.62);
+      tooth.rotation.x = -a;
+      dorsalGear.add(tooth);
+    }
+
+    // Crown wind-up finial
     const windKey = new THREE.Group();
     windKey.name = "walker_windup_key";
-    windKey.position.set(0, 2.38, 0);
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.55, 8), this.brassMat);
-    const bowL = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 8, 14), this.goldPodMat);
-    bowL.position.set(-0.18, 0.24, 0);
+    windKey.position.set(0, 2.42, 0);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.42, 8), this.brassMat);
+    const bowL = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.045, 8, 14), this.goldPodMat);
+    bowL.position.set(-0.15, 0.18, 0);
     const bowR = bowL.clone();
-    bowR.position.x = 0.18;
+    bowR.position.x = 0.15;
     windKey.add(stem, bowL, bowR);
 
-    // 4 articulated timber-and-brass legs
+    // 2 Articulated Piston Legs + 2 Articulated Automaton Pincer Arms
     const legs = [];
-    const legOffsets = [
-      [-0.55, 0.42],
-      [0.55, 0.42],
-      [-0.55, -0.42],
-      [0.55, -0.42],
-    ];
-    for (const [lx, lz] of legOffsets) {
+    for (const sx of [-1, 1]) {
       const legPivot = new THREE.Group();
-      legPivot.position.set(lx, 0.86, lz);
-      const strut = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.86, 0.22), this.brassMat);
-      strut.position.y = -0.38;
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.38), this.timberMat);
-      foot.position.set(0, -0.78, 0.06);
-      legPivot.add(strut, foot);
+      legPivot.position.set(sx * 0.44, 0.88, 0);
+      const hip = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), this.darkIronMat);
+      const thigh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.1, 0.46, 10),
+        this.brassMat
+      );
+      thigh.position.y = -0.24;
+      const knee = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), this.sapphireArmorMat);
+      knee.position.y = -0.46;
+      const shin = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.13, 0.38, 10),
+        this.darkIronMat
+      );
+      shin.position.set(0, -0.66, 0.04);
+      const foot = new THREE.Mesh(
+        createLatheProfileGeometry(
+          [
+            [0.05, 0.0],
+            [0.24, 0.02],
+            [0.22, 0.12],
+            [0.12, 0.16],
+          ],
+          12
+        ),
+        this.brassMat
+      );
+      foot.scale.set(1.0, 1.0, 1.35);
+      foot.position.set(0, -0.88, 0.08);
+      legPivot.add(hip, thigh, knee, shin, foot);
       g.add(legPivot);
       legs.push(legPivot);
+    }
+
+    for (const sx of [-1, 1]) {
+      const armPivot = new THREE.Group();
+      armPivot.position.set(sx * 0.82, 1.48, 0.06);
+      const pauldron = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 12, 10),
+        this.sapphireArmorMat
+      );
+      const forearm = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [0, -0.06, 0],
+            [sx * 0.12, -0.34, 0.14],
+            [sx * 0.06, -0.58, 0.34],
+          ],
+          0.075,
+          10,
+          8
+        ),
+        this.brassMat
+      );
+      const pincer = new THREE.Mesh(
+        new THREE.TorusGeometry(0.14, 0.04, 8, 12, Math.PI * 1.4),
+        this.darkIronMat
+      );
+      pincer.position.set(sx * 0.06, -0.64, 0.42);
+      pincer.rotation.x = Math.PI / 2;
+      armPivot.add(pauldron, forearm, pincer);
+      g.add(armPivot);
+      legs.push(armPivot);
     }
 
     // Juggle gears (hidden unless performing harmless gate Confetti Gear-Juggle Stall)
@@ -235,38 +389,276 @@ export class BastionOpposition3D {
       juggleCluster.add(cog);
     }
 
-    g.add(boiler, domeCap, beltRing, visor, windKey, juggleCluster);
-    return { group: g, windKey, legs, juggleCluster };
+    g.add(domeBody, sapphireBand, beltRing, monocleGroup, opticalTube, dorsalGear, windKey, juggleCluster);
+    return { group: g, windKey, dorsalGear, legs, juggleCluster };
+  }
+
+  _createGearHoundMesh() {
+    const g = new THREE.Group();
+    g.name = "clockwork_gear_hound_mesh";
+
+    // Playful Mechanical Brass Robo-Pup Segmented Barrel Torso
+    const torsoGeo = createLatheProfileGeometry(
+      [
+        [0.08, 0.0],
+        [0.36, 0.14],
+        [0.44, 0.48],
+        [0.4, 0.92],
+        [0.28, 1.18],
+        [0.06, 1.26],
+      ],
+      16
+    );
+    torsoGeo.rotateX(Math.PI / 2);
+    const torso = new THREE.Mesh(torsoGeo, this.brassMat);
+    torso.position.set(0, 0.72, -0.62);
+    g.add(torso);
+
+    // Royal-sapphire saddle collar plate
+    const collar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.41, 0.065, 8, 16),
+      this.sapphireArmorMat
+    );
+    collar.position.set(0, 0.74, 0.28);
+    g.add(collar);
+
+    // Expressive Pup Head + Sculpted Snout + Floppy Brass Ears + Twin Glowing Amber Eyes
+    const head = new THREE.Group();
+    head.name = "gear_hound_head";
+    head.position.set(0, 0.96, 0.56);
+
+    const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 12), this.brassMat);
+    cranium.scale.set(1.05, 0.96, 1.04);
+
+    const snoutGeo = createLatheProfileGeometry(
+      [
+        [0.06, 0.0],
+        [0.18, 0.08],
+        [0.22, 0.34],
+        [0.24, 0.46],
+      ],
+      14
+    );
+    snoutGeo.rotateX(-Math.PI / 2);
+    const snout = new THREE.Mesh(snoutGeo, this.brassMat);
+    snout.position.set(0, -0.08, 0.52);
+
+    const noseButton = new THREE.Mesh(
+      new THREE.SphereGeometry(0.085, 10, 8),
+      this.darkIronMat
+    );
+    noseButton.position.set(0, -0.04, 0.54);
+    head.add(cranium, snout, noseButton);
+
+    // Twin Glowing Amber Eyes with Brass Rims & Specular Glints
+    for (const sx of [-1, 1]) {
+      const eyeRim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.105, 0.024, 8, 14),
+        this.darkIronMat
+      );
+      eyeRim.position.set(sx * 0.16, 0.08, 0.28);
+      const amberEye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09, 12, 10),
+        this.amberEyeMat
+      );
+      amberEye.position.set(sx * 0.16, 0.08, 0.28);
+      const glint = new THREE.Mesh(
+        new THREE.SphereGeometry(0.028, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      glint.position.set(sx * 0.18, 0.11, 0.35);
+      head.add(eyeRim, amberEye, glint);
+    }
+
+    // Floppy Sculpted Brass Ears
+    const ears = [];
+    for (const sx of [-1, 1]) {
+      const earPivot = new THREE.Group();
+      earPivot.position.set(sx * 0.3, 0.14, 0.02);
+      const earFlap = new THREE.Mesh(
+        createBeveledWingGeometry(
+          [
+            [-0.1, 0.04],
+            [0.1, 0.04],
+            [0.16, -0.36],
+            [0.0, -0.46],
+            [-0.14, -0.34],
+          ],
+          0.06,
+          0.02
+        ),
+        this.brassMat
+      );
+      earFlap.rotation.z = sx * 0.28;
+      earPivot.add(earFlap);
+      head.add(earPivot);
+      ears.push(earPivot);
+    }
+    g.add(head);
+
+    // Spinning Vertical Brass Gear-Tail
+    const gearTail = new THREE.Group();
+    gearTail.name = "gear_hound_tail";
+    gearTail.position.set(0, 0.94, -0.68);
+    const tailRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.24, 0.05, 8, 14),
+      this.goldPodMat
+    );
+    tailRing.rotation.y = Math.PI / 2;
+    const tailHub = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 10, 8),
+      this.sapphireMat
+    );
+    gearTail.add(tailRing, tailHub);
+    for (let t = 0; t < 6; t++) {
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.1), this.brassMat);
+      const a = (t / 6) * Math.PI * 2;
+      tooth.position.set(0, Math.cos(a) * 0.3, Math.sin(a) * 0.3);
+      gearTail.add(tooth);
+    }
+    g.add(gearTail);
+
+    // 4 Articulated Robo-Pup Legs
+    const legs = [];
+    const pupLegCoords = [
+      [-0.32, 0.34],
+      [0.32, 0.34],
+      [-0.32, -0.36],
+      [0.32, -0.36],
+    ];
+    for (const [lx, lz] of pupLegCoords) {
+      const legPivot = new THREE.Group();
+      legPivot.position.set(lx, 0.56, lz);
+      const joint = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), this.sapphireArmorMat);
+      const strut = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.065, 0.44, 8),
+        this.brassMat
+      );
+      strut.position.y = -0.22;
+      const paw = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), this.darkIronMat);
+      paw.scale.set(1.0, 0.65, 1.3);
+      paw.position.set(0, -0.46, 0.05);
+      legPivot.add(joint, strut, paw);
+      g.add(legPivot);
+      legs.push(legPivot);
+    }
+
+    const juggleCluster = new THREE.Group();
+    juggleCluster.name = "confetti_juggle_gears";
+    juggleCluster.position.set(0, 1.95, 0);
+    juggleCluster.visible = false;
+    for (let i = 0; i < 3; i++) {
+      const cog = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.045, 6, 10), this.goldPodMat);
+      const ang = (i / 3) * Math.PI * 2;
+      cog.position.set(Math.cos(ang) * 0.4, Math.sin(ang) * 0.18, Math.sin(ang) * 0.25);
+      juggleCluster.add(cog);
+    }
+    g.add(juggleCluster);
+
+    return { group: g, head, ears, gearTail, legs, juggleCluster };
   }
 
   _createOrigamiBlimpMesh() {
     const g = new THREE.Group();
-    g.name = "origami_hover_blimp_mesh";
+    g.name = "hover_zeppelin_mesh";
 
-    const envelope = new THREE.Mesh(new THREE.OctahedronGeometry(1.05, 0), this.parchmentMat);
-    envelope.scale.set(0.88, 0.72, 1.65);
-    envelope.position.y = 1.85;
+    // Ribbed Steampunk Dirigible Airship Envelope
+    const envelopeGeo = createDirigibleHullGeometry(0.96, 2.28);
+    const envelope = new THREE.Mesh(envelopeGeo, this.parchmentMat);
+    envelope.position.y = 1.92;
+    g.add(envelope);
 
-    const keelCrease = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.36, 2.45), this.brassMat);
-    keelCrease.position.set(0, 1.18, 0);
+    // Circumferential brass structural rib bands + royal-sapphire nose cone trim
+    for (const [rz, rad] of [
+      [-1.05, 0.82],
+      [0.0, 0.97],
+      [1.05, 0.82],
+    ]) {
+      const rib = new THREE.Mesh(
+        new THREE.TorusGeometry(rad, 0.042, 8, 22),
+        this.brassMat
+      );
+      rib.position.set(0, 1.92, rz);
+      g.add(rib);
+    }
+    const noseCone = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 14, 12),
+      this.sapphireArmorMat
+    );
+    noseCone.scale.set(0.95, 0.95, 1.25);
+    noseCone.position.set(0, 1.92, 1.95);
+    g.add(noseCone);
 
-    const gondola = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.38, 1.08), this.timberMat);
-    gondola.position.set(0, 0.85, 0);
+    // Underslung Sculpted Brass Gondola + Rigging Struts + Glowing Cyan Portholes
+    const gondolaGeo = createLatheProfileGeometry(
+      [
+        [0.06, 0.0],
+        [0.34, 0.18],
+        [0.38, 0.65],
+        [0.34, 1.18],
+        [0.08, 1.38],
+      ],
+      16
+    );
+    gondolaGeo.rotateX(Math.PI / 2);
+    const gondola = new THREE.Mesh(gondolaGeo, this.brassMat);
+    gondola.position.set(0, 0.82, -0.68);
+    g.add(gondola);
 
-    const finL = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.95, 3), this.parchmentMat);
-    finL.rotation.z = Math.PI / 2;
-    finL.position.set(-0.85, 1.85, -0.65);
-    const finR = finL.clone();
-    finR.rotation.z = -Math.PI / 2;
-    finR.position.x = 0.85;
+    for (const sx of [-1, 1]) {
+      for (const sz of [-0.42, 0.42]) {
+        const cable = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.022, 0.022, 0.64, 6),
+          this.darkIronMat
+        );
+        cable.position.set(sx * 0.24, 1.18, sz);
+        cable.rotation.z = -sx * 0.22;
+        g.add(cable);
+      }
+      const porthole = new THREE.Mesh(
+        new THREE.SphereGeometry(0.11, 10, 8),
+        this.sapphireMat
+      );
+      porthole.position.set(sx * 0.34, 0.84, 0.05);
+      g.add(porthole);
+    }
 
+    // Beveled Cruciform Tail Fins
+    const finShape = createBeveledWingGeometry(
+      [
+        [0.0, -0.35],
+        [0.72, -0.52],
+        [0.78, -0.12],
+        [0.0, 0.28],
+      ],
+      0.06,
+      0.015
+    );
+    for (const sx of [-1, 1]) {
+      const hFin = new THREE.Mesh(finShape, this.sapphireArmorMat);
+      hFin.rotation.x = -Math.PI / 2;
+      if (sx < 0) hFin.scale.x = -1;
+      hFin.position.set(sx * 0.45, 1.92, -1.55);
+      g.add(hFin);
+    }
+    const vFinTop = new THREE.Mesh(finShape, this.brassMat);
+    vFinTop.rotation.y = -Math.PI / 2;
+    vFinTop.position.set(0, 2.35, -1.55);
+    g.add(vFinTop);
+
+    // Spinning 4-Blade Brass Rear Propeller
     const prop = new THREE.Group();
-    prop.position.set(0, 1.85, -1.78);
-    const bladeA = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.14, 0.06), this.brassMat);
-    const bladeB = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.05, 0.06), this.brassMat);
-    prop.add(bladeA, bladeB);
+    prop.name = "zeppelin_rear_propeller";
+    prop.position.set(0, 1.92, -2.34);
+    const propHub = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 10, 8),
+      this.sapphireMat
+    );
+    const bladeA = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.14, 0.05), this.brassMat);
+    const bladeB = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.18, 0.05), this.brassMat);
+    prop.add(propHub, bladeA, bladeB);
 
-    g.add(envelope, keelCrease, gondola, finL, finR, prop);
+    g.add(prop);
     return { group: g, prop };
   }
 
@@ -350,10 +742,47 @@ export class BastionOpposition3D {
         scale: 1,
         group: built.group,
         windKey: built.windKey,
+        dorsalGear: built.dorsalGear,
         legs: built.legs,
         juggleCluster: built.juggleCluster,
       };
       this.walkers.push(unit);
+      this.units.push(unit);
+    });
+
+    GEAR_HOUND_SPECS.forEach((spec, idx) => {
+      const built = this._createGearHoundMesh();
+      const startZ = spec.startZ + (idx % 2) * 3.0;
+      const y = this._groundY(spec.laneX, startZ);
+      built.group.position.set(spec.laneX, y, startZ);
+      built.group.userData = { kind: "gear_hound", oppositionId: spec.key };
+      this.rootGroup.add(built.group);
+
+      const unit = {
+        id: spec.key,
+        key: spec.key,
+        kind: "gear_hound",
+        active: true,
+        respawnTimer: 0,
+        jugglingTimer: 0,
+        laneX: spec.laneX,
+        startZ: spec.startZ,
+        gateZ: spec.gateZ,
+        baseSpeed: spec.speed,
+        phase: spec.phase,
+        strideClock: spec.phase,
+        x: spec.laneX,
+        y,
+        z: startZ,
+        scale: 1,
+        group: built.group,
+        head: built.head,
+        ears: built.ears,
+        gearTail: built.gearTail,
+        legs: built.legs,
+        juggleCluster: built.juggleCluster,
+      };
+      this.gearHounds.push(unit);
       this.units.push(unit);
     });
 
@@ -692,7 +1121,7 @@ export class BastionOpposition3D {
     for (const u of this.units) {
       u.active = true;
       u.respawnTimer = 0;
-      if (u.kind === "clockwork_walker") {
+      if (u.kind === "clockwork_walker" || u.kind === "gear_hound") {
         u.jugglingTimer = 0;
         u.x = u.laneX;
         u.z = u.startZ;
@@ -1050,6 +1479,9 @@ export class BastionOpposition3D {
       if (w.windKey) {
         w.windKey.rotation.y += oppDt * 4.2 * cryoMul;
       }
+      if (w.dorsalGear) {
+        w.dorsalGear.rotation.x += oppDt * 4.8 * cryoMul;
+      }
       for (let i = 0; i < w.legs.length; i++) {
         const sign = i % 2 === 0 ? 1 : -1;
         w.legs[i].rotation.x = Math.sin(w.strideClock + (i >= 2 ? Math.PI : 0)) * 0.48 * sign;
@@ -1062,7 +1494,79 @@ export class BastionOpposition3D {
       }
     }
 
-    // 4. Step Origami Hover-Blimps
+    // 3b. Step Playful Mechanical Brass Gear-Hounds
+    for (const h of this.gearHounds) {
+      if (!h.active) {
+        h.respawnTimer -= oppDt;
+        if (h.respawnTimer <= 0) {
+          h.active = true;
+          h.jugglingTimer = 0;
+          h.x = h.laneX;
+          h.z = h.startZ;
+          h.y = this._groundY(h.x, h.z);
+          h.group.position.set(h.x, h.y, h.z);
+          if (h.juggleCluster) h.juggleCluster.visible = false;
+          h.group.visible = true;
+        }
+        continue;
+      }
+
+      if (h.jugglingTimer > 0) {
+        h.jugglingTimer -= oppDt;
+        h.strideClock += oppDt * 12.0;
+        h.y = this._groundY(h.x, h.z) + Math.abs(Math.sin(h.strideClock)) * 0.46;
+        h.group.position.set(h.x, h.y, h.z);
+        h.group.rotation.y += oppDt * 5.8;
+        if (h.juggleCluster) {
+          h.juggleCluster.visible = true;
+          h.juggleCluster.rotation.y += oppDt * 6.8;
+        }
+        if (h.jugglingTimer <= 0) {
+          if (h.juggleCluster) h.juggleCluster.visible = false;
+          h.x = h.laneX;
+          h.z = h.startZ;
+          h.y = this._groundY(h.x, h.z);
+          h.group.rotation.y = 0;
+          h.group.position.set(h.x, h.y, h.z);
+        }
+        continue;
+      }
+
+      const cryoMul = this._isInsideCryoChill(h.x, h.z) ? 0.35 : 1.0;
+      const stepSpd = h.baseSpeed * cryoMul;
+      h.z += stepSpd * oppDt;
+      h.x = h.laneX + Math.sin(h.strideClock * 0.85) * 0.52;
+      h.y = this._groundY(h.x, h.z) + Math.abs(Math.sin(h.strideClock * 2.0)) * 0.08;
+      h.strideClock += oppDt * 8.4 * cryoMul;
+
+      h.group.position.set(h.x, h.y, h.z);
+      h.group.rotation.y = 0;
+      if (h.gearTail) {
+        h.gearTail.rotation.x += oppDt * 9.5 * cryoMul;
+        h.gearTail.rotation.z = Math.sin(h.strideClock * 1.4) * 0.3;
+      }
+      if (h.head) {
+        h.head.rotation.x = Math.sin(h.strideClock * 1.8) * 0.1;
+        h.head.rotation.z = Math.sin(h.strideClock * 0.9) * 0.08;
+      }
+      if (Array.isArray(h.ears)) {
+        const earBounce = Math.abs(Math.sin(h.strideClock * 2.0)) * 0.22;
+        if (h.ears[0]) h.ears[0].rotation.z = -earBounce;
+        if (h.ears[1]) h.ears[1].rotation.z = earBounce;
+      }
+      for (let i = 0; i < h.legs.length; i++) {
+        const diag = i === 0 || i === 3 ? 0 : Math.PI;
+        h.legs[i].rotation.x = Math.sin(h.strideClock * 1.6 + diag) * 0.56;
+      }
+
+      if (h.z >= h.gateZ) {
+        h.jugglingTimer = 1.5;
+        this.juggleStallCount += 1;
+        this.spawnGearConfettiBurst(h.x, h.y + 1.2, h.z, 12);
+      }
+    }
+
+    // 4. Step Hover-Zeppelins
     for (const b of this.blimps) {
       if (!b.active) {
         b.respawnTimer -= oppDt;

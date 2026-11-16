@@ -6,6 +6,10 @@
  */
 
 import * as THREE from "../vendor/three.module.min.js";
+import {
+  createLatheProfileGeometry,
+  createBeveledWingGeometry,
+} from "../core/character-graphics-3d.js";
 
 const SAMPLE_INTERVAL_SEC = 0.25;
 const MAX_GHOST_FRAMES = 160;
@@ -89,26 +93,143 @@ export class GhostRigController {
       depthWrite: false,
     });
 
+    const riderSilhouette = new THREE.Group();
+    riderSilhouette.name = "ghost_pilot_silhouette";
+    const riderTorso = new THREE.Mesh(
+      createLatheProfileGeometry(
+        [
+          [0.02, 0.0],
+          [0.24, 0.04],
+          [0.21, 0.48],
+          [0.14, 0.72],
+          [0.02, 0.76],
+        ],
+        14
+      ),
+      trimMat
+    );
+    const riderHead = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), trimMat);
+    riderHead.position.set(0, 0.94, 0);
+    riderSilhouette.add(riderTorso, riderHead);
+
     if (chassisId === "aurora_sled") {
-      const hull = new THREE.Mesh(new THREE.ConeGeometry(1.25, 4.1, 6), holoMat);
-      hull.rotation.x = -Math.PI / 2;
-      hull.position.set(0, 1.0, 0);
-      const wings = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.14, 1.35), trimMat);
-      wings.position.set(0, 0.82, 0.3);
-      g.add(hull, wings);
+      const hull = new THREE.Mesh(
+        createLatheProfileGeometry(
+          [
+            [0.02, -2.25],
+            [0.34, -1.75],
+            [0.7, -0.95],
+            [0.88, -0.1],
+            [0.82, 0.85],
+            [0.58, 1.62],
+            [0.24, 2.08],
+            [0.03, 2.2],
+          ],
+          18
+        ),
+        holoMat
+      );
+      hull.name = "ghost_manta_fuselage";
+      hull.rotation.x = Math.PI / 2;
+      hull.scale.set(1.04, 0.56, 1.0);
+      hull.position.set(0, 0.94, 0.02);
+
+      const wingShape = createBeveledWingGeometry(
+        [
+          [0.4, -1.18],
+          [1.32, -0.5],
+          [1.98, 0.42],
+          [2.1, 1.0],
+          [1.38, 1.12],
+          [0.54, 0.9],
+        ],
+        0.07,
+        0.024
+      );
+      const wingR = new THREE.Mesh(wingShape, trimMat);
+      wingR.rotation.x = Math.PI / 2;
+      wingR.position.set(0, 0.9, 0);
+      const wingL = new THREE.Mesh(wingShape, trimMat);
+      wingL.rotation.x = Math.PI / 2;
+      wingL.scale.x = -1;
+      wingL.position.set(0, 0.9, 0);
+
+      const prow = new THREE.Mesh(
+        new THREE.TorusGeometry(1.28, 0.14, 8, 22, Math.PI),
+        trimMat
+      );
+      prow.rotation.x = Math.PI / 2;
+      prow.rotation.z = Math.PI;
+      prow.position.set(0, 0.54, -1.52);
+
+      riderSilhouette.position.set(0, 1.14, 0.22);
+      g.add(hull, wingL, wingR, prow, riderSilhouette);
     } else {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.98, 3.4), holoMat);
-      body.position.set(0, 1.0, 0.2);
-      const cab = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.95, 1.65), holoMat);
-      cab.position.set(0, 1.88, 0.42);
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.88, 0.25), trimMat);
-      blade.position.set(0, 0.65, -1.9);
-      g.add(body, cab, blade);
+      const hullShape = createBeveledWingGeometry(
+        [
+          [-1.76, 0.66],
+          [1.52, 0.66],
+          [1.68, 0.96],
+          [1.34, 1.34],
+          [0.48, 1.4],
+          [-0.86, 1.4],
+          [-1.08, 1.7],
+          [-1.7, 1.66],
+          [-1.84, 1.14],
+        ],
+        1.86,
+        0.07
+      );
+      const body = new THREE.Mesh(hullShape, holoMat);
+      body.name = "ghost_dozer_hull";
+      body.rotation.y = Math.PI / 2;
+      body.position.set(-0.93, 0, 0);
+
+      const cabDome = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.84, 0.92, 1.02, 16),
+        holoMat
+      );
+      cabDome.scale.set(1.02, 1.0, 0.96);
+      cabDome.position.set(0, 1.92, 0.24);
+
+      const plowScoop = createBeveledWingGeometry(
+        [
+          [0.24, 0.16],
+          [0.02, 0.46],
+          [-0.02, 0.78],
+          [0.2, 1.12],
+          [0.08, 1.14],
+          [-0.14, 0.78],
+          [-0.1, 0.44],
+          [0.12, 0.14],
+        ],
+        1.58,
+        0.03
+      );
+      const bladeL = new THREE.Mesh(plowScoop, trimMat);
+      bladeL.rotation.y = Math.PI / 2 + 0.22;
+      bladeL.position.set(-1.56, 0.08, -1.68);
+      const bladeR = new THREE.Mesh(plowScoop, trimMat);
+      bladeR.rotation.y = Math.PI / 2 - 0.22;
+      bladeR.position.set(0.0, 0.08, -2.02);
+
+      const wheelShape = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
+      wheelShape.rotateZ(Math.PI / 2);
+      for (const wx of [-1.2, 1.2]) {
+        for (const wz of [-1.02, 0.2, 1.42]) {
+          const w = new THREE.Mesh(wheelShape, trimMat);
+          w.position.set(wx, 0.52, wz);
+          g.add(w);
+        }
+      }
+
+      riderSilhouette.position.set(0, 1.42, 0.24);
+      g.add(body, cabDome, bladeL, bladeR, riderSilhouette);
     }
 
-    const ringGeo = new THREE.RingGeometry(1.75, 2.05, 28);
-    ringGeo.rotateX(-Math.PI / 2);
-    const ring = new THREE.Mesh(ringGeo, trimMat);
+    const ringShape = new THREE.RingGeometry(1.75, 2.05, 28);
+    ringShape.rotateX(-Math.PI / 2);
+    const ring = new THREE.Mesh(ringShape, trimMat);
     ring.position.set(0, 0.12, 0);
     g.add(ring);
 

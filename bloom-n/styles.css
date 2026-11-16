@@ -1623,3 +1623,97 @@ button:active {
     transition: none !important;
   }
 }
+
+/* ==================== CUSTOM CHARACTER ARTWORK & PORTRAIT MEDALLIONS ==================== */
+.hero-char-duo {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  pointer-events: none;
+}
+
+.hero-char-fig {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 16px rgba(4, 10, 24, 0.72));
+  transition: transform 0.22s ease;
+}
+
+.hero-card:hover .hero-char-fig:first-child {
+  transform: translateY(-4px) rotate(-3deg) scale(1.04);
+}
+
+.hero-card:hover .hero-char-fig:last-child {
+  transform: translateY(-4px) rotate(3deg) scale(1.04);
+}
+
+.rig-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.char-chip-avatar {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
+}
+
+.char-hud-avatar {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+
+.char-garage-avatar {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.55));
+}
+
+.char-trick-fox {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px hsla(176, 88%, 62%, 0.55));
+}
+
+.creature-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.char-journal-portrait {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 45%, rgba(92, 225, 230, 0.18), rgba(10, 22, 38, 0.65));
+  padding: 4px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+}
+
+.char-journal-portrait.silhouette {
+  filter: brightness(0.18) contrast(1.2) saturate(0.2) drop-shadow(0 0 6px rgba(92, 225, 230, 0.35));
+  opacity: 0.72;
+}
+
+@media (max-width: 720px) {
+  .hero-char-fig {
+    width: 60px;
+    height: 60px;
+  }
+}
+

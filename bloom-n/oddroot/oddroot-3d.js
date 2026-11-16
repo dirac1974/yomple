@@ -39,6 +39,54 @@ import {
   stepFieldExpedition,
   exportRobloxSimSnapshot,
 } from "../core/world-sim.js";
+import {
+  buildExplorerPilot3D,
+  animateExplorerPilot3D,
+  buildBrambleBoarMount3D,
+  buildSpiritFox3D,
+  buildSkyWhale3D,
+  buildGuardianColossus3D,
+  createSplineTubeGeometry,
+  createBeveledWingGeometry,
+  getCustomSurfaceTexture,
+} from "../core/character-graphics-3d.js";
+
+function applyFresnelRimToCharacterSubtree(
+  rootObj,
+  { rimColor = 0x62f5e4, rimPower = 2.6, rimIntensity = 0.44 } = {}
+) {
+  if (!rootObj || typeof rootObj.traverse !== "function") return;
+  rootObj.traverse((obj) => {
+    if (!obj.isMesh || !obj.material) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const mat of mats) {
+      if (!mat || !mat.isMeshToonMaterial || mat.userData?.rimUniforms) continue;
+      mat.userData.rimUniforms = {
+        uRimColor: { value: new THREE.Color(rimColor) },
+        uRimPower: { value: rimPower },
+        uRimIntensity: { value: rimIntensity },
+      };
+      mat.customProgramCacheKey = () => "oddroot_toon_fresnel_v1";
+      mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uRimColor = mat.userData.rimUniforms.uRimColor;
+        shader.uniforms.uRimPower = mat.userData.rimUniforms.uRimPower;
+        shader.uniforms.uRimIntensity = mat.userData.rimUniforms.uRimIntensity;
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nuniform vec3 uRimColor;\nuniform float uRimPower;\nuniform float uRimIntensity;"
+          )
+          .replace(
+            "#include <emissivemap_fragment>",
+            `#include <emissivemap_fragment>
+        vec3 oddViewDir = normalize( vViewPosition );
+        float oddRim = pow( 1.0 - clamp( abs( dot( normal, oddViewDir ) ), 0.0, 1.0 ), uRimPower );
+        totalEmissiveRadiance += uRimColor * ( oddRim * uRimIntensity );`
+          );
+      };
+    }
+  });
+}
 
 export {
   getSanctuaryJournalEntries,
@@ -1950,10 +1998,21 @@ export class OddrootWorld3D {
 
     this.scene.add(this.worldTreeGroup);
 
-    // 3. Sanctuary World-Tree Guardian (animated during World-Tree awakening)
+    // 3. Sanctuary World-Tree Guardian (carved Dryad Spirit mounted on trunk facing Moonwell courtyard)
     this.guardianGroup = new THREE.Group();
     this.guardianGroup.name = "SanctuaryWorldTreeGuardian";
-    this.guardianGroup.position.set(0, 11.5, -4.5);
+    this.guardianGroup.position.set(0, 7.3, -2.55);
+
+    this.dryadGuardian = buildGuardianColossus3D({ realm: "oddroot" });
+    this.dryadGuardian.scale.setScalar(1.38);
+    // Dryad face is sculpted on local -Z; rotate Math.PI so it gazes +Z across the Moonwell courtyard
+    this.dryadGuardian.rotation.y = Math.PI;
+    applyFresnelRimToCharacterSubtree(this.dryadGuardian, {
+      rimColor: 0xffd166,
+      rimIntensity: 0.58,
+    });
+    this.guardianGroup.add(this.dryadGuardian);
+
     const guardMat = createOddrootToonRimMaterial(this.toonGradientTex, {
       color: 0x62f5e4,
       emissive: 0xffd166,
@@ -1961,10 +2020,11 @@ export class OddrootWorld3D {
       rimColor: 0xffffff,
       rimIntensity: 0.7,
     });
-    const guardCore = new THREE.Mesh(new THREE.OctahedronGeometry(1.45, 1), guardMat);
-    const guardCrown = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.14, 8, 28), guardMat);
-    guardCrown.rotation.x = Math.PI / 2.4;
-    this.guardianGroup.add(guardCore, guardCrown);
+    const guardCrown = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.12, 8, 28), guardMat);
+    guardCrown.position.set(0, 0.45, -0.25);
+    guardCrown.rotation.x = Math.PI * 0.08;
+    this.guardianCrownHalo = guardCrown;
+    this.guardianGroup.add(guardCrown);
     this.scene.add(this.guardianGroup);
 
     // 4. Shared 6-Tier Great Northern Observatory Spire at (0, 3.6, -60)
@@ -2114,22 +2174,15 @@ export class OddrootWorld3D {
     this.skyWhale = new THREE.Group();
     this.skyWhale.name = "OverdriveStarlightWhale";
     this.skyWhale.visible = false;
-    const whaleMat = createOddrootToonRimMaterial(this.toonGradientTex, {
-      color: 0xc084fc,
-      emissive: 0x62f5e4,
-      emissiveIntensity: 0.72,
+    this.skyWhaleSculpt = buildSkyWhale3D({ theme: "oddroot", scale: 1.35 });
+    applyFresnelRimToCharacterSubtree(this.skyWhaleSculpt, {
+      rimColor: 0xffe599,
+      rimIntensity: 0.62,
     });
-    const wBody = new THREE.Mesh(new THREE.CapsuleGeometry(1.6, 5.8, 8, 16), whaleMat);
-    wBody.rotation.x = Math.PI / 2;
-    this.skyWhale.add(wBody);
-    for (const sx of [-1, 1]) {
-      const fin = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.18, 1.2), whaleMat);
-      fin.position.set(sx * 2.1, -0.1, 0.6);
-      this.skyWhale.add(fin);
-    }
+    this.skyWhale.add(this.skyWhaleSculpt);
     this.scene.add(this.skyWhale);
 
-    // Self-vs-Self Translucent 3D Ghost
+    // Self-vs-Self Translucent 3D Ghost (sculpted Alchemist silhouette)
     this.ghostGroup = new THREE.Group();
     this.ghostGroup.name = "SelfPersonalBestGhost";
     this.ghostGroup.visible = false;
@@ -2137,10 +2190,20 @@ export class OddrootWorld3D {
       color: 0x62f5e4,
       transparent: true,
       opacity: 0.36,
+      side: THREE.DoubleSide,
     });
-    const ghostMesh = new THREE.Mesh(new THREE.ConeGeometry(0.62, 1.65, 10), ghostMat);
-    ghostMesh.position.y = 0.9;
-    this.ghostGroup.add(ghostMesh);
+    const ghostPilot = buildExplorerPilot3D({
+      role: "alchemist",
+      includeWings: true,
+      seated: false,
+      scale: 1.05,
+    });
+    ghostPilot.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.material = ghostMat;
+      }
+    });
+    this.ghostGroup.add(ghostPilot);
     this.scene.add(this.ghostGroup);
   }
 
@@ -2594,9 +2657,6 @@ export class OddrootWorld3D {
       rimColor: 0xfff8dc,
       rimIntensity: 0.62,
     });
-    const darkCowlHollowMat = new THREE.MeshBasicMaterial({ color: 0x09131f });
-    const eyeCyanMat = new THREE.MeshBasicMaterial({ color: 0x62f5e4 });
-    const eyeGoldMat = new THREE.MeshBasicMaterial({ color: 0xffd166 });
     const amberLanternMat = createOddrootToonRimMaterial(this.toonGradientTex, {
       color: 0xffe599,
       emissive: 0xff9f1c,
@@ -2613,7 +2673,10 @@ export class OddrootWorld3D {
     });
 
     this.boarLegs = [];
+    this.boarMount = null;
+    this.boarSideWings = [];
     this.gliderWings = [];
+    this.pilotCharacter = null;
     this.boarTailPivot = null;
     this.hipLantern = null;
     this.chestStarBrooch = null;
@@ -2621,372 +2684,215 @@ export class OddrootWorld3D {
     this._avatarBankRad = 0;
 
     if (normMount === "bramble_boar") {
-      // Sculpted Bramble-Plow Boar: muscular barrel torso, armored shoulder hump & snout
-      const boarBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.66, 1.22, 8, 14), primaryMat);
-      boarBody.rotation.x = Math.PI / 2;
-      boarBody.position.set(0, 0.86, 0.04);
-      grp.add(boarBody);
+      // Sculpted Bramble-Plow Spirit Boar mount + seated Alchemist rider
+      const boarMount = buildBrambleBoarMount3D({ withRider: true, scale: 0.95 });
+      grp.add(boarMount);
+      this.boarMount = boarMount;
+      this.boarLegs = Array.isArray(boarMount.userData?.legs) ? boarMount.userData.legs : [];
+      this.pilotCharacter = boarMount.userData?.rider || null;
 
-      const shoulderHump = new THREE.Mesh(new THREE.SphereGeometry(0.72, 12, 10), primaryMat);
-      shoulderHump.scale.set(1.06, 0.96, 0.92);
-      shoulderHump.position.set(0, 0.98, -0.38);
-      grp.add(shoulderHump);
-
-      const snoutBridge = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.28, 0.44, 0.62, 10),
-        primaryMat
-      );
-      snoutBridge.rotation.x = Math.PI / 2 - 0.16;
-      snoutBridge.position.set(0, 0.78, -1.06);
-      grp.add(snoutBridge);
-
-      const noseDisc = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.27, 0.27, 0.1, 10),
-        saddleWoodMat
-      );
-      noseDisc.rotation.x = Math.PI / 2 - 0.16;
-      noseDisc.position.set(0, 0.83, -1.36);
-      grp.add(noseDisc);
-
-      for (const nx of [-0.09, 0.09]) {
-        const nostril = new THREE.Mesh(
-          new THREE.SphereGeometry(0.048, 6, 6),
-          darkCowlHollowMat
-        );
-        nostril.position.set(nx, 0.84, -1.4);
-        grp.add(nostril);
-      }
-
-      // Glowing amber eyes + tufted pointed ears
-      for (const sx of [-1, 1]) {
-        const eyeAmber = new THREE.Mesh(
-          new THREE.SphereGeometry(0.085, 8, 8),
-          amberLanternMat
-        );
-        eyeAmber.position.set(sx * 0.36, 1.04, -0.84);
-        const brow = new THREE.Mesh(
-          new THREE.BoxGeometry(0.18, 0.06, 0.16),
-          saddleWoodMat
-        );
-        brow.position.set(sx * 0.36, 1.13, -0.84);
-        brow.rotation.z = -sx * 0.24;
-
-        const earOuter = new THREE.Mesh(
-          new THREE.ConeGeometry(0.16, 0.42, 7),
-          primaryMat
-        );
-        earOuter.position.set(sx * 0.46, 1.34, -0.58);
-        earOuter.rotation.set(-0.22, 0, -sx * 0.48);
-
-        const earTuft = new THREE.Mesh(
-          new THREE.ConeGeometry(0.09, 0.26, 6),
-          trimMat
-        );
-        earTuft.position.set(sx * 0.54, 1.5, -0.62);
-        earTuft.rotation.set(-0.22, 0, -sx * 0.52);
-
-        grp.add(eyeAmber, brow, earOuter, earTuft);
-      }
-
-      // Bristled emerald-gold dorsal crest along spine
-      for (let d = 0; d < 5; d++) {
-        const dz = -0.64 + d * 0.32;
-        const dy = 1.48 - Math.abs(d - 1.5) * 0.07;
-        const crestSpine = new THREE.Mesh(
-          new THREE.ConeGeometry(0.11, 0.36 - d * 0.03, 5),
-          d % 2 === 0 ? trimMat : goldBrassMat
-        );
-        crestSpine.scale.set(0.55, 1.0, 1.25);
-        crestSpine.rotation.x = -0.28;
-        crestSpine.position.set(0, dy, dz);
-        grp.add(crestSpine);
-      }
-
-      // 4 Articulated Legs with Cloven Hooves (strictly length === 4)
-      for (const [lx, lz] of [
-        [-0.48, -0.55],
-        [0.48, -0.55],
-        [-0.48, 0.55],
-        [0.48, 0.55],
-      ]) {
-        const legPivot = new THREE.Group();
-        legPivot.position.set(lx, 0.58, lz);
-        const legShaft = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.15, 0.12, 0.52, 8),
-          primaryMat
-        );
-        legShaft.position.y = -0.22;
-        const hoof = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.13, 0.16, 0.16, 8),
-          saddleWoodMat
-        );
-        hoof.position.y = -0.5;
-        legPivot.add(legShaft, hoof);
-        grp.add(legPivot);
-        this.boarLegs.push(legPivot);
-      }
-
-      // Curved Rune-Ringed Crystal Tusks
-      const tuskSpan = hasTuskPlow ? 0.92 : 0.54;
-      const tuskRadius = hasTuskPlow ? 0.66 : 0.44;
-      const tuskTube = hasTuskPlow ? 0.115 : 0.082;
-      for (const sx of [-1, 1]) {
-        const tuskGrp = new THREE.Group();
-        tuskGrp.position.set(sx * tuskSpan, 0.72, -0.96);
-        tuskGrp.rotation.y = sx * (hasTuskPlow ? 0.42 : 0.25);
-
-        const tuskArc = new THREE.Mesh(
-          new THREE.TorusGeometry(tuskRadius, tuskTube, 8, 16, Math.PI * 0.68),
-          trimMat
-        );
-        tuskArc.rotation.y = Math.PI / 2;
-        tuskArc.rotation.z = Math.PI * 0.85;
-        tuskGrp.add(tuskArc);
-
-        const tuskTip = new THREE.Mesh(
-          new THREE.ConeGeometry(tuskTube * 1.05, 0.34, 8),
-          trimMat
-        );
-        tuskTip.position.set(0, tuskRadius * 0.72, -tuskRadius * 0.68);
-        tuskTip.rotation.x = -0.35;
-        tuskGrp.add(tuskTip);
-
-        // Two glowing golden rune rings encircling each crystal tusk
-        for (const rFrac of [0.26, 0.54]) {
-          const rAng = Math.PI * 0.85 + rFrac * Math.PI * 0.68;
-          const runeBand = new THREE.Mesh(
-            new THREE.TorusGeometry(tuskTube * 1.32, 0.024, 6, 14),
-            goldBrassMat
-          );
-          runeBand.position.set(0, Math.sin(rAng) * tuskRadius, Math.cos(rAng) * tuskRadius);
-          runeBand.rotation.x = -rAng + Math.PI / 2;
-          tuskGrp.add(runeBand);
-        }
-        grp.add(tuskGrp);
-      }
-
-      // Carved Saddle + Warm Lantern Stirrups
-      const saddleSeat = new THREE.Mesh(
-        new THREE.BoxGeometry(0.86, 0.18, 0.76),
-        saddleWoodMat
-      );
-      saddleSeat.position.set(0, 1.34, 0.1);
-      const saddleTrim = new THREE.Mesh(
-        new THREE.BoxGeometry(0.92, 0.08, 0.82),
-        goldBrassMat
-      );
-      saddleTrim.position.set(0, 1.28, 0.1);
-      grp.add(saddleSeat, saddleTrim);
-
-      for (const sx of [-1, 1]) {
-        const stirrupStrap = new THREE.Mesh(
-          new THREE.BoxGeometry(0.05, 0.48, 0.08),
-          saddleWoodMat
-        );
-        stirrupStrap.position.set(sx * 0.68, 1.04, 0.1);
-        const stirrupHoop = new THREE.Mesh(
-          new THREE.TorusGeometry(0.13, 0.025, 6, 14),
-          goldBrassMat
-        );
-        stirrupHoop.rotation.y = Math.PI / 2;
-        stirrupHoop.position.set(sx * 0.72, 0.76, 0.1);
-        const stirrupLantern = new THREE.Mesh(
-          new THREE.SphereGeometry(0.095, 8, 8),
-          amberLanternMat
-        );
-        stirrupLantern.position.set(sx * 0.74, 0.76, 0.1);
-        grp.add(stirrupStrap, stirrupHoop, stirrupLantern);
-      }
-
-      // Wagging Tail Tuft
+      // Wagging sculpted mossy tail + glowing emerald-gold tuft
       this.boarTailPivot = new THREE.Group();
-      this.boarTailPivot.position.set(0, 0.96, 0.98);
+      this.boarTailPivot.name = "boar_tail_pivot";
+      this.boarTailPivot.position.set(0, 0.94, 0.96);
       const tailStem = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.045, 0.065, 0.38, 6),
-        primaryMat
+        createSplineTubeGeometry(
+          [
+            [0, 0, 0],
+            [0, 0.12, 0.18],
+            [0, 0.28, 0.32],
+          ],
+          0.045,
+          10,
+          8
+        ),
+        saddleWoodMat
       );
-      tailStem.rotation.x = 0.72;
-      tailStem.position.set(0, 0.1, 0.14);
-      const tailTuft = new THREE.Mesh(
-        new THREE.ConeGeometry(0.15, 0.34, 7),
-        trimMat
-      );
-      tailTuft.rotation.x = 0.85;
-      tailTuft.position.set(0, 0.22, 0.3);
+      const tailTuft = new THREE.Mesh(new THREE.DodecahedronGeometry(0.14, 1), trimMat);
+      tailTuft.position.set(0, 0.3, 0.34);
       this.boarTailPivot.add(tailStem, tailTuft);
       grp.add(this.boarTailPivot);
 
-      // Detailed Hooded Rider Seated on Saddle
-      const riderGrp = new THREE.Group();
-      riderGrp.position.set(0, 1.42, 0.1);
+      // Visible golden ramming crest when or_tusk_plow / wide_blade is equipped
+      if (hasTuskPlow) {
+        const plowCrest = new THREE.Group();
+        plowCrest.name = "or_tusk_plow_crest";
 
-      const riderCloak = new THREE.Mesh(
-        new THREE.ConeGeometry(0.38, 0.72, 10),
-        secondaryTunicMat
-      );
-      riderCloak.position.y = 0.32;
-      const riderSash = new THREE.Mesh(
-        new THREE.TorusGeometry(0.28, 0.04, 6, 16),
-        goldBrassMat
-      );
-      riderSash.rotation.x = Math.PI / 2;
-      riderSash.position.y = 0.26;
-
-      const riderHollow = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2, 10, 8),
-        darkCowlHollowMat
-      );
-      riderHollow.position.set(0, 0.76, -0.02);
-      const riderHood = new THREE.Mesh(
-        new THREE.ConeGeometry(0.3, 0.48, 10),
-        secondaryTunicMat
-      );
-      riderHood.position.set(0, 0.88, 0.04);
-      riderHood.rotation.x = 0.26;
-
-      for (const ex of [-0.075, 0.075]) {
-        const rEye = new THREE.Mesh(new THREE.SphereGeometry(0.036, 6, 6), eyeCyanMat);
-        rEye.position.set(ex, 0.76, -0.19);
-        riderGrp.add(rEye);
-      }
-
-      riderGrp.add(riderCloak, riderSash, riderHollow, riderHood);
-      grp.add(riderGrp);
-    } else {
-      // Sculpted Starlight Glide-Cape Ranger:
-      // 1. Layered twilight ranger cloak + inner tunic + flowing sash
-      const outerCloak = new THREE.Mesh(
-        new THREE.ConeGeometry(0.64, 1.34, 14),
-        primaryMat
-      );
-      outerCloak.position.y = 0.88;
-      grp.add(outerCloak);
-
-      const cloakHemTrim = new THREE.Mesh(
-        new THREE.TorusGeometry(0.61, 0.038, 8, 24),
-        goldBrassMat
-      );
-      cloakHemTrim.rotation.x = Math.PI / 2;
-      cloakHemTrim.position.y = 0.24;
-      grp.add(cloakHemTrim);
-
-      const innerTunic = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.3, 0.44, 0.94, 12),
-        secondaryTunicMat
-      );
-      innerTunic.position.set(0, 1.06, -0.04);
-      grp.add(innerTunic);
-
-      const waistSash = new THREE.Mesh(
-        new THREE.TorusGeometry(0.37, 0.052, 8, 20),
-        goldBrassMat
-      );
-      waistSash.rotation.x = Math.PI / 2;
-      waistSash.position.y = 0.98;
-      grp.add(waistSash);
-
-      for (const sx of [-1, 1]) {
-        const sashTail = new THREE.Mesh(
-          new THREE.BoxGeometry(0.11, 0.56, 0.04),
+        const upperPlowArc = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [-0.86, 0.56, -0.88],
+              [-0.52, 0.68, -1.28],
+              [0, 0.78, -1.52],
+              [0.52, 0.68, -1.28],
+              [0.86, 0.56, -0.88],
+            ],
+            0.072,
+            22,
+            10
+          ),
           goldBrassMat
         );
-        sashTail.position.set(sx * 0.14, 0.68, 0.36);
-        sashTail.rotation.set(0.24, 0, sx * 0.12);
-        grp.add(sashTail);
+        const lowerPlowArc = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [-0.74, 0.38, -0.94],
+              [-0.42, 0.44, -1.32],
+              [0, 0.48, -1.56],
+              [0.42, 0.44, -1.32],
+              [0.74, 0.38, -0.94],
+            ],
+            0.052,
+            20,
+            8
+          ),
+          trimMat
+        );
+        const shieldBlade = new THREE.Mesh(
+          createBeveledWingGeometry(
+            [
+              [0, 0.34],
+              [0.42, 0.12],
+              [0.32, -0.18],
+              [0, -0.28],
+              [-0.32, -0.18],
+              [-0.42, 0.12],
+            ],
+            0.05,
+            0.016
+          ),
+          goldBrassMat
+        );
+        shieldBlade.position.set(0, 0.64, -1.48);
+        shieldBlade.rotation.x = -0.24;
+        plowCrest.add(upperPlowArc, lowerPlowArc, shieldBlade);
+        grp.add(plowCrest);
       }
 
-      const shoulderMantle = new THREE.Mesh(
-        new THREE.ConeGeometry(0.54, 0.46, 12),
-        secondaryTunicMat
-      );
-      shoulderMantle.position.y = 1.48;
-      grp.add(shoulderMantle);
+      // Visible contoured butterfly-owl side-wings when or_glide_wings / ion_boosters is equipped
+      if (hasGlideWings) {
+        const boarWingsGroup = new THREE.Group();
+        boarWingsGroup.name = "or_boar_glide_wings";
+        const boarWingMat = new THREE.MeshToonMaterial({
+          map: getCustomSurfaceTexture("butterfly_wing"),
+          color: 0xa7f3d0,
+          emissive: 0x2dd4bf,
+          emissiveIntensity: 0.52,
+          transparent: true,
+          opacity: 0.92,
+          side: THREE.DoubleSide,
+          gradientMap: this.toonGradientTex,
+        });
+        const upperLobeGeo = createBeveledWingGeometry(
+          [
+            [0.0, 0.0],
+            [0.42, 0.38],
+            [0.98, 0.52],
+            [1.14, 0.32],
+            [0.92, 0.04],
+            [0.52, -0.08],
+          ],
+          0.024,
+          0.01
+        );
+        const lowerLobeGeo = createBeveledWingGeometry(
+          [
+            [0.0, -0.04],
+            [0.48, -0.06],
+            [0.78, -0.32],
+            [0.56, -0.54],
+            [0.2, -0.38],
+          ],
+          0.02,
+          0.008
+        );
+        for (const sx of [-1, 1]) {
+          const wPivot = new THREE.Group();
+          wPivot.name = sx < 0 ? "boar_side_wing_left" : "boar_side_wing_right";
+          wPivot.position.set(sx * 0.54, 1.08, -0.08);
+          wPivot.scale.x = sx < 0 ? -1 : 1;
+          wPivot.rotation.y = sx < 0 ? 0.24 : -0.24;
+          const uMesh = new THREE.Mesh(upperLobeGeo, boarWingMat);
+          const lMesh = new THREE.Mesh(lowerLobeGeo, boarWingMat);
+          const spar = new THREE.Mesh(
+            createSplineTubeGeometry(
+              [
+                [0, 0, 0.02],
+                [0.46, 0.36, 0.03],
+                [1.04, 0.44, 0.02],
+              ],
+              0.028,
+              12,
+              8
+            ),
+            goldBrassMat
+          );
+          wPivot.add(uMesh, lMesh, spar);
+          boarWingsGroup.add(wPivot);
+          this.boarSideWings.push({ pivot: wPivot, side: sx });
+        }
+        grp.add(boarWingsGroup);
+      }
+    } else {
+      // Sculpted Starlight Glide-Cape Alchemist character + contoured 4-lobed Starlight Glide-Wings
+      const pilot = buildExplorerPilot3D({
+        role: "alchemist",
+        includeWings: true,
+        seated: false,
+        scale: 1.05,
+      });
+      grp.add(pilot);
+      this.pilotCharacter = pilot;
 
-      // 2. Floating Star-Brooch at the Chest (-Z front)
+      const animRefs = pilot.userData?.animRefs || {};
+      if (animRefs.leftWing && animRefs.rightWing) {
+        if (hasGlideWings) {
+          animRefs.leftWing.scale.set(-1.34, 1.3, 1.22);
+          animRefs.rightWing.scale.set(1.34, 1.3, 1.22);
+          for (const wWing of [animRefs.leftWing, animRefs.rightWing]) {
+            const sparFiligree = new THREE.Mesh(
+              createSplineTubeGeometry(
+                [
+                  [0, 0.02, 0.02],
+                  [0.48, 0.42, 0.03],
+                  [1.12, 0.52, 0.02],
+                ],
+                0.028,
+                14,
+                8
+              ),
+              goldBrassMat
+            );
+            const tipCrystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), trimMat);
+            tipCrystal.position.set(1.18, 0.44, 0.02);
+            wWing.add(sparFiligree, tipCrystal);
+          }
+        }
+        this.gliderWings.push(
+          { mesh: animRefs.leftWing, wingGroup: animRefs.leftWing, side: -1 },
+          { mesh: animRefs.rightWing, wingGroup: animRefs.rightWing, side: 1 }
+        );
+      }
+
+      // Floating Star-Brooch on the embroidered emerald-and-gold tunic
       this.chestStarBrooch = new THREE.Group();
-      this.chestStarBrooch.position.set(0, 1.43, -0.39);
-      const broochGem = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.125, 0),
-        amberLanternMat
-      );
+      this.chestStarBrooch.position.set(0, 1.22, -0.31);
+      const broochGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), amberLanternMat);
       const broochHalo = new THREE.Mesh(
-        new THREE.TorusGeometry(0.165, 0.022, 6, 16),
+        new THREE.TorusGeometry(0.14, 0.02, 6, 16),
         goldBrassMat
       );
       this.chestStarBrooch.add(broochGem, broochHalo);
       grp.add(this.chestStarBrooch);
 
-      // 3. Pointed Star-Cowl Hood Silhouette + Two Glowing Cyan/Gold Eyes Under Brim
-      const cowlGroup = new THREE.Group();
-      cowlGroup.position.set(0, 1.84, 0);
-
-      const faceHollow = new THREE.Mesh(
-        new THREE.SphereGeometry(0.27, 12, 10),
-        darkCowlHollowMat
-      );
-      faceHollow.position.set(0, -0.02, -0.03);
-      cowlGroup.add(faceHollow);
-
-      const cowlCone = new THREE.Mesh(
-        new THREE.ConeGeometry(0.43, 0.68, 12),
-        primaryMat
-      );
-      cowlCone.position.set(0, 0.18, 0.06);
-      cowlCone.rotation.x = 0.28;
-      cowlGroup.add(cowlCone);
-
-      const cowlTipStar = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.08, 0),
-        amberLanternMat
-      );
-      cowlTipStar.position.set(0, 0.5, 0.16);
-      cowlGroup.add(cowlTipStar);
-
-      const cowlBrim = new THREE.Mesh(
-        new THREE.TorusGeometry(0.29, 0.042, 8, 16, Math.PI),
-        goldBrassMat
-      );
-      cowlBrim.rotation.x = Math.PI * 0.36;
-      cowlBrim.rotation.z = Math.PI;
-      cowlBrim.position.set(0, 0.05, -0.08);
-      cowlGroup.add(cowlBrim);
-
-      for (const sx of [-1, 1]) {
-        const outerIris = new THREE.Mesh(
-          new THREE.SphereGeometry(0.052, 8, 6),
-          eyeCyanMat
-        );
-        outerIris.scale.set(1.25, 0.82, 0.8);
-        outerIris.position.set(sx * 0.105, -0.02, -0.255);
-
-        const innerSpark = new THREE.Mesh(
-          new THREE.SphereGeometry(0.028, 6, 6),
-          eyeGoldMat
-        );
-        innerSpark.position.set(sx * 0.105, -0.015, -0.285);
-        cowlGroup.add(outerIris, innerSpark);
-      }
-      grp.add(cowlGroup);
-
-      // 4. Floating Warm Amber Hip-Lantern
+      // Floating Warm Amber Hip-Lantern
       this.hipLantern = new THREE.Group();
-      this.hipLantern.position.set(-0.46, 0.98, 0.06);
-      const hipBail = new THREE.Mesh(
-        new THREE.TorusGeometry(0.09, 0.018, 6, 12),
-        goldBrassMat
-      );
-      const hipCap = new THREE.Mesh(
-        new THREE.ConeGeometry(0.14, 0.11, 8),
-        goldBrassMat
-      );
-      hipCap.position.y = -0.08;
-      const hipCore = new THREE.Mesh(
-        new THREE.SphereGeometry(0.115, 10, 8),
-        amberLanternMat
-      );
-      hipCore.position.y = -0.19;
+      this.hipLantern.position.set(-0.38, 0.88, 0.06);
+      const hipBail = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.016, 6, 12), goldBrassMat);
+      const hipCore = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), amberLanternMat);
+      hipCore.position.y = -0.15;
       const hipGlow = new THREE.Mesh(
-        new THREE.SphereGeometry(0.21, 10, 8),
+        new THREE.SphereGeometry(0.18, 10, 8),
         new THREE.MeshBasicMaterial({
           color: 0xffd166,
           transparent: true,
@@ -2995,114 +2901,63 @@ export class OddrootWorld3D {
           depthWrite: false,
         })
       );
-      hipGlow.position.y = -0.19;
-      this.hipLantern.add(hipBail, hipCap, hipCore, hipGlow);
+      hipGlow.position.y = -0.15;
+      this.hipLantern.add(hipBail, hipCore, hipGlow);
       grp.add(this.hipLantern);
-
-      // 5. Articulated Multi-Feather Starlight Cape-Wings (Leading-Edge Spar + 4 Crystal Feather Blades)
-      const wingSpanScale = hasGlideWings ? 1.34 : 1.0;
-      const featherToonMat = createOddrootToonRimMaterial(this.toonGradientTex, {
-        color: trimHex,
-        emissive: 0x14b8a6,
-        emissiveIntensity: 0.68,
-        rimColor: 0xffe599,
-        rimIntensity: 0.72,
-        transparent: true,
-        opacity: 0.86,
-      });
-      const featherInnerGlowMat = new THREE.MeshBasicMaterial({
-        color: 0x80ffea,
-        transparent: true,
-        opacity: 0.48,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      const featherGoldGlowMat = new THREE.MeshBasicMaterial({
-        color: 0xffd166,
-        transparent: true,
-        opacity: 0.44,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-
-      for (const sx of [-1, 1]) {
-        const wingGroup = new THREE.Group();
-        wingGroup.name = sx < 0 ? "StarlightWingLeft" : "StarlightWingRight";
-        wingGroup.position.set(sx * 0.3, 1.44, 0.24);
-        wingGroup.rotation.z = sx * 0.18;
-        wingGroup.rotation.y = -sx * 0.18;
-
-        const shoulderSocket = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.13, 0),
-          goldBrassMat
-        );
-        wingGroup.add(shoulderSocket);
-
-        // Curved golden/turquoise leading-edge spar
-        const sparLen = 1.32 * wingSpanScale;
-        const sparArc = new THREE.Mesh(
-          new THREE.TorusGeometry(sparLen * 0.64, 0.046, 8, 18, Math.PI * 0.56),
-          goldBrassMat
-        );
-        sparArc.position.set(sx * sparLen * 0.34, -0.34, 0);
-        sparArc.rotation.z = sx < 0 ? Math.PI * 0.22 : Math.PI * 0.22;
-        if (sx < 0) sparArc.scale.x = -1;
-        wingGroup.add(sparArc);
-
-        const sparTipGem = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.095, 0),
-          trimMat
-        );
-        sparTipGem.position.set(sx * sparLen * 0.94, 0.22, 0.04);
-        wingGroup.add(sparTipGem);
-
-        // 4 Layered Translucent Glowing Crystal Feather Blades + Additive Inner Glow Trim
-        const feathers = [];
-        for (let f = 0; f < 4; f++) {
-          const fPivot = new THREE.Group();
-          const rootOffset = (0.16 + f * 0.21) * wingSpanScale;
-          fPivot.position.set(sx * rootOffset, 0.06 - f * 0.05, 0.02 + f * 0.025);
-
-          const bladeLen = (1.36 - f * 0.19) * wingSpanScale;
-          const bladeWidth = 0.17 - f * 0.018;
-
-          const crystalBlade = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.022, bladeWidth, bladeLen, 4),
-            featherToonMat
-          );
-          crystalBlade.scale.set(1.0, 1.0, 0.26);
-          crystalBlade.rotation.z = -sx * (Math.PI * 0.42 - f * 0.13);
-          crystalBlade.position.set(
-            sx * bladeLen * 0.44,
-            -bladeLen * (0.18 + f * 0.08),
-            0.04
-          );
-
-          const innerGlowTrim = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.012, bladeWidth * 0.58, bladeLen * 0.92, 4),
-            f % 2 === 0 ? featherInnerGlowMat : featherGoldGlowMat
-          );
-          innerGlowTrim.scale.set(1.0, 1.0, 0.34);
-          innerGlowTrim.rotation.copy(crystalBlade.rotation);
-          innerGlowTrim.position.copy(crystalBlade.position);
-
-          fPivot.add(crystalBlade, innerGlowTrim);
-          const baseRotZ = -sx * (f * 0.08);
-          fPivot.rotation.z = baseRotZ;
-          wingGroup.add(fPivot);
-          feathers.push({ pivot: fPivot, baseRotZ, index: f });
-        }
-
-        grp.add(wingGroup);
-        this.gliderWings.push({ mesh: wingGroup, wingGroup, feathers, side: sx });
-      }
     }
 
+    // Cross-realm Golden Mosaic / Aurora emblem trim ring around hem
+    if (cx.goldenMosaicTrimUnlocked || cx.auroraBladeTrimUnlocked) {
+      const crossTrim = new THREE.Mesh(
+        new THREE.TorusGeometry(normMount === "bramble_boar" ? 0.92 : 0.56, 0.032, 8, 24),
+        trimMat
+      );
+      crossTrim.name = "cross_realm_trim_ring";
+      crossTrim.rotation.x = Math.PI / 2;
+      crossTrim.position.y = normMount === "bramble_boar" ? 0.42 : 0.38;
+      grp.add(crossTrim);
+    }
+
+    // Sculpted branching golden Antler Crown (or_antler_crown / silverMoonLantern)
     if (hasAntlerCrown || cx.silverMoonLantern) {
-      const crown = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.055, 8, 24), goldBrassMat);
-      crown.rotation.x = Math.PI / 2;
-      crown.position.set(0, 2.46, 0);
-      grp.add(crown);
+      const crownGrp = new THREE.Group();
+      crownGrp.name = "or_antler_crown";
+      crownGrp.position.set(0, normMount === "bramble_boar" ? 2.52 : 2.18, 0);
+      const circlet = new THREE.Mesh(
+        new THREE.TorusGeometry(0.32, 0.032, 8, 22),
+        goldBrassMat
+      );
+      circlet.rotation.x = Math.PI / 2;
+      crownGrp.add(circlet);
+      for (const sx of [-1, 1]) {
+        const antlerBranch = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 0.24, 0.02, -0.04],
+              [sx * 0.44, 0.24, -0.02],
+              [sx * 0.36, 0.48, 0.04],
+            ],
+            0.026,
+            12,
+            8
+          ),
+          goldBrassMat
+        );
+        const antlerTine = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 0.36, 0.18, -0.02],
+              [sx * 0.52, 0.34, -0.1],
+            ],
+            0.02,
+            8,
+            6
+          ),
+          trimMat
+        );
+        crownGrp.add(antlerBranch, antlerTine);
+      }
+      grp.add(crownGrp);
     }
 
     if (hasSporeWake) {
@@ -3119,23 +2974,37 @@ export class OddrootWorld3D {
       grp.add(wakeCharm);
     }
 
-    // Ornate Crescent Moon 3D Siphon-Staff (Spiral Rune Bands + Orbiting Mini Halo Ring)
+    // Sculpted Golden Crescent Siphon-Staff (curved TubeGeometry shaft + crescent head + glowing orb)
     this.siphonStaffGroup = new THREE.Group();
     this.siphonStaffGroup.name = "CrescentSiphonStaff";
-    this.siphonStaffGroup.position.set(0.62, 1.25, -0.35);
+    if (normMount === "bramble_boar") {
+      this.siphonStaffGroup.position.set(0.46, 1.52, -0.12);
+      this.siphonStaffGroup.rotation.x = 0.14;
+    } else {
+      this.siphonStaffGroup.position.set(0.48, 1.14, -0.26);
+      this.siphonStaffGroup.rotation.z = -0.06;
+    }
 
-    const shaft = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.048, 0.066, 2.02, 10),
-      saddleWoodMat
+    const curvedShaftGeo = createSplineTubeGeometry(
+      [
+        [0, -0.94, 0.05],
+        [0.05, -0.32, -0.03],
+        [-0.05, 0.34, 0.04],
+        [0.02, 0.84, -0.01],
+      ],
+      0.046,
+      22,
+      10
     );
+    const shaft = new THREE.Mesh(curvedShaftGeo, goldBrassMat);
+    shaft.name = "siphon_curved_shaft";
     this.siphonStaffGroup.add(shaft);
 
-    // Spiral golden/turquoise rune bands coiled along the shaft
     for (let b = 0; b < 4; b++) {
-      const bandY = -0.55 + b * 0.38;
+      const bandY = -0.52 + b * 0.36;
       const runeSpiral = new THREE.Mesh(
-        new THREE.TorusGeometry(0.086, 0.018, 6, 16),
-        b % 2 === 0 ? goldBrassMat : trimMat
+        new THREE.TorusGeometry(0.082, 0.018, 6, 16),
+        b % 2 === 0 ? trimMat : saddleWoodMat
       );
       runeSpiral.position.set(0, bandY, 0);
       runeSpiral.rotation.set(1.05, b * 0.85, 0.35);
@@ -3143,10 +3012,11 @@ export class OddrootWorld3D {
     }
 
     const neckCollar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.11, 0.075, 0.18, 8),
+      new THREE.TorusGeometry(0.095, 0.028, 8, 18),
       goldBrassMat
     );
-    neckCollar.position.set(0, 0.78, 0);
+    neckCollar.rotation.x = Math.PI / 2;
+    neckCollar.position.set(0.02, 0.82, -0.01);
     this.siphonStaffGroup.add(neckCollar);
 
     const crescentRadius = hasWideSiphon ? 0.44 : 0.29;
@@ -3167,11 +3037,11 @@ export class OddrootWorld3D {
     this.siphonStaffGroup.add(innerCrescentTrim);
 
     this.siphonTipOrb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, 12, 10),
+      new THREE.SphereGeometry(0.16, 14, 12),
       createOddrootToonRimMaterial(this.toonGradientTex, {
         color: 0xffcf56,
         emissive: 0xf59e0b,
-        emissiveIntensity: 0.88,
+        emissiveIntensity: 0.92,
       })
     );
     this.siphonTipOrb.position.set(0, 1.08, 0);
@@ -3187,7 +3057,7 @@ export class OddrootWorld3D {
 
     if (cx.titanAstrolabeSynced) {
       const pommel = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 18), goldBrassMat);
-      pommel.position.set(0, -0.98, 0);
+      pommel.position.set(0, -0.96, 0.05);
       this.siphonStaffGroup.add(pommel);
     }
 
@@ -3206,19 +3076,10 @@ export class OddrootWorld3D {
 
     grp.add(this.siphonStaffGroup);
 
-    // Companion Crystal Fox
+    // Sculpted Companion Crystal Spirit Fox (or_crystal_fox)
     if (hasCrystalFox) {
-      const foxGrp = new THREE.Group();
-      foxGrp.position.set(-1.35, 0.48, 0.25);
-      const foxBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.38, 6, 10), trimMat);
-      foxBody.rotation.x = Math.PI / 2;
-      const foxHead = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.34, 8), trimMat);
-      foxHead.rotation.x = -Math.PI / 2;
-      foxHead.position.set(0, 0.14, -0.34);
-      const foxTail = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.42, 7), goldBrassMat);
-      foxTail.rotation.x = 0.85;
-      foxTail.position.set(0, 0.16, 0.36);
-      foxGrp.add(foxBody, foxHead, foxTail);
+      const foxGrp = buildSpiritFox3D({ scale: 0.68 });
+      foxGrp.position.set(-1.35, 0.08, 0.25);
       grp.add(foxGrp);
       this.companionFox = foxGrp;
     } else {
@@ -3238,6 +3099,12 @@ export class OddrootWorld3D {
     } else {
       grp.userData.borrowedFrom = null;
     }
+
+    // Apply Oddroot Fresnel rim shader hook onto all Toon materials in avatar/mount/fox subtree
+    applyFresnelRimToCharacterSubtree(grp, {
+      rimColor: normMount === "bramble_boar" ? 0xffd166 : 0x62f5e4,
+      rimIntensity: 0.5,
+    });
 
     grp.userData.mountId = normMount;
     grp.userData.goldenMosaicTrim = Boolean(cx.goldenMosaicTrimUnlocked);
@@ -4233,7 +4100,23 @@ export class OddrootWorld3D {
     this.avatarGroup.rotation.z = this._avatarBankRad;
     this._stepSporeLilyWake(dt);
 
-    // Animate mount legs, wagging boar tail, multi-feather glider wings & staff halo
+    // Animate sculpted Alchemist character, boar legs, wagging tail, wings, companion fox & staff halo
+    const isAirborneAnim = Boolean(
+      this.rigState.glidingAirborne ||
+        slipActive ||
+        (this.rigAnim &&
+          (this.rigAnim.kind === "updraft_lift" || this.rigAnim.kind === "grind_vine"))
+    );
+    if (this.pilotCharacter) {
+      animateExplorerPilot3D(
+        this.pilotCharacter,
+        this.elapsedTime,
+        Math.min(1.4, speedMag / 9.0),
+        activeSteer,
+        isAirborneAnim
+      );
+    }
+
     for (let i = 0; i < this.boarLegs.length; i++) {
       this.boarLegs[i].rotation.x =
         Math.sin(this.elapsedTime * 12 * Math.min(1.5, speedMag / 10) + i * Math.PI * 0.5) *
@@ -4250,20 +4133,18 @@ export class OddrootWorld3D {
       (this.rigState.boosting ? 0.22 : 0) +
       (slipActive ? 0.3 : 0);
     for (const w of this.gliderWings) {
-      const flapAmp = this.rigState.glidingAirborne || slipActive ? 0.24 : 0.08;
-      w.mesh.rotation.z =
-        w.side * (0.18 + unfurlAmount * 0.32 + Math.sin(this.elapsedTime * 5.2) * flapAmp);
-      w.mesh.rotation.y =
-        -w.side * Math.max(0.03, 0.2 - unfurlAmount * 0.26);
-
-      if (w.feathers) {
-        for (const f of w.feathers) {
-          const ripple =
-            Math.sin(this.elapsedTime * 6.4 - f.index * 0.55) *
-            (0.035 + unfurlAmount * 0.05);
-          f.pivot.rotation.z =
-            f.baseRotZ + w.side * (unfurlAmount * f.index * 0.085 + ripple);
-        }
+      w.mesh.rotation.z = w.side * (0.06 + unfurlAmount * 0.2);
+    }
+    for (const bw of this.boarSideWings || []) {
+      const flap = Math.sin(this.elapsedTime * (isAirborneAnim ? 5.6 : 3.8)) * (0.14 + unfurlAmount * 0.2);
+      bw.pivot.rotation.y = -bw.side * (0.24 + flap);
+      bw.pivot.rotation.z = bw.side * (0.06 + unfurlAmount * 0.22);
+    }
+    if (this.companionFox) {
+      this.companionFox.position.y =
+        0.08 + Math.abs(Math.sin(this.elapsedTime * 6.2)) * Math.min(0.18, speedMag * 0.025);
+      if (this.companionFox.userData?.tail) {
+        this.companionFox.userData.tail.rotation.y = Math.sin(this.elapsedTime * 5.0) * 0.28;
       }
     }
 
@@ -4424,11 +4305,18 @@ export class OddrootWorld3D {
     if (this.guardianAnim) {
       this.guardianAnim.t += dt;
       const gp = Math.min(1, this.guardianAnim.t / this.guardianAnim.dur);
-      this.guardianGroup.rotation.y += dt * 3.2;
-      this.guardianGroup.position.y = 11.5 + Math.sin(gp * Math.PI) * 3.5;
+      this.guardianGroup.rotation.y = Math.sin(gp * Math.PI * 4) * 0.26;
+      this.guardianGroup.position.y = 7.3 + Math.sin(gp * Math.PI) * 1.8;
+      if (this.guardianCrownHalo) {
+        this.guardianCrownHalo.rotation.z += dt * 3.2;
+      }
       if (gp >= 1) {
+        this.guardianGroup.rotation.y = 0;
+        this.guardianGroup.position.y = 7.3;
         this.guardianAnim = null;
       }
+    } else if (this.guardianCrownHalo) {
+      this.guardianCrownHalo.rotation.z = Math.sin(this.elapsedTime * 0.9) * 0.14;
     }
 
     if (this.whaleTimer > 0) {
@@ -4440,6 +4328,13 @@ export class OddrootWorld3D {
         -28 + Math.cos(wp * Math.PI * 2) * 8.0
       );
       this.skyWhale.rotation.y = Math.PI / 2;
+      const whaleFins = this.skyWhaleSculpt?.userData?.fins;
+      if (whaleFins) {
+        const finWave = Math.sin(this.elapsedTime * 2.8) * 0.22;
+        if (whaleFins.leftFin) whaleFins.leftFin.rotation.z = finWave;
+        if (whaleFins.rightFin) whaleFins.rightFin.rotation.z = -finWave;
+        if (whaleFins.tailFluke) whaleFins.tailFluke.rotation.x = Math.PI / 2 + finWave * 0.65;
+      }
       if (this.whaleTimer <= 0) {
         this.skyWhale.visible = false;
       }

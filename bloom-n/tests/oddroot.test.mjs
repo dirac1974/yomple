@@ -1422,4 +1422,154 @@ test("Suite 15: 3D Field Expeditions & Roblox Simulation Snapshot Parity — Odd
   assert.equal(Object.is(world.simTimeState.oppositionDt, 0.0), true);
 });
 
+test("Suite 16: Custom Organic 3D Character & Creature Graphics — Alchemist, Bramble-Boar, World-Tree Dryad, Sky-Whale, Menagerie, Jellyfish Wisps & Co-Op Rigs", () => {
+  const world = new OddrootWorld3D({
+    canvas: createMockCanvas(),
+    audio: new OddrootAudio(),
+  });
+
+  // 1. Starlight Glider Alchemist (custom_character_alchemist) + contoured wings + curved TubeGeometry Siphon-Staff
+  world.applyLoadout({
+    games: {
+      oddroot: {
+        equippedMount: "starlight_glider",
+        sanctuaryUpgrades: ["or_glide_wings", "or_crystal_fox", "or_antler_crown"],
+      },
+    },
+  });
+
+  const alchemist = world.avatarGroup.getObjectByName("custom_character_alchemist");
+  assert.ok(alchemist, "starlight_glider must build custom_character_alchemist");
+  assert.ok(alchemist.getObjectByName("starlight_wing_left"));
+  assert.ok(alchemist.getObjectByName("starlight_wing_right"));
+  assert.ok(alchemist.getObjectByName("pilot_flowing_scarf"));
+
+  const curvedShaft = world.avatarGroup.getObjectByName("siphon_curved_shaft");
+  assert.ok(curvedShaft && curvedShaft.isMesh, "Crescent Siphon-Staff must include curved shaft mesh");
+  assert.equal(curvedShaft.geometry.type, "TubeGeometry");
+  assert.ok(world.siphonTipOrb && world.siphonTipOrb.isMesh);
+  assert.ok(world.avatarGroup.getObjectByName("or_antler_crown"));
+  assert.equal(world.companionFox?.name, "custom_spirit_fox");
+
+  // Verify Fresnel rim shader hook is applied onto sculpted character Toon materials
+  let characterRimCount = 0;
+  alchemist.traverse((obj) => {
+    if (obj.isMesh && obj.material?.isMeshToonMaterial && obj.material.userData?.rimUniforms) {
+      characterRimCount++;
+    }
+  });
+  assert.ok(characterRimCount >= 2, "Sculpted Alchemist Toon materials must carry Fresnel rimUniforms");
+
+  // Verify 60fps animateExplorerPilot3D frame animation
+  world.setDriveInputs(0.6, 1.0, false);
+  stepFrames(world, 10, 1 / 60);
+  const animRefs = alchemist.userData.animRefs;
+  assert.notEqual(animRefs.headPivot.rotation.y, 0);
+  assert.notEqual(animRefs.leftLeg.rotation.x, 0);
+  assert.notEqual(animRefs.leftWing.rotation.y, 0);
+
+  // 2. Bramble-Boar Mount (custom_bramble_boar) + seated Alchemist rider + or_tusk_plow crest + or_glide_wings side-wings
+  world.applyLoadout({
+    games: {
+      oddroot: {
+        equippedMount: "bramble_boar",
+        sanctuaryUpgrades: ["or_tusk_plow", "or_glide_wings"],
+      },
+    },
+  });
+
+  const boar = world.avatarGroup.getObjectByName("custom_bramble_boar");
+  assert.ok(boar, "bramble_boar mount must build custom_bramble_boar");
+  assert.equal(boar.userData.rider?.name, "custom_character_alchemist");
+  assert.equal(world.boarLegs.length, 4);
+  assert.ok(
+    world.avatarGroup.getObjectByName("or_tusk_plow_crest"),
+    "or_tusk_plow must mount visible golden ramming crest on Bramble-Boar"
+  );
+  assert.ok(
+    world.avatarGroup.getObjectByName("or_boar_glide_wings"),
+    "or_glide_wings must mount visible contoured side-wings on Bramble-Boar"
+  );
+  assert.equal(world.boarSideWings.length, 2);
+
+  world.setDriveInputs(-0.5, 1.0, true);
+  stepFrames(world, 8, 1 / 60);
+  assert.notEqual(boar.userData.rider.userData.animRefs.headPivot.rotation.y, 0);
+  assert.notEqual(world.boarLegs[0].rotation.x, 0);
+
+  // 3. World-Tree Dryad Guardian (sculpted_guardian_oddroot) facing Moonwell courtyard & Overdrive Sky-Whale
+  const dryad = world.guardianGroup.getObjectByName("sculpted_guardian_oddroot");
+  assert.ok(dryad, "World-Tree Guardian must mount sculpted_guardian_oddroot");
+  assert.equal(dryad.rotation.y, Math.PI, "Dryad Spirit face must gaze +Z toward Moonwell courtyard");
+
+  const skyWhaleModel = world.skyWhale.getObjectByName("custom_sky_whale_oddroot");
+  assert.ok(skyWhaleModel, "Overdrive Sky-Whale must use custom_sky_whale_oddroot");
+  world.triggerOverdriveStreakWonder();
+  stepFrames(world, 6, 0.05);
+  assert.notEqual(skyWhaleModel.userData.fins.leftFin.rotation.z, 0);
+
+  // 4. All 5 Sanctuary Menagerie sculpted species + upside-down Zero-G Astro-Toad invariant
+  const expectedMenagerieModels = {
+    zero_g_toad: "sculpted_zero_g_toad",
+    luminous_oddling: "sculpted_luminous_oddling",
+    eclipse_stag: "sculpted_eclipse_stag",
+    crystal_fox: "custom_spirit_fox",
+    starlight_whale: "custom_sky_whale_oddroot",
+  };
+  for (const [speciesId, expectedChildName] of Object.entries(expectedMenagerieModels)) {
+    const entry = world.menagerie.getCreature(speciesId);
+    assert.ok(entry, `Missing menagerie creature ${speciesId}`);
+    assert.equal(entry.mesh.name, `Creature_${speciesId}`);
+    assert.ok(
+      entry.mesh.getObjectByName(expectedChildName),
+      `Creature_${speciesId} must contain sculpted model ${expectedChildName}`
+    );
+  }
+  const toad = world.menagerie.triggerSubZeroToadAscent(-150);
+  assert.equal(toad.mesh.rotation.z, Math.PI);
+
+  // 5. Whimsical Jellyfish-Wisp Gloom-Spores & Co-Op Remote Partner Sculpted Rigs
+  const spore0 = world.gloomClouds[0];
+  assert.equal(spore0.mesh.geometry.type, "LatheGeometry");
+  assert.ok(spore0.mesh.material.map, "Gloom-Spore wisp must use wisp_gloom painted face texture");
+  assert.ok(spore0.mesh.children.length >= 4, "Gloom-Spore wisp must attach collar rim + 3 tendrils");
+
+  world.syncRemotePartners([
+    {
+      userId: "partner_glider",
+      displayName: "Leo",
+      chassisOrMount: "starlight_glider",
+      upgrades: ["or_glide_wings"],
+      speed: 7,
+    },
+    {
+      userId: "partner_boar",
+      displayName: "Maya",
+      chassisOrMount: "bramble_boar",
+      upgrades: ["or_tusk_plow", "or_glide_wings"],
+      speed: 8,
+    },
+  ]);
+
+  const pGlider = world.coop.partners.get("partner_glider");
+  const pBoar = world.coop.partners.get("partner_boar");
+  assert.ok(pGlider.modelGroup.getObjectByName("custom_character_alchemist"));
+  assert.ok(pBoar.modelGroup.getObjectByName("custom_bramble_boar"));
+  assert.ok(pBoar.modelGroup.getObjectByName("or_tusk_plow_crest"));
+
+  // Swap partner mounts & verify no crash or texture disposal corruption
+  world.syncRemotePartners([
+    {
+      userId: "partner_glider",
+      displayName: "Leo",
+      chassisOrMount: "bramble_boar",
+      upgrades: ["or_tusk_plow"],
+      speed: 6,
+    },
+  ]);
+  stepFrames(world, 5, 1 / 60);
+  assert.ok(world.coop.partners.get("partner_glider").modelGroup.getObjectByName("custom_bramble_boar"));
+});
+
+
 

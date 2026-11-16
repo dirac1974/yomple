@@ -1593,5 +1593,96 @@ test("3D Field Expeditions & Roblox Simulation Snapshot Parity: FrostwakeExpedit
   assert.equal(Object.is(world.simTimeState.oppositionDt, 0.0), true);
 });
 
+test("Sculpted 3D Characters, Creatures & Rigs: Arctic Engineer, Aurora Rider, Cryo-Colossus Guardian, Spirit Foxes, Sky-Whale, Rime Ice-Slimes, Co-Op Pilots & Ghost Silhouettes", () => {
+  const world = new FrostwakeWorld3D({ canvas: null });
 
+  // 1. Cryo-Colossus Guardian & Sky-Whale in scene graph
+  const guardianSculpt = world.scene.getObjectByName("sculpted_guardian_frostwake");
+  assert.ok(guardianSculpt, "sculpted_guardian_frostwake must exist in the Frostwake scene graph");
+  assert.ok(
+    guardianSculpt.getObjectByName("guardian_rune_heart"),
+    "Guardian must retain glowing rune heart core"
+  );
+  const skyWhaleSculpt = world.scene.getObjectByName("custom_sky_whale_frostwake");
+  assert.ok(skyWhaleSculpt, "custom_sky_whale_frostwake must exist in the Frostwake scene graph");
 
+  // 2. Crystal Spirit Foxes in Fox Dens & Rime Ice-Slimes / Captain Crowns
+  const denFox = world.scene.getObjectByName("custom_spirit_fox");
+  assert.ok(denFox, "custom_spirit_fox must exist in the Frostwake scene graph");
+  const captainUnit = world.opposition.rimeUnits.find((u) => u.isCaptain);
+  const creepUnit = world.opposition.rimeUnits.find((u) => !u.isCaptain);
+  assert.ok(captainUnit.group.getObjectByName("rime_captain_droplet"));
+  assert.ok(captainUnit.group.getObjectByName("rime_captain_crown"));
+  assert.ok(creepUnit.group.getObjectByName("rime_creep_droplet"));
+
+  // 3. Terra-Dozer curved hull, concave plow, 6 spinning wheels, seated Arctic Engineer & Starry Astro-Toad mascot
+  world.rebuildRig(
+    "terra_dozer",
+    ["wide_blade", "titan_harpoon", "spirit_fox"],
+    {
+      astroToadCabMascot: true,
+      cryoBuoyancyTrim: true,
+      goldenMosaicPlowTrim: true,
+      clockworkCrestUnlocked: true,
+    },
+    { active: true, owner: "sibling_2" }
+  );
+  const engineerPilot = world.scene.getObjectByName("custom_character_arctic_engineer");
+  assert.ok(engineerPilot, "custom_character_arctic_engineer must be seated inside Terra-Dozer");
+  assert.equal(world.pilotCharacter, engineerPilot);
+  assert.ok(world.rigGroup.getObjectByName("terra_dozer_curved_hull"));
+  assert.ok(world.rigGroup.getObjectByName("thermal_plow_wing_left"));
+  assert.ok(world.rigGroup.getObjectByName("plow_hydraulic_strut_left"));
+  assert.ok(world.rigGroup.getObjectByName("titan_harpoon_turret"));
+  assert.ok(world.rigGroup.getObjectByName("cryo_buoyancy_trim"));
+  assert.ok(world.rigGroup.getObjectByName("golden_mosaic_trim"));
+  assert.ok(world.rigGroup.getObjectByName("sibling_borrow_pennant"));
+  assert.ok(world.rigGroup.getObjectByName("frostwake_clockwork_crest"));
+  const mascotGroup = world.rigGroup.getObjectByName("astro_toad_mascot");
+  assert.ok(mascotGroup, "astro_toad_mascot group must remain attached to rigGroup");
+  assert.ok(
+    mascotGroup.getObjectByName("sculpted_zero_g_toad"),
+    "astro_toad_mascot must hold sculpted_zero_g_toad"
+  );
+  assert.equal(world.wheels.length, 6, "this.wheels must remain populated with 6 bogie wheels");
+
+  const wheelRotBefore = world.wheels[0].rotation.x;
+  world.setDriveInputs(0.85, 1.0, false);
+  for (let i = 0; i < 12; i++) world.step(1 / 60);
+  assert.notEqual(world.wheels[0].rotation.x, wheelRotBefore, "Terra-Dozer wheels must spin");
+  assert.ok(
+    Math.abs(engineerPilot.userData.animRefs.headPivot.rotation.y) > 0.05,
+    "Arctic Engineer pilot head must animate with steering input"
+  );
+
+  // 4. Aurora Hover-Sled manta hull, swept winglets, twin ion thrusters & seated Aurora Rider with scarf
+  world.rebuildRig("aurora_sled", ["wide_blade", "ion_boosters"]);
+  const auroraRider = world.scene.getObjectByName("custom_character_aurora_rider");
+  assert.ok(auroraRider, "custom_character_aurora_rider must be seated on Aurora Sled");
+  assert.equal(world.pilotCharacter, auroraRider);
+  assert.ok(auroraRider.getObjectByName("pilot_flowing_scarf"));
+  assert.ok(world.rigGroup.getObjectByName("aurora_sled_manta_fuselage"));
+  assert.ok(world.rigGroup.getObjectByName("aurora_winglet_left"));
+  assert.equal(world.sledPlasmaCones.length, 2);
+
+  // 5. Co-Op Partner Rigs & Self-Ghost Silhouettes use sculpted hulls & Explorer Pilots
+  world.syncRemotePartners([
+    { userId: "p_dozer", displayName: "Kai", x: -8, z: 12, chassisOrMount: "terra_dozer" },
+    { userId: "p_sled", displayName: "Mira", x: 8, z: 12, chassisOrMount: "aurora_sled" },
+  ]);
+  const pDozer = world.remotePartners.get("p_dozer");
+  const pSled = world.remotePartners.get("p_sled");
+  assert.ok(pDozer.rigMesh.getObjectByName("partner_dozer_hull"));
+  assert.ok(pDozer.rigMesh.getObjectByName("custom_character_arctic_engineer"));
+  assert.ok(pSled.rigMesh.getObjectByName("partner_sled_fuselage"));
+  assert.ok(pSled.rigMesh.getObjectByName("custom_character_aurora_rider"));
+
+  const ghostSled = world.ghostController._buildGhostMesh("aurora_sled");
+  const ghostDozer = world.ghostController._buildGhostMesh("terra_dozer");
+  assert.ok(ghostSled.getObjectByName("ghost_manta_fuselage"));
+  assert.ok(ghostSled.getObjectByName("ghost_pilot_silhouette"));
+  assert.ok(ghostDozer.getObjectByName("ghost_dozer_hull"));
+  assert.ok(ghostDozer.getObjectByName("ghost_pilot_silhouette"));
+
+  world.stop();
+});

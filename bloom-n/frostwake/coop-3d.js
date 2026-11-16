@@ -6,6 +6,15 @@
  */
 
 import * as THREE from "../vendor/three.module.min.js";
+import {
+  getCustomSurfaceTexture,
+  createLatheProfileGeometry,
+  createBeveledWingGeometry,
+  createSplineTubeGeometry,
+  buildExplorerPilot3D,
+  animateExplorerPilot3D,
+  buildSpiritFox3D,
+} from "../core/character-graphics-3d.js";
 
 export const SHARED_COIN_SPECS = [
   { coinId: "coin_0", x: -13, z: 10 },
@@ -101,7 +110,14 @@ function disposeObjectSubtree(root) {
       if (obj.material) {
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         for (const m of mats) {
-          if (m && m.map && typeof m.map.dispose === "function") m.map.dispose();
+          if (
+            m &&
+            m.map &&
+            m.map.userData?.ownedByCoopBadge &&
+            typeof m.map.dispose === "function"
+          ) {
+            m.map.dispose();
+          }
           if (m && typeof m.dispose === "function") m.dispose();
         }
       }
@@ -138,6 +154,7 @@ function createBadgeTexture(labelText) {
         ctx.textBaseline = "middle";
         ctx.fillText(safeLabel, 128, 33);
         const tex = new THREE.CanvasTexture(canvas);
+        tex.userData = { ownedByCoopBadge: true };
         tex.needsUpdate = true;
         return tex;
       }
@@ -166,6 +183,7 @@ function createBadgeTexture(labelText) {
     }
   }
   const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat);
+  tex.userData = { ownedByCoopBadge: true };
   tex.needsUpdate = true;
   return tex;
 }
@@ -185,7 +203,9 @@ export class FrostwakeCoop3D {
     this.scene = scene && typeof scene.add === "function" ? scene : null;
     this.baseHeightFn = typeof baseHeightFn === "function" ? baseHeightFn : () => 0;
     this.createFoxMeshFn =
-      typeof createFoxMeshFn === "function" ? createFoxMeshFn : () => new THREE.Group();
+      typeof createFoxMeshFn === "function"
+        ? createFoxMeshFn
+        : () => buildSpiritFox3D({ scale: 1.0 });
     this.spawnCrystalBurstFn =
       typeof spawnCrystalBurstFn === "function" ? spawnCrystalBurstFn : () => {};
     this.audio = audio && typeof audio === "object" ? audio : null;
@@ -315,19 +335,28 @@ export class FrostwakeCoop3D {
     const hasFox = safeUpgrades.includes("spirit_fox");
 
     const isSled = chassisId === "aurora_sled";
-    const primaryHex = hasCrown ? 0xffd86b : isSled ? 0x5ce1e6 : 0xf4a62a;
-    const secondaryHex = isSled ? 0x1c2b4b : 0x24344d;
+    const primaryHex = hasCrown ? 0xffd86b : isSled ? 0xa5f3fc : 0xffffff;
+    const secondaryHex = isSled ? 0x1c2b4b : 0x1e293b;
     const glowHex = isSled ? 0xf7d06b : 0x45f0df;
 
+    const hullTex = getCustomSurfaceTexture(isSled ? "aurora_wing" : "frostwake_hull");
     const bodyMat = new THREE.MeshStandardMaterial({
+      map: hullTex,
       color: primaryHex,
-      roughness: 0.3,
-      metalness: 0.35,
+      roughness: 0.28,
+      metalness: 0.32,
+    });
+    const plowMat = new THREE.MeshStandardMaterial({
+      color: hasCrown ? 0xffdf70 : 0xf4a62a,
+      emissive: 0x92400e,
+      emissiveIntensity: 0.24,
+      roughness: 0.28,
+      metalness: 0.55,
     });
     const darkMat = new THREE.MeshStandardMaterial({
       color: secondaryHex,
-      roughness: 0.55,
-      metalness: 0.25,
+      roughness: 0.52,
+      metalness: 0.35,
     });
     const glowMat = new THREE.MeshStandardMaterial({
       color: glowHex,
@@ -343,89 +372,340 @@ export class FrostwakeCoop3D {
     });
 
     const wheels = [];
+    let pilot = null;
+
     if (isSled) {
-      const hull = new THREE.Mesh(new THREE.ConeGeometry(1.3, 4.3, 6), bodyMat);
-      hull.rotation.x = -Math.PI / 2;
-      hull.position.set(0, 1.05, 0);
-      const canopy = new THREE.Mesh(
-        new THREE.SphereGeometry(0.8, 14, 10),
+      // Streamlined manta-ray crystal fuselage along -Z
+      const fuselage = new THREE.Mesh(
+        createLatheProfileGeometry(
+          [
+            [0.02, -2.15],
+            [0.42, -1.65],
+            [0.82, -0.75],
+            [0.92, 0.2],
+            [0.72, 1.18],
+            [0.36, 1.92],
+            [0.04, 2.28],
+          ],
+          20
+        ),
+        bodyMat
+      );
+      fuselage.name = "partner_sled_fuselage";
+      fuselage.rotation.x = -Math.PI / 2;
+      fuselage.scale.set(1.12, 0.62, 1.0);
+      fuselage.position.set(0, 0.88, 0.05);
+      rig.add(fuselage);
+
+      // Swept manta aurora winglets with painted aurora_wing surface
+      const wingSpan = hasWide ? 2.45 : 1.78;
+      const wingMat = new THREE.MeshStandardMaterial({
+        map: getCustomSurfaceTexture("aurora_wing"),
+        color: hasCrown ? 0xffe58f : 0x7dd3fc,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.42,
+        roughness: 0.2,
+        metalness: 0.2,
+      });
+      const wingProfile = createBeveledWingGeometry(
+        [
+          [0.0, 0.95],
+          [wingSpan * 0.52, 0.55],
+          [wingSpan, -0.42],
+          [wingSpan * 0.78, -0.95],
+          [0.0, -0.58],
+        ],
+        0.06,
+        0.025
+      );
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(wingProfile, wingMat);
+        wing.rotation.x = -Math.PI / 2;
+        if (side < 0) wing.scale.x = -1;
+        wing.position.set(side * 0.52, 0.84, 0.25);
+        wing.rotation.z = side * -0.06;
+        rig.add(wing);
+
+        const rib = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [side * 0.48, 0.89, -0.68],
+              [side * (0.52 + wingSpan * 0.52), 0.86, -0.25],
+              [side * (0.5 + wingSpan * 0.96), 0.79, 0.68],
+            ],
+            0.042,
+            12,
+            8
+          ),
+          glowMat
+        );
+        rig.add(rib);
+      }
+
+      // Sculpted translucent crystal windscreen cowling
+      const cowling = new THREE.Mesh(
+        new THREE.SphereGeometry(0.68, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.52),
         new THREE.MeshStandardMaterial({
           color: 0xbaf7ff,
           emissive: 0x2ec4b6,
-          emissiveIntensity: 0.4,
-          roughness: 0.1,
+          emissiveIntensity: 0.38,
+          roughness: 0.08,
+          transparent: true,
+          opacity: 0.62,
+          side: THREE.DoubleSide,
         })
       );
-      canopy.scale.set(0.9, 0.68, 1.42);
-      canopy.position.set(0, 1.46, 0.24);
-      const wingSpan = hasWide ? 4.7 : 3.45;
-      const wings = new THREE.Mesh(new THREE.BoxGeometry(wingSpan, 0.16, 1.45), glowMat);
-      wings.position.set(0, 0.85, 0.35);
+      cowling.scale.set(0.95, 0.72, 1.25);
+      cowling.rotation.x = -0.32;
+      cowling.position.set(0, 1.18, -0.62);
+      rig.add(cowling);
+
+      const handlebar = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-0.34, 1.28, -0.34],
+            [0.0, 1.35, -0.48],
+            [0.34, 1.28, -0.34],
+          ],
+          0.032,
+          10,
+          8
+        ),
+        plowMat
+      );
+      rig.add(handlebar);
+
+      // Glowing crescent prow
       const prow = new THREE.Mesh(
-        new THREE.TorusGeometry((hasWide ? 4.4 : 3.0) * 0.42, 0.2, 10, 22, Math.PI),
+        new THREE.TorusGeometry((hasWide ? 4.4 : 3.0) * 0.42, 0.16, 10, 22, Math.PI),
         hasWide ? magmaMat : glowMat
       );
       prow.rotation.x = Math.PI / 2;
       prow.rotation.z = Math.PI;
-      prow.position.set(0, 0.55, -1.52);
-      rig.add(hull, canopy, wings, prow);
+      prow.position.set(0, 0.55, -1.62);
+      rig.add(prow);
+
+      // Twin glowing rear ion thrusters
+      const nozzleScale = hasBoost ? 1.24 : 1.0;
+      for (const tx of [-0.52, 0.52]) {
+        const pod = new THREE.Mesh(
+          createLatheProfileGeometry(
+            [
+              [0.14, -0.34],
+              [0.24, -0.1],
+              [0.22, 0.22],
+              [0.17, 0.38],
+            ],
+            12
+          ),
+          darkMat
+        );
+        pod.rotation.x = Math.PI / 2;
+        pod.scale.setScalar(nozzleScale);
+        pod.position.set(tx, 0.9, 1.88);
+        const plume = new THREE.Mesh(
+          createLatheProfileGeometry(
+            [
+              [0.15, 0.0],
+              [0.09, 0.36],
+              [0.01, 0.72],
+            ],
+            10
+          ),
+          glowMat
+        );
+        plume.rotation.x = Math.PI / 2;
+        plume.scale.setScalar(nozzleScale);
+        plume.position.set(tx, 0.9, 2.22);
+        rig.add(pod, plume);
+      }
+
+      // Seated Aurora Rider Pilot in open cockpit with billowing ribbon scarf
+      pilot = buildExplorerPilot3D({ role: "aurora_rider", seated: true, scale: 0.78 });
+      pilot.position.set(0, 0.74, 0.08);
+      rig.add(pilot);
     } else {
-      const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.02, 3.5), bodyMat);
-      chassis.position.set(0, 1.04, 0.2);
-      const cab = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.0, 1.7), darkMat);
-      cab.position.set(0, 1.92, 0.44);
-      const wheelGeo = new THREE.CylinderGeometry(0.54, 0.54, 0.46, 12);
-      wheelGeo.rotateZ(Math.PI / 2);
+      // Sleek curved 6x6 Arctic Dozer hull with beveled side profile
+      const hullProfile = createBeveledWingGeometry(
+        [
+          [-1.58, 0.48],
+          [-1.42, 1.12],
+          [-0.55, 1.36],
+          [0.95, 1.38],
+          [1.68, 1.08],
+          [1.76, 0.48],
+        ],
+        1.96,
+        0.12
+      );
+      hullProfile.rotateY(Math.PI / 2);
+      hullProfile.center();
+      const chassis = new THREE.Mesh(hullProfile, bodyMat);
+      chassis.name = "partner_dozer_hull";
+      chassis.position.set(0, 0.98, 0.16);
+      rig.add(chassis);
+
+      // Rounded panoramic glass cab dome + protective roll-bar arch
+      const canopyGlass = new THREE.Mesh(
+        new THREE.SphereGeometry(0.96, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.54),
+        new THREE.MeshStandardMaterial({
+          color: 0xdff9ff,
+          emissive: 0x38bdf8,
+          emissiveIntensity: 0.28,
+          roughness: 0.08,
+          transparent: true,
+          opacity: 0.52,
+          side: THREE.DoubleSide,
+        })
+      );
+      canopyGlass.scale.set(0.9, 0.88, 1.06);
+      canopyGlass.position.set(0, 1.38, 0.28);
+      rig.add(canopyGlass);
+
+      const rollArch = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-0.86, 1.35, 0.86],
+            [-0.78, 2.22, 0.56],
+            [0.0, 2.32, 0.48],
+            [0.78, 2.22, 0.56],
+            [0.86, 1.35, 0.86],
+          ],
+          0.055,
+          14,
+          8
+        ),
+        plowMat
+      );
+      rig.add(rollArch);
+
+      // 6 treaded bogie wheels (populated in wheels array so update spins them)
+      const tireShape = new THREE.CylinderGeometry(0.54, 0.54, 0.46, 16);
+      tireShape.rotateZ(Math.PI / 2);
+      const hubShape = new THREE.CylinderGeometry(0.26, 0.26, 0.5, 12);
+      hubShape.rotateZ(Math.PI / 2);
       const wheelMat = new THREE.MeshStandardMaterial({ color: 0x182232, roughness: 0.85 });
       for (const wx of [-1.22, 1.22]) {
         for (const wz of [-1.02, 0.2, 1.42]) {
-          const w = new THREE.Mesh(wheelGeo, wheelMat);
-          w.position.set(wx, 0.54, wz);
-          rig.add(w);
-          wheels.push(w);
+          const wGroup = new THREE.Group();
+          wGroup.position.set(wx, 0.54, wz);
+          const tire = new THREE.Mesh(tireShape, wheelMat);
+          const hub = new THREE.Mesh(hubShape, plowMat);
+          wGroup.add(tire, hub);
+          rig.add(wGroup);
+          wheels.push(wGroup);
         }
       }
-      const bladeW = (hasWide ? 4.6 : 3.15) * 0.55;
-      const bladeGeo = new THREE.BoxGeometry(bladeW, 1.0, 0.26);
-      const bladeL = new THREE.Mesh(bladeGeo, bodyMat);
-      bladeL.position.set(-bladeW * 0.44, 0.66, -1.92);
-      bladeL.rotation.y = 0.28;
-      const bladeR = new THREE.Mesh(bladeGeo, bodyMat);
-      bladeR.position.set(bladeW * 0.44, 0.66, -1.92);
-      bladeR.rotation.y = -0.28;
-      const strip = new THREE.Mesh(
-        new THREE.BoxGeometry(bladeW * 1.85, 0.22, 0.32),
+
+      // Curved beveled concave golden/amber thermal V-plow blade + twin hydraulic struts
+      const halfSpan = (hasWide ? 4.6 : 3.15) * 0.52;
+      const scoopWingShape = createBeveledWingGeometry(
+        [
+          [-0.22, 0.16],
+          [0.08, 0.2],
+          [-0.08, 0.58],
+          [0.14, 1.04],
+          [-0.12, 1.12],
+          [-0.28, 0.58],
+        ],
+        halfSpan,
+        0.045
+      );
+      scoopWingShape.center();
+
+      const bladeL = new THREE.Mesh(scoopWingShape, plowMat);
+      bladeL.rotation.y = Math.PI / 2 + 0.28;
+      bladeL.position.set(-halfSpan * 0.46, 0.68, -1.96);
+
+      const bladeR = new THREE.Mesh(scoopWingShape, plowMat);
+      bladeR.rotation.y = Math.PI / 2 - 0.28;
+      bladeR.position.set(halfSpan * 0.46, 0.68, -1.96);
+
+      const thermalLip = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-halfSpan * 0.92, 0.24, -1.72],
+            [0.0, 0.22, -2.18],
+            [halfSpan * 0.92, 0.24, -1.72],
+          ],
+          0.085,
+          14,
+          8
+        ),
         hasWide ? magmaMat : glowMat
       );
-      strip.position.set(0, 0.26, -1.98);
-      rig.add(chassis, cab, bladeL, bladeR, strip);
-    }
 
-    if (hasBoost) {
-      for (const tx of [-0.62, 0.62]) {
-        const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 0.68, 10), glowMat);
-        thruster.rotation.x = Math.PI / 2;
-        thruster.position.set(tx, 0.92, 2.1);
-        rig.add(thruster);
+      for (const sx of [-0.62, 0.62]) {
+        const strut = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx, 0.82, -1.28],
+              [sx * 0.92, 0.64, -1.86],
+            ],
+            0.068,
+            8,
+            8
+          ),
+          darkMat
+        );
+        rig.add(strut);
       }
+
+      rig.add(bladeL, bladeR, thermalLip);
+
+      if (hasBoost) {
+        for (const tx of [-0.62, 0.62]) {
+          const thruster = new THREE.Mesh(
+            createLatheProfileGeometry(
+              [
+                [0.16, -0.34],
+                [0.28, 0.0],
+                [0.22, 0.34],
+              ],
+              12
+            ),
+            glowMat
+          );
+          thruster.rotation.x = Math.PI / 2;
+          thruster.position.set(tx, 0.95, 2.08);
+          rig.add(thruster);
+        }
+      }
+
+      // Seated Arctic Engineer Pilot visible inside cab gripping twin controls
+      pilot = buildExplorerPilot3D({ role: "arctic_engineer", seated: true, scale: 0.72 });
+      pilot.position.set(0, 1.18, 0.34);
+      rig.add(pilot);
     }
 
     if (hasHarpoon) {
       const turret = new THREE.Group();
       turret.name = "partner_harpoon_turret";
       const drum = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.26, 0.26, 0.45, 10),
-        new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xf4a62a, emissiveIntensity: 0.7 })
+        new THREE.CylinderGeometry(0.24, 0.28, 0.46, 12),
+        new THREE.MeshStandardMaterial({
+          color: 0xffd166,
+          emissive: 0xf4a62a,
+          emissiveIntensity: 0.7,
+        })
       );
       drum.rotation.z = Math.PI / 2;
       const spear = new THREE.Mesh(
-        new THREE.ConeGeometry(0.15, 0.55, 6),
+        createLatheProfileGeometry(
+          [
+            [0.05, -0.35],
+            [0.06, 0.1],
+            [0.14, 0.14],
+            [0.01, 0.45],
+          ],
+          10
+        ),
         new THREE.MeshBasicMaterial({ color: 0xffd166 })
       );
       spear.rotation.x = -Math.PI / 2;
-      spear.position.z = -0.65;
+      spear.position.z = -0.52;
       turret.add(drum, spear);
-      turret.position.set(0, isSled ? 1.85 : 2.58, 0.25);
+      turret.position.set(0, isSled ? 1.85 : 2.52, isSled ? 0.58 : 0.48);
       rig.add(turret);
     }
 
@@ -442,7 +722,7 @@ export class FrostwakeCoop3D {
       }
     }
 
-    return { rig, wheels };
+    return { rig, wheels, pilot };
   }
 
   _buildStatusAuras() {
@@ -579,7 +859,7 @@ export class FrostwakeCoop3D {
         group.name = `remote_partner_${id}`;
         group.rotation.order = "YXZ";
 
-        const { rig, wheels } = this._buildPartnerRigSubMesh(chassisId, upgrades);
+        const { rig, wheels, pilot } = this._buildPartnerRigSubMesh(chassisId, upgrades);
         const { thinkingHalo, surgeComet } = this._buildStatusAuras();
 
         const tex = createBadgeTexture(badgeLabel);
@@ -620,6 +900,7 @@ export class FrostwakeCoop3D {
           group,
           rigMesh: rig,
           wheels,
+          pilot,
           thinkingHalo,
           surgeComet,
           nameSprite,
@@ -641,6 +922,7 @@ export class FrostwakeCoop3D {
           const built = this._buildPartnerRigSubMesh(chassisId, upgrades);
           rec.rigMesh = built.rig;
           rec.wheels = built.wheels;
+          rec.pilot = built.pilot;
           rec.chassisId = chassisId;
           rec.upgKey = upgKey;
           rec.group.add(rec.rigMesh);
@@ -936,6 +1218,17 @@ export class FrostwakeCoop3D {
 
       for (const w of rec.wheels) {
         w.rotation.x = normalizeAngle(w.rotation.x - rec.speed * stepDt * 1.35, 0);
+      }
+
+      if (rec.pilot) {
+        const speedNorm = Math.min(1.2, Math.abs(rec.speed) / 18);
+        animateExplorerPilot3D(
+          rec.pilot,
+          this.elapsed,
+          speedNorm,
+          0,
+          rec.y > groundY + 0.35
+        );
       }
 
       rec.thinkingHalo.visible = rec.status === "thinking";

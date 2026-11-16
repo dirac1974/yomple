@@ -5,6 +5,12 @@
  */
 
 import * as THREE from "../vendor/three.module.min.js";
+import {
+  getCharacterToonGradient,
+  getCharacterFaceTexture,
+  createSlimeDropletGeometry,
+  createBeveledWingGeometry,
+} from "../core/character-graphics-3d.js";
 
 export const PERMAFROST_BASE_DRAG = 0.42;
 export const BASE_KNOCKBACK_RADIUS = 2.6;
@@ -471,29 +477,53 @@ export class FrostwakeOpposition3D {
   }
 
   _buildRimeUnits() {
-    const slimeGeo = new THREE.SphereGeometry(0.92, 12, 10);
-    const captainGeo = new THREE.SphereGeometry(1.28, 14, 12);
-    const eyeGeo = new THREE.SphereGeometry(0.14, 8, 8);
-    const crownSpikeGeo = new THREE.ConeGeometry(0.22, 0.65, 5);
-    const shieldGeo = new THREE.CylinderGeometry(1.85, 1.85, 2.2, 6, 1, true);
+    const slimeDropletShape = createSlimeDropletGeometry(0.88);
+    const captainDropletShape = createSlimeDropletGeometry(1.22);
+    const crownBandShape = new THREE.TorusGeometry(0.42, 0.06, 8, 18);
+    const crownShardShape = createBeveledWingGeometry(
+      [
+        [-0.12, 0],
+        [0, 0.46],
+        [0.12, 0],
+      ],
+      0.05,
+      0.015
+    );
+    const creepCrestShape = createBeveledWingGeometry(
+      [
+        [-0.09, 0],
+        [0, 0.32],
+        [0.09, 0],
+      ],
+      0.04,
+      0.012
+    );
+    const shieldShape = new THREE.CylinderGeometry(1.86, 1.86, 2.22, 6, 1, true);
+    const shieldRingShape = new THREE.TorusGeometry(1.86, 0.06, 8, 6);
 
-    const slimeMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
+    const gradMap = getCharacterToonGradient();
+    const slimeFaceTex = getCharacterFaceTexture("slime_rime");
+
+    const slimeMat = new THREE.MeshToonMaterial({
+      map: slimeFaceTex,
+      color: 0x67e8f9,
       emissive: 0x0284c7,
-      emissiveIntensity: 0.55,
-      roughness: 0.25,
+      emissiveIntensity: 0.3,
+      gradientMap: gradMap,
     });
-    const captainMat = new THREE.MeshStandardMaterial({
-      color: 0x6366f1,
-      emissive: 0x3b82f6,
-      emissiveIntensity: 0.68,
-      roughness: 0.22,
+    const captainMat = new THREE.MeshToonMaterial({
+      map: slimeFaceTex,
+      color: 0x38bdf8,
+      emissive: 0x2563eb,
+      emissiveIntensity: 0.38,
+      gradientMap: gradMap,
     });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfffbeb });
     const spikeMat = new THREE.MeshStandardMaterial({
-      color: 0xa5f3fc,
+      color: 0xbaf7ff,
       emissive: 0x38bdf8,
-      emissiveIntensity: 0.65,
+      emissiveIntensity: 0.72,
+      roughness: 0.16,
+      metalness: 0.2,
     });
 
     const createUnit = (lane, tSpawn, isCaptain, unitIdx) => {
@@ -503,21 +533,42 @@ export class FrostwakeOpposition3D {
       const sy = this.baseHeightFn(sx, sz) + 0.75;
 
       const group = new THREE.Group();
+      group.name = isCaptain ? `sculpted_rime_captain_${lane.id}` : `sculpted_rime_creep_${lane.id}_${unitIdx}`;
       group.position.set(sx, sy, sz);
 
-      const body = new THREE.Mesh(isCaptain ? captainGeo : slimeGeo, isCaptain ? captainMat : slimeMat);
+      const body = new THREE.Mesh(
+        isCaptain ? captainDropletShape : slimeDropletShape,
+        isCaptain ? captainMat : slimeMat
+      );
+      body.name = isCaptain ? "rime_captain_droplet" : "rime_creep_droplet";
+      // Orient painted slime_rime face texture (u = 0.5) forward along +Z heading
+      body.rotation.y = Math.PI;
+      body.position.y = isCaptain ? -0.66 : -0.56;
       body.scale.set(1.08, 0.84, 1.08);
       group.add(body);
 
-      for (const ex of [-0.32, 0.32]) {
-        const eye = new THREE.Mesh(eyeGeo, eyeMat);
-        eye.position.set(ex * (isCaptain ? 1.35 : 1), isCaptain ? 0.35 : 0.24, isCaptain ? -1.08 : -0.78);
-        group.add(eye);
+      if (isCaptain) {
+        const crown = new THREE.Group();
+        crown.name = "rime_captain_crown";
+        crown.position.set(-0.1, 1.44, 0);
+        crown.rotation.z = 0.18;
+        const band = new THREE.Mesh(crownBandShape, spikeMat);
+        band.rotation.x = Math.PI / 2;
+        crown.add(band);
+        for (let c = 0; c < 5; c++) {
+          const ang = (c / 5) * Math.PI * 2;
+          const shard = new THREE.Mesh(crownShardShape, spikeMat);
+          shard.position.set(Math.cos(ang) * 0.4, 0.02, Math.sin(ang) * 0.4);
+          shard.rotation.y = -ang + Math.PI / 2;
+          shard.rotation.x = -0.18;
+          crown.add(shard);
+        }
+        body.add(crown);
+      } else {
+        const crest = new THREE.Mesh(creepCrestShape, spikeMat);
+        crest.position.set(0, 1.08, 0);
+        body.add(crest);
       }
-
-      const spike = new THREE.Mesh(crownSpikeGeo, spikeMat);
-      spike.position.y = isCaptain ? 1.25 : 0.92;
-      group.add(spike);
 
       let shieldMesh = null;
       if (isCaptain) {
@@ -526,11 +577,21 @@ export class FrostwakeOpposition3D {
           emissive: 0x22d3ee,
           emissiveIntensity: 0.75,
           transparent: true,
-          opacity: 0.46,
+          opacity: 0.44,
           side: THREE.DoubleSide,
         });
-        shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+        shieldMesh = new THREE.Mesh(shieldShape, shieldMat);
+        shieldMesh.name = "rime_captain_hex_shield";
         shieldMesh.position.y = 0.25;
+
+        const topRim = new THREE.Mesh(shieldRingShape, spikeMat);
+        topRim.rotation.x = Math.PI / 2;
+        topRim.position.y = 1.1;
+        const botRim = new THREE.Mesh(shieldRingShape, spikeMat);
+        botRim.rotation.x = Math.PI / 2;
+        botRim.position.y = -1.1;
+        shieldMesh.add(topRim, botRim);
+
         group.add(shieldMesh);
       }
 
@@ -1121,6 +1182,12 @@ export class FrostwakeOpposition3D {
         for (const c of den.cocoonMeshes) c.visible = false;
         den.foxMeshes.forEach((f, idx) => {
           f.position.y = 0.35 + Math.abs(Math.sin(this.elapsed * 4.8 + idx * 1.6)) * 0.42;
+          if (f.userData?.tail) {
+            f.userData.tail.rotation.z = Math.sin(this.elapsed * 6.0 + idx) * 0.2;
+          }
+          if (f.userData?.head) {
+            f.userData.head.rotation.y = Math.sin(this.elapsed * 2.4 + idx) * 0.14;
+          }
         });
       }
     }

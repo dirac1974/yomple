@@ -34,6 +34,19 @@ import {
   SlipstreamBoostVFXController,
   HorizonWonderAndRelicSystem,
 } from "../core/vfx-3d.js";
+import {
+  getCharacterToonGradient,
+  getCustomSurfaceTexture,
+  createLatheProfileGeometry,
+  createBeveledWingGeometry,
+  createSplineTubeGeometry,
+  buildExplorerPilot3D,
+  animateExplorerPilot3D,
+  buildSpiritFox3D,
+  buildSkyWhale3D,
+  buildSanctuaryCreature3D,
+  buildGuardianColossus3D,
+} from "../core/character-graphics-3d.js";
 
 export {
   SHARED_COIN_IDS,
@@ -225,12 +238,18 @@ export class BastionWorld3D {
     this.guardianAwakeWorldId = null;
     this.guardianAwakeningCount = 0;
     this.whaleTimer = 0;
+    this.spiritFoxTimer = 0;
 
     this.rigAnim = null;
     this.laserBeams = [];
     this.gateSlots = [];
     this.rigWheels = [];
+    this.wheels = this.rigWheels;
     this.skiffThrusterCones = [];
+    this.activePilot = null;
+    this.skiffChronosCore = null;
+    this.astroToadMascot = null;
+    this.spiritFox = null;
     this.lastGhostWaveResult = null;
 
     this.lastTimeScale = computeSimulationTimeScale({
@@ -355,6 +374,7 @@ export class BastionWorld3D {
     this._buildObservatorySpire();
     this._buildGuardianColossus();
     this._buildSkyWhale();
+    this._buildSpiritFox();
     this._buildExpeditionBeacon();
 
     // 3. Playable 3D Siege-Rover (default iron_ballista)
@@ -630,25 +650,12 @@ export class BastionWorld3D {
     const gy = this._baseHeight(0, -44);
     g.position.set(0, gy, -44);
 
-    const brassMat = new THREE.MeshStandardMaterial({
-      color: 0xd9a441,
-      emissive: 0x5c3d08,
-      emissiveIntensity: 0.36,
-      roughness: 0.26,
-      metalness: 0.76,
-    });
-    const coreMat = new THREE.MeshStandardMaterial({
-      color: 0x7ee8fa,
-      emissive: 0x38bdf8,
-      emissiveIntensity: 1.0,
-    });
-
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.6, 5.8, 10), brassMat);
-    torso.position.y = 3.2;
-    const helm = new THREE.Mesh(new THREE.OctahedronGeometry(1.65, 0), coreMat);
-    helm.position.y = 7.4;
-    const halo = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.18, 8, 28), brassMat);
-    halo.position.y = 7.4;
+    const sculptedKnight = buildGuardianColossus3D({ realm: "arc_bastion" });
+    sculptedKnight.scale.setScalar(1.18);
+    const halo =
+      sculptedKnight.userData?.halo ||
+      sculptedKnight.getObjectByName("guardian_astrolabe_halo") ||
+      null;
 
     this.guardianBeamMat = new THREE.MeshBasicMaterial({
       color: 0xffd166,
@@ -665,8 +672,9 @@ export class BastionWorld3D {
     this.guardianBeam.position.y = 17;
     this.guardianBeam.visible = false;
 
-    g.add(torso, helm, halo, this.guardianBeam);
+    g.add(sculptedKnight, this.guardianBeam);
     this.guardianGroup = g;
+    this.guardianSculpture = sculptedKnight;
     this.guardianHalo = halo;
     this.scene.add(g);
   }
@@ -674,24 +682,31 @@ export class BastionWorld3D {
   _buildSkyWhale() {
     const g = new THREE.Group();
     g.name = "bastion_starlight_whale";
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x7ee8fa,
-      emissive: 0x38bdf8,
-      emissiveIntensity: 0.88,
-      transparent: true,
-      opacity: 0.8,
-      roughness: 0.18,
-    });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(2.4, 9.0, 8, 14), mat);
-    body.rotation.x = Math.PI / 2;
-    const finL = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.26, 2.1), mat);
-    finL.position.set(-3.4, -0.25, 1.0);
-    const finR = finL.clone();
-    finR.position.x = 3.4;
-    g.add(body, finL, finR);
+    const whaleMesh = buildSkyWhale3D({ theme: "arc_bastion", scale: 1.35 });
+    g.add(whaleMesh);
     g.visible = false;
     this.skyWhale = g;
+    this.skyWhaleFins = whaleMesh.userData?.fins || null;
     this.scene.add(g);
+  }
+
+  _buildSpiritFox() {
+    const fox = buildSpiritFox3D({ scale: 1.08 });
+    fox.visible = false;
+    this.spiritFox = fox;
+    this.spiritFoxTimer = 0;
+    this.scene.add(fox);
+  }
+
+  _triggerSpiritFoxReveal(slot = null) {
+    if (!this.spiritFox) return;
+    const fx = (slot ? slot.x : this.rigState.x) + 2.75;
+    const fz = (slot ? slot.z : this.rigState.z) + 2.4;
+    const fy = this._baseHeight(fx, fz);
+    this.spiritFox.position.set(fx, fy, fz);
+    this.spiritFox.rotation.y = slot ? slot.rotY : this.rigState.heading;
+    this.spiritFox.visible = true;
+    this.spiritFoxTimer = 4.4;
   }
 
   _buildExpeditionBeacon() {
@@ -906,7 +921,21 @@ export class BastionWorld3D {
         cru.cryoCannonUnlocked ||
           cru.cryoBuoyancyTrim ||
           oddCreatures.includes("zero_g_toad") ||
+          oddCreatures.includes("astro_toad") ||
           (progress?.records?.deepestSubZero ?? 0) <= -40 ||
+          (progress?.records?.deepestSubZero ?? 0) >= 100 ||
+          (progress?.nodes?.["W1.2"]?.stage || 0) >= 2
+      ),
+      astroToadUnlocked: Boolean(
+        cru.astroToadUnlocked ||
+          cru.astroToadCabMascot ||
+          cru.cryoToadMascot ||
+          cru.cryoCannonUnlocked ||
+          cru.cryoBuoyancyTrim ||
+          oddCreatures.includes("zero_g_toad") ||
+          oddCreatures.includes("astro_toad") ||
+          (progress?.records?.deepestSubZero ?? 0) <= -40 ||
+          (progress?.records?.deepestSubZero ?? 0) >= 100 ||
           (progress?.nodes?.["W1.2"]?.stage || 0) >= 2
       ),
       bastionMosaicTrim: Boolean(
@@ -993,27 +1022,41 @@ export class BastionWorld3D {
     g.name = `bastion_rover_${cleanRig}`;
     g.rotation.order = "YXZ";
     this.rigWheels = [];
+    this.wheels = this.rigWheels;
     this.skiffThrusterCones = [];
     this.frontGearRam = null;
     this.ballistaTurret = null;
     this.chronosHarpStrings = null;
+    this.activePilot = null;
+    this.skiffChronosCore = null;
+    this.astroToadMascot = null;
 
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: hasCrown ? 0xffd86b : spec.primaryHex,
-      roughness: 0.25,
-      metalness: 0.48,
+    const gradMap = getCharacterToonGradient();
+    const sapphireTex = getCustomSurfaceTexture("sapphire_filigree");
+    const brassTex = getCustomSurfaceTexture("bastion_brass_plate");
+
+    const sapphireHullMat = new THREE.MeshStandardMaterial({
+      map: sapphireTex,
+      color: hasCrown ? 0xffe484 : 0x8ec5ff,
+      roughness: 0.26,
+      metalness: 0.42,
+    });
+    const brassMat = new THREE.MeshStandardMaterial({
+      map: brassTex,
+      color: 0xfbbf24,
+      emissive: 0x5c3d08,
+      emissiveIntensity: 0.3,
+      roughness: 0.24,
+      metalness: 0.74,
     });
     const darkMat = new THREE.MeshStandardMaterial({
       color: spec.secondaryHex,
-      roughness: 0.48,
-      metalness: 0.36,
+      roughness: 0.46,
+      metalness: 0.42,
     });
-    const brassMat = new THREE.MeshStandardMaterial({
-      color: 0xd9a441,
-      emissive: 0x5c3d08,
-      emissiveIntensity: 0.34,
-      roughness: 0.24,
-      metalness: 0.76,
+    const leatherMat = new THREE.MeshToonMaterial({
+      color: 0x5c3a24,
+      gradientMap: gradMap,
     });
     const amberGlowMat = new THREE.MeshStandardMaterial({
       color: spec.glowHex,
@@ -1024,116 +1067,613 @@ export class BastionWorld3D {
     const cyanCrystalMat = new THREE.MeshStandardMaterial({
       color: 0x7ee8fa,
       emissive: 0x38bdf8,
-      emissiveIntensity: 1.05,
+      emissiveIntensity: 1.08,
       roughness: 0.12,
+    });
+    const holoSlateMat = new THREE.MeshStandardMaterial({
+      color: 0x67e8f9,
+      emissive: 0x22d3ee,
+      emissiveIntensity: 0.95,
+      transparent: true,
+      opacity: 0.58,
+      roughness: 0.1,
+      side: THREE.DoubleSide,
+      depthWrite: false,
     });
 
     if (cleanRig === "prism_rail_skiff") {
-      // Sleek hovering Prism Rail-Hover Skiff: crystal prow, twin cyan rail-prisms, thruster pods, golden astrolabe fins
-      const hull = new THREE.Mesh(new THREE.ConeGeometry(1.18, 4.5, 6), bodyMat);
-      hull.rotation.x = -Math.PI / 2;
-      hull.scale.set(1.06, 1.0, 0.68);
-      hull.position.set(0, 0.98, 0.08);
-      g.add(hull);
+      // Chrono-Tactician Twin-Prong Hover-Skiff: contoured fuselage, swept forward prongs,
+      // central Hourglass Chronos Core, lathed turbine nacelles, curved cockpit & HUD slate!
+      const fuselage = new THREE.Mesh(
+        createLatheProfileGeometry(
+          [
+            [0.48, -1.16],
+            [0.64, -0.78],
+            [0.74, -0.15],
+            [0.72, 0.58],
+            [0.58, 1.32],
+            [0.34, 1.88],
+            [0.08, 2.12],
+          ],
+          22
+        ),
+        sapphireHullMat
+      );
+      fuselage.rotation.x = Math.PI / 2;
+      fuselage.scale.set(1.06, 0.84, 1.0);
+      fuselage.position.set(0, 0.96, 0.12);
+      g.add(fuselage);
 
+      // Central Nose Hourglass Chronos Core (two opposing crystal cones + burnished brass bezel)
+      const chronosNose = new THREE.Group();
+      chronosNose.name = "skiff_hourglass_chronos_core";
+      chronosNose.position.set(0, 0.96, -1.08);
+
+      const noseBezel = new THREE.Mesh(
+        new THREE.TorusGeometry(0.46, 0.082, 12, 26),
+        brassMat
+      );
+      const chamberBack = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.42, 0.12, 20),
+        darkMat
+      );
+      chamberBack.rotation.x = Math.PI / 2;
+      chamberBack.position.z = 0.05;
+
+      const hourglassSpinner = new THREE.Group();
+      const upperCrystalCone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.19, 0.3, 14),
+        cyanCrystalMat
+      );
+      upperCrystalCone.rotation.z = Math.PI;
+      upperCrystalCone.position.y = 0.15;
+      const lowerCrystalCone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.19, 0.3, 14),
+        cyanCrystalMat
+      );
+      lowerCrystalCone.position.y = -0.15;
+      const sandOrb = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.085, 0),
+        amberGlowMat
+      );
+      const capTop = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.21, 0.21, 0.045, 16),
+        brassMat
+      );
+      capTop.position.y = 0.31;
+      const capBot = capTop.clone();
+      capBot.position.y = -0.31;
+      const swirlRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.32, 0.026, 8, 22),
+        amberGlowMat
+      );
+      swirlRing.rotation.y = 0.42;
+      hourglassSpinner.add(
+        upperCrystalCone,
+        lowerCrystalCone,
+        sandOrb,
+        capTop,
+        capBot,
+        swirlRing
+      );
+      chronosNose.add(noseBezel, chamberBack, hourglassSpinner);
+      this.skiffChronosCore = hourglassSpinner;
+      g.add(chronosNose);
+
+      // Left & Right Swept Forward Prongs + Glowing Cyan Rail Channels
       const twinPrisms = new THREE.Group();
       twinPrisms.name = "skiff_twin_rail_prisms";
-      for (const sx of [-0.62, 0.62]) {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 2.95), cyanCrystalMat);
-        rail.position.set(sx, 1.12, -0.75);
-        twinPrisms.add(rail);
+      const prongGeo = createBeveledWingGeometry(
+        [
+          [0.36, 0.22],
+          [0.54, -2.42],
+          [0.72, -2.52],
+          [0.98, -1.62],
+          [0.94, 0.36],
+        ],
+        0.22,
+        0.045
+      );
+      const prongTrimGeo = createBeveledWingGeometry(
+        [
+          [0.52, -2.44],
+          [0.74, -2.56],
+          [0.92, -1.85],
+          [0.68, -1.78],
+        ],
+        0.25,
+        0.03
+      );
+
+      for (const side of [-1, 1]) {
+        const prongSideGrp = new THREE.Group();
+        prongSideGrp.scale.x = side;
+
+        const prongHull = new THREE.Mesh(prongGeo, sapphireHullMat);
+        prongHull.rotation.x = Math.PI / 2;
+        prongHull.position.set(0, 1.02, 0);
+
+        const prongBrassTip = new THREE.Mesh(prongTrimGeo, brassMat);
+        prongBrassTip.rotation.x = Math.PI / 2;
+        prongBrassTip.position.set(0, 1.04, 0);
+
+        const railChannel = new THREE.Mesh(
+          createBeveledWingGeometry(
+            [
+              [0.43, -0.25],
+              [0.56, -2.25],
+              [0.64, -2.2],
+              [0.52, -0.2],
+            ],
+            0.12,
+            0.018
+          ),
+          cyanCrystalMat
+        );
+        railChannel.rotation.x = Math.PI / 2;
+        railChannel.position.set(0, 0.99, 0);
+
+        prongSideGrp.add(prongHull, prongBrassTip, railChannel);
+        twinPrisms.add(prongSideGrp);
       }
       g.add(twinPrisms);
 
-      // Golden Astrolabe Stabilizer Fins + Hovering Thruster Pods
-      for (const side of [-1, 1]) {
-        const fin = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.1, 1.25), brassMat);
-        fin.position.set(side * 1.35, 0.96, 0.55);
-        fin.rotation.z = -side * 0.18;
-        const astroArc = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.055, 8, 18), amberGlowMat);
-        astroArc.position.set(side * 1.92, 1.16, 0.65);
-        astroArc.rotation.y = Math.PI / 2;
+      // Side Lathed Hover-Turbine Nacelles with Glowing Cyan Intake & Exhaust Rings
+      const nacelleBodyGeo = createLatheProfileGeometry(
+        [
+          [0.22, -0.76],
+          [0.31, -0.48],
+          [0.33, 0.14],
+          [0.28, 0.68],
+          [0.2, 0.88],
+        ],
+        18
+      );
+      const pylonGeo = createBeveledWingGeometry(
+        [
+          [0.62, 0.15],
+          [1.36, 0.35],
+          [1.36, 0.98],
+          [0.58, 0.92],
+        ],
+        0.1,
+        0.025
+      );
 
-        const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 1.18, 10), darkMat);
-        pod.rotation.x = Math.PI / 2;
-        pod.position.set(side * 1.02, 0.86, 1.62);
+      for (const side of [-1, 1]) {
+        const pylon = new THREE.Mesh(pylonGeo, brassMat);
+        pylon.rotation.x = Math.PI / 2;
+        pylon.scale.x = side;
+        pylon.position.set(0, 0.95, 0);
+        g.add(pylon);
+
+        const nacelle = new THREE.Group();
+        nacelle.position.set(side * 1.44, 0.88, 0.68);
+
+        const barrel = new THREE.Mesh(nacelleBodyGeo, sapphireHullMat);
+        barrel.rotation.x = Math.PI / 2;
+
+        const intakeCowl = new THREE.Mesh(
+          new THREE.TorusGeometry(0.24, 0.048, 10, 20),
+          brassMat
+        );
+        intakeCowl.position.z = -0.76;
+
+        const intakeGlow = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.19, 0.19, 0.08, 16),
+          cyanCrystalMat
+        );
+        intakeGlow.rotation.x = Math.PI / 2;
+        intakeGlow.position.z = -0.75;
+
+        const aftBrassBand = new THREE.Mesh(
+          new THREE.TorusGeometry(0.23, 0.04, 10, 20),
+          brassMat
+        );
+        aftBrassBand.position.z = 0.78;
+
+        const exhaustRing = new THREE.Mesh(
+          new THREE.TorusGeometry(0.18, 0.03, 8, 18),
+          cyanCrystalMat
+        );
+        exhaustRing.position.z = 0.89;
+
+        nacelle.add(barrel, intakeCowl, intakeGlow, aftBrassBand, exhaustRing);
+        g.add(nacelle);
+
         const cone = new THREE.Mesh(
-          new THREE.ConeGeometry(0.22, 1.1, 10, 1, true),
+          new THREE.ConeGeometry(0.2, 1.05, 12, 1, true),
           cyanCrystalMat
         );
         cone.rotation.x = Math.PI / 2;
-        cone.position.set(side * 1.02, 0.86, 2.55);
-
-        g.add(fin, astroArc, pod, cone);
+        cone.position.set(side * 1.44, 0.88, 2.05);
+        g.add(cone);
         this.skiffThrusterCones.push({ mesh: cone, phase: side > 0 ? 0 : 1.5 });
       }
+
+      // Open Curved Cockpit Backrest, Swept Tail Fin, Seated Chrono-Tactician Pilot & Holo HUD Slate
+      const backrest = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+          0.44,
+          0.48,
+          0.86,
+          16,
+          1,
+          true,
+          -Math.PI * 0.42,
+          Math.PI * 0.84
+        ),
+        leatherMat
+      );
+      backrest.position.set(0, 1.28, 0.56);
+      const cockpitRim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.56, 0.055, 10, 24),
+        brassMat
+      );
+      cockpitRim.rotation.x = Math.PI / 2 - 0.24;
+      cockpitRim.position.set(0, 1.26, 0.34);
+
+      const tailFin = new THREE.Mesh(
+        createBeveledWingGeometry(
+          [
+            [0, 0],
+            [0.58, 0.46],
+            [0.72, 0.12],
+            [0.25, -0.18],
+          ],
+          0.06,
+          0.02
+        ),
+        brassMat
+      );
+      tailFin.rotation.y = Math.PI / 2;
+      tailFin.position.set(0.03, 1.28, 1.42);
+      g.add(backrest, cockpitRim, tailFin);
+
+      const pilot = buildExplorerPilot3D({
+        role: "chrono_tactician",
+        seated: true,
+        scale: 0.78,
+      });
+      pilot.position.set(0, 0.82, 0.42);
+      g.add(pilot);
+      this.activePilot = pilot;
+
+      const hudGroup = new THREE.Group();
+      hudGroup.name = "skiff_holo_hud_slate";
+      hudGroup.position.set(0, 1.34, -0.14);
+      hudGroup.rotation.x = -0.45;
+      const hudPane = new THREE.Mesh(
+        createBeveledWingGeometry(
+          [
+            [-0.38, -0.2],
+            [0.38, -0.2],
+            [0.33, 0.22],
+            [-0.33, 0.22],
+          ],
+          0.014,
+          0.006
+        ),
+        holoSlateMat
+      );
+      const hudReticle = new THREE.Mesh(
+        new THREE.TorusGeometry(0.1, 0.014, 8, 18),
+        amberGlowMat
+      );
+      hudReticle.position.z = 0.02;
+      hudGroup.add(hudPane, hudReticle);
+      g.add(hudGroup);
     } else {
-      // Heavy 6x6 Siege-Ballista Rover: sapphire-and-brass hull, rotating mortar/ballista turret, spinning front gear-ram, glowing amber core
-      const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.22, 0.72, 3.48), bodyMat);
-      chassis.position.set(0, 1.12, 0.18);
-      const underTub = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.44, 3.62), darkMat);
-      underTub.position.set(0, 0.72, 0.18);
-      const amberCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), amberGlowMat);
+      // 6x6 Siegesmith Ballista Crawler: contoured royal-sapphire & riveted-brass hull,
+      // 6 spoked wheels, front brass gear-medallion, curved exhausts, torsion Ballista & goggled pilot!
+      const hullFlankShape = [
+        [-1.62, 0.0],
+        [1.56, 0.0],
+        [1.72, 0.56],
+        [0.42, 0.62],
+        [0.32, 0.94],
+        [-1.48, 0.94],
+        [-1.72, 0.48],
+      ];
+      const hullBody = new THREE.Mesh(
+        createBeveledWingGeometry(hullFlankShape, 1.96, 0.08),
+        sapphireHullMat
+      );
+      hullBody.rotation.y = -Math.PI / 2;
+      hullBody.position.set(0.98, 0.68, 0.12);
+      g.add(hullBody);
+
+      // Beveled Brass Deck Rails & Side Clockwork Cogs
+      for (const sx of [-1, 1]) {
+        const railTrim = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 1.06, 1.32, -1.56],
+              [sx * 1.08, 1.34, 0.28],
+              [sx * 1.04, 1.66, 0.52],
+              [sx * 1.02, 1.66, 1.64],
+            ],
+            0.055,
+            16,
+            8
+          ),
+          brassMat
+        );
+        g.add(railTrim);
+
+        // Exposed side clockwork gears
+        const sideCog = new THREE.Mesh(
+          new THREE.TorusGeometry(0.24, 0.048, 8, 14),
+          brassMat
+        );
+        sideCog.rotation.y = Math.PI / 2;
+        sideCog.position.set(sx * 1.07, 1.04, -0.52);
+        const headlamp = new THREE.Mesh(
+          new THREE.SphereGeometry(0.13, 12, 10),
+          amberGlowMat
+        );
+        headlamp.position.set(sx * 0.86, 1.22, -1.62);
+        const lampHood = new THREE.Mesh(
+          new THREE.TorusGeometry(0.14, 0.032, 8, 14),
+          brassMat
+        );
+        lampHood.position.set(sx * 0.86, 1.22, -1.6);
+        g.add(sideCog, headlamp, lampHood);
+
+        // Rear curved brass exhaust pipes with glowing crystal-steam wisps
+        const exhaustPipe = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 0.78, 1.15, 1.48],
+              [sx * 0.92, 1.58, 1.78],
+              [sx * 0.98, 2.08, 1.92],
+            ],
+            0.075,
+            14,
+            10
+          ),
+          brassMat
+        );
+        const steamPuff = new THREE.Mesh(
+          new THREE.SphereGeometry(0.11, 10, 8),
+          cyanCrystalMat
+        );
+        steamPuff.scale.set(0.9, 1.35, 0.9);
+        steamPuff.position.set(sx * 1.0, 2.24, 1.96);
+        g.add(exhaustPipe, steamPuff);
+      }
+
+      // Glowing Amber Reactor Core & Front Spinning Brass Gear-Medallion Ram
+      const amberCore = new THREE.Mesh(
+        new THREE.SphereGeometry(0.32, 16, 12),
+        amberGlowMat
+      );
       amberCore.name = "ballista_amber_reactor_core";
-      amberCore.position.set(0, 1.56, 1.28);
-      g.add(chassis, underTub, amberCore);
+      amberCore.scale.set(1.0, 1.0, 0.65);
+      amberCore.position.set(0, 1.04, -1.68);
+      g.add(amberCore);
 
-      // Rotating Mortar / Ballista Turret
-      const turret = new THREE.Group();
-      turret.name = "ballista_rotating_turret";
-      turret.position.set(0, 1.58, 0.05);
-      const ringBase = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.88, 0.34, 12), brassMat);
-      const bowArms = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.14, 0.28), brassMat);
-      bowArms.position.set(0, 0.32, -0.45);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.85, 12), darkMat);
-      barrel.rotation.x = Math.PI / 2 - 0.18;
-      barrel.position.set(0, 0.38, -0.82);
-      turret.add(ringBase, bowArms, barrel);
-      this.ballistaTurret = turret;
-      g.add(turret);
-
-      // Spinning Front Brass Gear-Ram
       const gearRam = new THREE.Group();
       gearRam.name = "ballista_front_gear_ram";
-      gearRam.position.set(0, 0.78, -1.85);
-      const cogL = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.11, 8, 12), brassMat);
-      cogL.position.x = -0.62;
-      const cogR = cogL.clone();
-      cogR.position.x = 0.62;
-      const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.9, 8), amberGlowMat);
-      axle.rotation.z = Math.PI / 2;
-      gearRam.add(cogL, cogR, axle);
+      gearRam.position.set(0, 0.98, -1.72);
+      const medallionRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.46, 0.095, 10, 18),
+        brassMat
+      );
+      gearRam.add(medallionRing);
+      for (let t = 0; t < 10; t++) {
+        const ang = (t / 10) * Math.PI * 2;
+        const tooth = new THREE.Mesh(
+          new THREE.CapsuleGeometry(0.055, 0.1, 4, 8),
+          brassMat
+        );
+        tooth.position.set(Math.cos(ang) * 0.56, Math.sin(ang) * 0.56, 0);
+        tooth.rotation.z = ang;
+        gearRam.add(tooth);
+      }
+      const lowerAxle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.08, 1.96, 10),
+        brassMat
+      );
+      lowerAxle.rotation.z = Math.PI / 2;
+      lowerAxle.position.set(0, -0.34, -0.05);
+      gearRam.add(lowerAxle);
       this.frontGearRam = gearRam;
       g.add(gearRam);
 
-      // 6x6 Independent Wheels
-      const wheelGeo = new THREE.CylinderGeometry(0.54, 0.54, 0.44, 14);
-      wheelGeo.rotateZ(Math.PI / 2);
-      const hubGeo = new THREE.TorusGeometry(0.28, 0.05, 8, 14);
-      hubGeo.rotateY(Math.PI / 2);
+      // Sculpted Twin-Arm Curved Torsion Ballista Bow + Faceted Glowing Cyan Crystal Bolt
+      const turret = new THREE.Group();
+      turret.name = "ballista_rotating_turret";
+      turret.position.set(0, 1.38, -0.46);
+
+      const pedestal = new THREE.Mesh(
+        createLatheProfileGeometry(
+          [
+            [0.68, 0.0],
+            [0.62, 0.16],
+            [0.42, 0.36],
+            [0.36, 0.46],
+          ],
+          16
+        ),
+        brassMat
+      );
+      const stockRail = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [0, 0.48, 0.55],
+            [0, 0.52, -0.25],
+            [0, 0.54, -1.05],
+          ],
+          0.095,
+          12,
+          8
+        ),
+        leatherMat
+      );
+      turret.add(pedestal, stockRail);
+
+      for (const sx of [-1, 1]) {
+        // Curved front brass claw-shields
+        const clawShield = new THREE.Mesh(
+          createBeveledWingGeometry(
+            [
+              [0, -0.44],
+              [0.24, -0.22],
+              [0.22, 0.42],
+              [-0.04, 0.52],
+              [-0.08, -0.28],
+            ],
+            0.07,
+            0.02
+          ),
+          brassMat
+        );
+        clawShield.position.set(sx * 0.28, 0.54, -0.78);
+        clawShield.rotation.y = sx * 0.32;
+        if (sx < 0) clawShield.scale.x = -1;
+
+        // Swept torsion Ballista bow arm
+        const bowArm = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 0.18, 0.54, -0.74],
+              [sx * 0.78, 0.55, -0.62],
+              [sx * 1.28, 0.56, -0.22],
+            ],
+            0.068,
+            14,
+            8
+          ),
+          brassMat
+        );
+        const bowString = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 1.25, 0.56, -0.2],
+              [sx * 0.62, 0.55, 0.12],
+              [0, 0.54, 0.38],
+            ],
+            0.018,
+            8,
+            6
+          ),
+          amberGlowMat
+        );
+        turret.add(clawShield, bowArm, bowString);
+      }
+
+      // Loaded Faceted Glowing Cyan Crystal Bolt
+      const boltShaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.055, 0.055, 1.35, 10),
+        brassMat
+      );
+      boltShaft.rotation.x = Math.PI / 2;
+      boltShaft.position.set(0, 0.62, -0.42);
+      const crystalTip = new THREE.Mesh(
+        new THREE.ConeGeometry(0.22, 0.74, 6),
+        cyanCrystalMat
+      );
+      crystalTip.rotation.x = -Math.PI / 2;
+      crystalTip.position.set(0, 0.62, -1.36);
+      const crystalBase = new THREE.Mesh(
+        new THREE.ConeGeometry(0.22, 0.26, 6),
+        cyanCrystalMat
+      );
+      crystalBase.rotation.x = Math.PI / 2;
+      crystalBase.position.set(0, 0.62, -0.86);
+      turret.add(boltShaft, crystalTip, crystalBase);
+
+      this.ballistaTurret = turret;
+      g.add(turret);
+
+      // Heroic Standing Goggled Siegesmith Pilot at Rear Helm
+      const pilot = buildExplorerPilot3D({
+        role: "siegesmith",
+        seated: false,
+        scale: 0.76,
+      });
+      pilot.position.set(0, 1.08, 0.92);
+      g.add(pilot);
+      this.activePilot = pilot;
+
+      // 6 Detailed Spoked Brass-and-Iron Wheels + Beveled Brass Wheel Fenders
+      const tireGeo = createLatheProfileGeometry(
+        [
+          [0.28, -0.22],
+          [0.54, -0.2],
+          [0.57, 0.0],
+          [0.54, 0.2],
+          [0.28, 0.22],
+        ],
+        18
+      );
+      tireGeo.rotateZ(Math.PI / 2);
+      const rimRingGeo = new THREE.TorusGeometry(0.32, 0.048, 8, 16);
+      rimRingGeo.rotateY(Math.PI / 2);
+      const glowHubGeo = new THREE.TorusGeometry(0.22, 0.032, 8, 14);
+      glowHubGeo.rotateY(Math.PI / 2);
+      const spokeGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.56, 6);
+
       let wIdx = 0;
-      for (const wx of [-1.24, 1.24]) {
-        for (const wz of [-1.08, 0.18, 1.44]) {
-          const w = new THREE.Mesh(wheelGeo, darkMat);
-          w.position.set(wx, 0.54, wz);
-          const hub = new THREE.Mesh(hubGeo, brassMat);
-          hub.position.x = wx > 0 ? 0.23 : -0.23;
-          w.add(hub);
+      for (const wx of [-1.26, 1.26]) {
+        for (const wz of [-1.1, 0.18, 1.44]) {
+          // Arched beveled brass fender above each wheel
+          const fender = new THREE.Mesh(
+            new THREE.TorusGeometry(0.62, 0.062, 8, 16, Math.PI),
+            brassMat
+          );
+          fender.rotation.y = Math.PI / 2;
+          fender.position.set(wx * 0.94, 0.62, wz);
+          g.add(fender);
+
+          const w = new THREE.Group();
+          w.position.set(wx, 0.55, wz);
+          const tire = new THREE.Mesh(tireGeo, darkMat);
+          const sideSign = wx > 0 ? 1 : -1;
+          const rimRing = new THREE.Mesh(rimRingGeo, brassMat);
+          rimRing.position.x = sideSign * 0.21;
+          const glowHub = new THREE.Mesh(glowHubGeo, amberGlowMat);
+          glowHub.position.x = sideSign * 0.22;
+          w.add(tire, rimRing, glowHub);
+
+          for (let sp = 0; sp < 3; sp++) {
+            const spoke = new THREE.Mesh(spokeGeo, brassMat);
+            spoke.position.x = sideSign * 0.19;
+            spoke.rotation.x = (sp / 3) * Math.PI;
+            w.add(spoke);
+          }
+
           g.add(w);
-          this.rigWheels.push({ mesh: w, lx: wx, lz: wz, baseY: 0.54, phase: wIdx * 1.1 });
+          this.rigWheels.push({ mesh: w, lx: wx, lz: wz, baseY: 0.55, phase: wIdx * 1.1 });
           wIdx += 1;
         }
       }
     }
 
-    // Visible 3D Attachments for ALL 6 BASTION_UPGRADES
+    // Visible Sculpted 3D Attachments for ALL BASTION_UPGRADES (+ extended ab_* IDs)
     if (upSet.has("ab_cryo_mortar")) {
       const cryo = new THREE.Group();
       cryo.name = "upgrade_ab_cryo_mortar";
       cryo.userData = { upgrade: "ab_cryo_mortar" };
-      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.85, 12), cyanCrystalMat);
-      drum.position.set(0, 1.85, 0.88);
-      cryo.add(drum);
+      const canister = new THREE.Mesh(
+        createLatheProfileGeometry(
+          [
+            [0.08, 0.0],
+            [0.34, 0.08],
+            [0.38, 0.45],
+            [0.3, 0.78],
+            [0.14, 0.88],
+          ],
+          14
+        ),
+        cyanCrystalMat
+      );
+      canister.position.set(-0.68, 1.48, 1.18);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.045, 8, 16), brassMat);
+      band.rotation.x = Math.PI / 2;
+      band.position.set(-0.68, 1.88, 1.18);
+      cryo.add(canister, band);
       g.add(cryo);
     }
 
@@ -1141,11 +1681,13 @@ export class BastionWorld3D {
       const pierce = new THREE.Group();
       pierce.name = "upgrade_ab_prism_pierce";
       pierce.userData = { upgrade: "ab_prism_pierce" };
-      for (const sx of [-0.95, 0.95]) {
-        const lance = new THREE.Mesh(new THREE.ConeGeometry(0.14, 2.25, 6), cyanCrystalMat);
+      for (const sx of [-0.96, 0.96]) {
+        const lance = new THREE.Mesh(new THREE.ConeGeometry(0.13, 2.15, 6), cyanCrystalMat);
         lance.rotation.x = -Math.PI / 2;
-        lance.position.set(sx, 1.32, -1.35);
-        pierce.add(lance);
+        lance.position.set(sx, 1.26, -1.42);
+        const collar = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.035, 8, 14), brassMat);
+        collar.position.set(sx, 1.26, -0.45);
+        pierce.add(lance, collar);
       }
       g.add(pierce);
     }
@@ -1154,9 +1696,11 @@ export class BastionWorld3D {
       const miniSentinel = new THREE.Group();
       miniSentinel.name = "upgrade_ab_auto_turret";
       miniSentinel.userData = { upgrade: "ab_auto_turret" };
-      const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), amberGlowMat);
-      beacon.position.set(-0.78, 2.05, 0.95);
-      miniSentinel.add(beacon);
+      const podDome = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), brassMat);
+      podDome.position.set(-0.82, 2.02, 0.95);
+      const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), amberGlowMat);
+      beacon.position.set(-0.82, 2.3, 0.95);
+      miniSentinel.add(podDome, beacon);
       g.add(miniSentinel);
     }
 
@@ -1164,10 +1708,22 @@ export class BastionWorld3D {
       const mirrors = new THREE.Group();
       mirrors.name = "upgrade_ab_angle_mirrors";
       mirrors.userData = { upgrade: "ab_angle_mirrors" };
-      for (const sx of [-1.18, 1.18]) {
-        const vane = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.58, 0.68), brassMat);
-        vane.position.set(sx, 1.62, 0.42);
-        vane.rotation.y = sx > 0 ? -0.35 : 0.35;
+      for (const sx of [-1.2, 1.2]) {
+        const vane = new THREE.Mesh(
+          createBeveledWingGeometry(
+            [
+              [-0.06, -0.28],
+              [0.24, -0.18],
+              [0.24, 0.28],
+              [-0.06, 0.34],
+            ],
+            0.05,
+            0.015
+          ),
+          brassMat
+        );
+        vane.position.set(sx, 1.56, 0.42);
+        vane.rotation.y = sx > 0 ? -0.42 : Math.PI + 0.42;
         mirrors.add(vane);
       }
       g.add(mirrors);
@@ -1177,15 +1733,18 @@ export class BastionWorld3D {
       const harp = new THREE.Group();
       harp.name = "upgrade_ab_chronos_harp";
       harp.userData = { upgrade: "ab_chronos_harp" };
-      harp.position.set(0, 2.38, 0.58);
+      harp.position.set(0, 2.48, 1.18);
       const arch = new THREE.Mesh(
-        new THREE.TorusGeometry(0.55, 0.055, 8, 20, Math.PI * 1.35),
+        new THREE.TorusGeometry(0.52, 0.052, 8, 20, Math.PI * 1.35),
         brassMat
       );
       harp.add(arch);
       for (let s = -2; s <= 2; s++) {
-        const str = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.82, 6), amberGlowMat);
-        str.position.set(s * 0.14, 0.05, 0);
+        const str = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.014, 0.014, 0.78, 6),
+          amberGlowMat
+        );
+        str.position.set(s * 0.13, 0.05, 0);
         harp.add(str);
       }
       this.chronosHarpStrings = harp;
@@ -1196,22 +1755,82 @@ export class BastionWorld3D {
       const crown = new THREE.Group();
       crown.name = "upgrade_ab_citadel_crown";
       crown.userData = { upgrade: "ab_citadel_crown" };
-      const circlet = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.07, 8, 20), amberGlowMat);
+      const circlet = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.065, 8, 22), amberGlowMat);
       circlet.rotation.x = Math.PI / 2;
-      circlet.position.set(0, 2.52, -0.05);
+      circlet.position.set(0, 2.62, 0.55);
       crown.add(circlet);
       g.add(crown);
     }
 
-    // Cross-Realm Unlocks (Frostwake Cryo-Cannon Barrel Trim & Oddroot Golden Mosaic Hull Trim)
+    if (upSet.has("ab_repulsor_prow")) {
+      const repulsor = new THREE.Group();
+      repulsor.name = "upgrade_ab_repulsor_prow";
+      repulsor.userData = { upgrade: "ab_repulsor_prow" };
+      const arc = new THREE.Mesh(
+        new THREE.TorusGeometry(0.68, 0.065, 8, 20, Math.PI),
+        cyanCrystalMat
+      );
+      arc.rotation.x = Math.PI / 2;
+      arc.position.set(0, 0.92, -2.05);
+      repulsor.add(arc);
+      g.add(repulsor);
+    }
+
+    if (upSet.has("ab_chronos_lens")) {
+      const lensGrp = new THREE.Group();
+      lensGrp.name = "upgrade_ab_chronos_lens";
+      lensGrp.userData = { upgrade: "ab_chronos_lens" };
+      const monocle = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.045, 8, 18), brassMat);
+      monocle.position.set(0, 1.78, -0.82);
+      lensGrp.add(monocle);
+      g.add(lensGrp);
+    }
+
+    if (upSet.has("ab_sky_grapnel")) {
+      const grapnel = new THREE.Group();
+      grapnel.name = "upgrade_ab_sky_grapnel";
+      grapnel.userData = { upgrade: "ab_sky_grapnel" };
+      const hook = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.52, 6), brassMat);
+      hook.rotation.x = -Math.PI / 2;
+      hook.position.set(0.68, 1.48, -1.48);
+      grapnel.add(hook);
+      g.add(grapnel);
+    }
+
+    for (const extraUpId of cleanUpgrades) {
+      const sId = String(extraUpId || "");
+      if (sId.startsWith("ab_") && !g.getObjectByName(`upgrade_${sId}`)) {
+        const extraNode = new THREE.Group();
+        extraNode.name = `upgrade_${sId}`;
+        extraNode.userData = { upgrade: sId };
+        const sigil = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), amberGlowMat);
+        sigil.position.set(0.68, 1.92, 1.12);
+        extraNode.add(sigil);
+        g.add(extraNode);
+      }
+    }
+
+    // Cross-Realm Unlocks, Zero-G Astro-Toad Mascot & Sibling Borrow Pennant
     if (this.crossRealmState?.cryoCannonUnlocked) {
       const cryoTrim = new THREE.Group();
       cryoTrim.name = "cross_realm_cryo_cannon_trim";
       cryoTrim.userData = { crossRealm: "cryoCannonUnlocked" };
-      const frostCuff = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.07, 8, 16), cyanCrystalMat);
-      frostCuff.position.set(0, 1.72, -1.42);
+      const frostCuff = new THREE.Mesh(
+        new THREE.TorusGeometry(0.34, 0.068, 8, 18),
+        cyanCrystalMat
+      );
+      frostCuff.position.set(0, 1.56, -1.45);
       cryoTrim.add(frostCuff);
       g.add(cryoTrim);
+    }
+
+    if (this.crossRealmState?.astroToadUnlocked || this.crossRealmState?.cryoCannonUnlocked) {
+      const toadMascot = buildSanctuaryCreature3D("zero_g_toad", 1);
+      toadMascot.name = "astro_toad_mascot";
+      toadMascot.scale.setScalar(0.38);
+      toadMascot.position.set(-0.74, 1.88, 1.38);
+      g.add(toadMascot);
+      this.astroToadMascot = toadMascot;
     }
 
     if (this.crossRealmState?.bastionMosaicTrim) {
@@ -1219,8 +1838,11 @@ export class BastionWorld3D {
       mosaic.name = "cross_realm_bastion_mosaic_trim";
       mosaic.userData = { crossRealm: "bastionMosaicTrim" };
       for (let t = 0; t < 4; t++) {
-        const tile = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.12), amberGlowMat);
-        tile.position.set((t - 1.5) * 0.5, 1.18, -1.72);
+        const tile = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.16, 0),
+          amberGlowMat
+        );
+        tile.position.set((t - 1.5) * 0.44, 1.24, -1.68);
         mosaic.add(tile);
       }
       g.add(mosaic);
@@ -1232,19 +1854,19 @@ export class BastionWorld3D {
         cyanCrystalMat
       );
       lantern.name = "silver_moon_lantern";
-      lantern.position.set(0.75, 1.95, 1.45);
+      lantern.position.set(0.76, 1.96, 1.44);
       g.add(lantern);
     }
 
     if (this.borrowedToyState?.active) {
       const pennant = new THREE.Group();
       pennant.name = "sibling_borrow_pennant";
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.25, 6), brassMat);
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.25, 8), brassMat);
       mast.position.y = 0.62;
       const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), amberGlowMat);
       star.position.y = 1.32;
       pennant.add(mast, star);
-      pennant.position.set(0.88, 1.75, 1.5);
+      pennant.position.set(0.88, 1.75, 1.52);
       g.add(pennant);
     }
 
@@ -1459,6 +2081,7 @@ export class BastionWorld3D {
 
       this.audio?.playGearBurst?.(isOverdrive);
       if (safeRes.outcome === "warm_reveal") {
+        this._triggerSpiritFoxReveal(slot);
         this.audio?.playFoxReveal?.();
       } else {
         this.audio?.playClear?.(isOverdrive);
@@ -1824,6 +2447,23 @@ export class BastionWorld3D {
         const pulse = 0.65 + speedNorm * 0.55 + Math.sin(this.simElapsed * 16 + tc.phase) * 0.12;
         tc.mesh.scale.set(0.9, pulse, 0.9);
       }
+      if (this.skiffChronosCore) {
+        this.skiffChronosCore.rotation.y += dt * 1.65;
+        this.skiffChronosCore.rotation.z = Math.sin(this.simElapsed * 2.8) * 0.14;
+      }
+      if (this.activePilot) {
+        animateExplorerPilot3D(
+          this.activePilot,
+          this.simElapsed,
+          speedNorm,
+          steer,
+          isSkiff
+        );
+      }
+      if (this.astroToadMascot) {
+        this.astroToadMascot.position.y = 1.88 + Math.sin(this.simElapsed * 3.6) * 0.06;
+        this.astroToadMascot.rotation.y = Math.sin(this.simElapsed * 1.9) * 0.18;
+      }
     }
 
     this.audio?.updateRigHum?.(speedNorm, this.rigState.rigId, this.isBulletTimeActive());
@@ -2010,7 +2650,7 @@ export class BastionWorld3D {
       this.moonTotem.rotation.y += skyDt * 0.9;
     }
     if (this.guardianHalo) {
-      this.guardianHalo.rotation.z += skyDt * 0.7;
+      this.guardianHalo.rotation.z += (skyDt > 0 ? skyDt : dt * 0.2) * 0.7;
     }
     if (this.guardianAwakeTimer > 0) {
       this.guardianAwakeTimer = Math.max(0, this.guardianAwakeTimer - dt);
@@ -2024,7 +2664,29 @@ export class BastionWorld3D {
       const u = 1 - this.whaleTimer / 11.0;
       this.skyWhale.position.set(-48 + u * 96, 24 + Math.sin(u * Math.PI) * 10, -34);
       this.skyWhale.rotation.y = Math.PI / 2;
+      if (this.skyWhaleFins) {
+        const flap = Math.sin(this.simElapsed * 3.2) * 0.26;
+        if (this.skyWhaleFins.leftFin) this.skyWhaleFins.leftFin.rotation.z = 0.2 + flap;
+        if (this.skyWhaleFins.rightFin) this.skyWhaleFins.rightFin.rotation.z = -0.2 - flap;
+        if (this.skyWhaleFins.tailFluke) {
+          this.skyWhaleFins.tailFluke.rotation.x = Math.sin(this.simElapsed * 2.6) * 0.22;
+        }
+      }
       if (this.whaleTimer <= 0) this.skyWhale.visible = false;
+    }
+    if (this.spiritFoxTimer > 0 && this.spiritFox) {
+      this.spiritFoxTimer = Math.max(0, this.spiritFoxTimer - dt);
+      const foxUd = this.spiritFox.userData || {};
+      if (foxUd.tail) {
+        foxUd.tail.rotation.z = Math.sin(this.simElapsed * 6.2) * 0.32;
+      }
+      if (foxUd.head) {
+        foxUd.head.rotation.x = Math.sin(this.simElapsed * 3.4) * 0.12;
+        foxUd.head.rotation.y = Math.sin(this.simElapsed * 2.1) * 0.18;
+      }
+      if (this.spiritFoxTimer <= 0) {
+        this.spiritFox.visible = false;
+      }
     }
     for (let i = this.laserBeams.length - 1; i >= 0; i--) {
       const b = this.laserBeams[i];

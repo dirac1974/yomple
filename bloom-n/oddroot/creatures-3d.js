@@ -6,6 +6,7 @@
  */
 
 import * as THREE from "../vendor/three.module.min.js";
+import { buildSanctuaryCreature3D } from "../core/character-graphics-3d.js";
 
 export const CREATURE_SPECS = [
   {
@@ -335,12 +336,6 @@ export class SanctuaryMenagerie3D {
 
   _buildCreatureMesh(spec) {
     const grad = this.toonGradientMap || null;
-    const bodyMat = new THREE.MeshToonMaterial({
-      color: spec.colorHex,
-      emissive: spec.emissiveHex,
-      emissiveIntensity: 0.38,
-      gradientMap: grad,
-    });
     const accentMat = new THREE.MeshToonMaterial({
       color: 0xfffae0,
       emissive: spec.colorHex,
@@ -357,68 +352,39 @@ export class SanctuaryMenagerie3D {
     const mesh = new THREE.Group();
     mesh.name = `Creature_${spec.id}`;
 
-    if (spec.id === "zero_g_toad") {
-      const belly = new THREE.Mesh(new THREE.SphereGeometry(0.62, 14, 12), bodyMat);
-      belly.scale.set(1.2, 0.86, 1.15);
-      mesh.add(belly);
-      for (const sx of [-0.34, 0.34]) {
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), accentMat);
-        eye.position.set(sx, 0.42, 0.35);
-        mesh.add(eye);
-        const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.34, 4, 8), bodyMat);
-        leg.position.set(sx * 1.45, -0.25, -0.2);
-        mesh.add(leg);
-      }
-    } else if (spec.id === "crystal_fox") {
-      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.72, 6, 10), bodyMat);
-      torso.rotation.x = Math.PI / 2;
-      mesh.add(torso);
-      const head = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.62, 6), accentMat);
-      head.rotation.x = Math.PI / 2;
-      head.position.set(0, 0.24, 0.62);
-      mesh.add(head);
-      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.85, 6), accentMat);
-      tail.rotation.x = -Math.PI / 3;
-      tail.position.set(0, 0.28, -0.68);
-      mesh.add(tail);
-    } else if (spec.id === "eclipse_stag") {
-      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.95, 6, 10), bodyMat);
-      torso.rotation.x = Math.PI / 2;
-      torso.position.y = 0.55;
-      mesh.add(torso);
-      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 0.78, 8), bodyMat);
-      neck.position.set(0, 1.05, 0.48);
-      mesh.add(neck);
-      const crown = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.06, 8, 20), accentMat);
-      crown.position.set(0, 1.55, 0.52);
-      mesh.add(crown);
-    } else if (spec.id === "starlight_whale") {
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.15, 4.2, 8, 16), bodyMat);
-      body.rotation.x = Math.PI / 2;
-      mesh.add(body);
-      for (const sx of [-1, 1]) {
-        const fin = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.14, 0.85), accentMat);
-        fin.position.set(sx * 1.45, -0.1, 0.5);
-        fin.rotation.z = sx * -0.24;
-        mesh.add(fin);
-      }
+    const sculptedModel = buildSanctuaryCreature3D(spec.id, 1);
+    if (spec.id === "starlight_whale") {
+      sculptedModel.scale.setScalar(0.85);
+    } else if (spec.id === "zero_g_toad") {
+      sculptedModel.rotation.y = Math.PI;
     } else {
-      const pod = new THREE.Mesh(new THREE.DodecahedronGeometry(0.46, 1), bodyMat);
-      mesh.add(pod);
+      sculptedModel.rotation.y = Math.PI / 2;
     }
+    mesh.add(sculptedModel);
 
-    const sproutBud = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), accentMat);
-    sproutBud.position.set(0, 0.72, 0);
+    const crestBaseY =
+      spec.id === "eclipse_stag"
+        ? 2.48
+        : spec.id === "luminous_oddling"
+        ? 1.48
+        : spec.id === "crystal_fox"
+        ? 1.16
+        : spec.id === "starlight_whale"
+        ? 1.55
+        : 0.88;
+
+    const sproutBud = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), accentMat);
+    sproutBud.position.set(0, crestBaseY, 0);
     mesh.add(sproutBud);
 
-    const luminousCrest = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), accentMat);
-    luminousCrest.position.set(0, 0.98, -0.12);
+    const luminousCrest = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), accentMat);
+    luminousCrest.position.set(0, crestBaseY + 0.24, -0.1);
     luminousCrest.visible = false;
     mesh.add(luminousCrest);
 
     const astralHalo = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.07, 8, 24), astralMat);
     astralHalo.rotation.x = Math.PI / 2;
-    astralHalo.position.set(0, 1.18, 0);
+    astralHalo.position.set(0, crestBaseY + 0.42, 0);
     astralHalo.visible = false;
     mesh.add(astralHalo);
 
@@ -427,13 +393,13 @@ export class SanctuaryMenagerie3D {
       transparent: true,
       opacity: 0.0,
     });
-    const sleepBubbleMesh = new THREE.Mesh(new THREE.SphereGeometry(1.15, 14, 12), bubbleMat);
-    sleepBubbleMesh.position.set(0, 0.35, 0);
+    const sleepBubbleMesh = new THREE.Mesh(new THREE.SphereGeometry(1.25, 14, 12), bubbleMat);
+    sleepBubbleMesh.position.set(0, 0.55, 0);
     sleepBubbleMesh.visible = true;
     sleepBubbleMesh.scale.setScalar(0.0001);
     mesh.add(sleepBubbleMesh);
 
-    return { mesh, sproutBud, luminousCrest, astralHalo, sleepBubbleMesh };
+    return { mesh, sculptedModel, sproutBud, luminousCrest, astralHalo, sleepBubbleMesh };
   }
 
   _buildNestsAndCreatures() {
@@ -496,6 +462,7 @@ export class SanctuaryMenagerie3D {
         targetChest: null,
         asleepInBubble: false,
         mesh: built.mesh,
+        sculptedModel: built.sculptedModel,
         sproutBud: built.sproutBud,
         luminousCrest: built.luminousCrest,
         astralHalo: built.astralHalo,
@@ -796,7 +763,16 @@ export class SanctuaryMenagerie3D {
         entry.z = -24.0 + Math.sin(entry.orbitPhase * 2.0) * 14.0;
         entry.y = 19.0 + Math.sin(entry.orbitPhase * 3.0) * 2.2;
         entry.mesh.position.set(entry.x, entry.y, entry.z);
-        entry.mesh.rotation.y = -entry.orbitPhase + Math.PI / 2;
+        const whaleVx = -Math.sin(entry.orbitPhase) * 34.0;
+        const whaleVz = Math.cos(entry.orbitPhase * 2.0) * 28.0;
+        entry.mesh.rotation.y = Math.atan2(whaleVx, whaleVz);
+        const fins = entry.sculptedModel?.userData?.fins;
+        if (fins) {
+          const wave = Math.sin(elapsed * 2.4 + entry.orbitPhase) * 0.2;
+          if (fins.leftFin) fins.leftFin.rotation.z = wave;
+          if (fins.rightFin) fins.rightFin.rotation.z = -wave;
+          if (fins.tailFluke) fins.tailFluke.rotation.x = Math.PI / 2 + wave * 0.65;
+        }
         continue;
       }
 
@@ -817,6 +793,9 @@ export class SanctuaryMenagerie3D {
       entry.y = gy + 0.52 + hop;
       entry.mesh.position.set(entry.x, entry.y, entry.z);
       entry.mesh.rotation.y = -entry.orbitPhase + Math.PI / 2;
+      if (entry.sculptedModel?.userData?.tail) {
+        entry.sculptedModel.userData.tail.rotation.y = Math.sin(elapsed * 4.6 + entry.orbitPhase) * 0.26;
+      }
     }
   }
 }

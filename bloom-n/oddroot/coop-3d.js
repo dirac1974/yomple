@@ -7,6 +7,14 @@
  */
 
 import * as THREE from "../vendor/three.module.min.js";
+import {
+  buildExplorerPilot3D,
+  animateExplorerPilot3D,
+  buildBrambleBoarMount3D,
+  createSplineTubeGeometry,
+  createBeveledWingGeometry,
+  getCustomSurfaceTexture,
+} from "../core/character-graphics-3d.js";
 
 export const SHARED_COIN_IDS = ["coin_0", "coin_1", "coin_2", "coin_3"];
 export const COIN_PICKUP_RADIUS = 2.8;
@@ -308,69 +316,142 @@ export class OddrootCoopManager {
     const grad = this.toonGradientMap || null;
     const upgSet = new Set(Array.isArray(upgrades) ? upgrades : []);
     const group = new THREE.Group();
+    group.name = `PartnerModel_${mountMode}`;
 
-    const cloakMat = new THREE.MeshToonMaterial({
-      color: mountMode === "bramble_boar" ? 0xd98a2b : 0x45d9c6,
-      emissive: mountMode === "bramble_boar" ? 0x6b3f0d : 0x136f63,
-      emissiveIntensity: 0.35,
-      gradientMap: grad,
-    });
     const trimMat = new THREE.MeshToonMaterial({
       color: 0xffd166,
       emissive: 0xf59e0b,
       emissiveIntensity: 0.58,
       gradientMap: grad,
     });
-    const wingMat = new THREE.MeshToonMaterial({
+    const orbMat = new THREE.MeshToonMaterial({
       color: 0x62f5e4,
       emissive: 0x2dd4bf,
-      emissiveIntensity: 0.55,
+      emissiveIntensity: 0.68,
       transparent: true,
-      opacity: 0.88,
+      opacity: 0.92,
       gradientMap: grad,
     });
 
+    const buildCrescentSiphonStaff = () => {
+      const staffGrp = new THREE.Group();
+      staffGrp.name = "PartnerCrescentSiphonStaff";
+      const shaftGeo = createSplineTubeGeometry(
+        [
+          [0, -0.78, 0.04],
+          [0.03, -0.22, -0.02],
+          [-0.03, 0.36, 0.03],
+          [0.02, 0.84, -0.02],
+        ],
+        0.042,
+        18,
+        8
+      );
+      const shaft = new THREE.Mesh(shaftGeo, trimMat);
+      staffGrp.add(shaft);
+
+      const crescent = new THREE.Mesh(
+        new THREE.TorusGeometry(0.24, 0.048, 10, 20, Math.PI * 1.45),
+        trimMat
+      );
+      crescent.position.set(0.02, 1.06, -0.02);
+      crescent.rotation.z = Math.PI * 0.25;
+      staffGrp.add(crescent);
+
+      const coreOrb = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), orbMat);
+      coreOrb.position.set(0.02, 1.06, -0.02);
+      staffGrp.add(coreOrb);
+      return staffGrp;
+    };
+
     if (mountMode === "bramble_boar") {
-      const boarBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.62, 1.1, 6, 12), cloakMat);
-      boarBody.rotation.x = Math.PI / 2;
-      boarBody.position.y = 0.78;
-      group.add(boarBody);
+      const boarMount = buildBrambleBoarMount3D({ withRider: true, scale: 0.95 });
+      group.add(boarMount);
+      group.userData.boarMount = boarMount;
+      group.userData.pilot = boarMount.userData?.rider || null;
+      group.userData.boarLegs = boarMount.userData?.legs || [];
 
-      const tuskSpan = upgSet.has("or_tusk_plow") || upgSet.has("wide_blade") ? 1.05 : 0.68;
-      for (const sx of [-1, 1]) {
-        const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.85, 8), trimMat);
-        tusk.rotation.x = -Math.PI / 3;
-        tusk.position.set(sx * tuskSpan, 0.72, -0.95);
-        group.add(tusk);
+      if (upgSet.has("or_tusk_plow") || upgSet.has("wide_blade")) {
+        const plowCrest = new THREE.Group();
+        plowCrest.name = "or_tusk_plow_crest";
+        const plowArchGeo = createSplineTubeGeometry(
+          [
+            [-0.78, 0.48, -0.92],
+            [-0.42, 0.56, -1.26],
+            [0, 0.64, -1.44],
+            [0.42, 0.56, -1.26],
+            [0.78, 0.48, -0.92],
+          ],
+          0.075,
+          20,
+          8
+        );
+        plowCrest.add(new THREE.Mesh(plowArchGeo, trimMat));
+        group.add(plowCrest);
       }
 
-      const rider = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.55, 6, 10), wingMat);
-      rider.position.set(0, 1.55, 0.08);
-      group.add(rider);
+      if (upgSet.has("or_glide_wings") || upgSet.has("ion_boosters")) {
+        const wingMat = new THREE.MeshToonMaterial({
+          color: 0xa7f3d0,
+          map: getCustomSurfaceTexture("butterfly_wing"),
+          emissive: 0x1e6b62,
+          emissiveIntensity: 0.48,
+          transparent: true,
+          opacity: 0.92,
+          side: THREE.DoubleSide,
+          gradientMap: grad,
+        });
+        const wingContour = [
+          [0.0, 0.0],
+          [0.38, 0.34],
+          [0.88, 0.46],
+          [1.02, 0.28],
+          [0.84, 0.04],
+          [0.46, -0.08],
+        ];
+        const wingGeo = createBeveledWingGeometry(wingContour, 0.024, 0.01);
+        const sideWings = [];
+        for (const sx of [-1, 1]) {
+          const wPivot = new THREE.Group();
+          wPivot.position.set(sx * 0.56, 1.04, -0.06);
+          wPivot.scale.x = sx < 0 ? -1 : 1;
+          const wMesh = new THREE.Mesh(wingGeo, wingMat);
+          wMesh.rotation.set(0.2, sx < 0 ? 0.22 : -0.22, -0.14);
+          wPivot.add(wMesh);
+          group.add(wPivot);
+          sideWings.push({ pivot: wPivot, side: sx });
+        }
+        group.userData.boarSideWings = sideWings;
+      }
+
+      const staff = buildCrescentSiphonStaff();
+      staff.position.set(0.44, 1.48, -0.08);
+      staff.rotation.x = 0.16;
+      group.add(staff);
     } else {
-      const tunic = new THREE.Mesh(new THREE.ConeGeometry(0.54, 1.32, 10), cloakMat);
-      tunic.position.y = 0.92;
-      group.add(tunic);
-
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), trimMat);
-      head.position.y = 1.78;
-      group.add(head);
-
-      const wingSpan = upgSet.has("or_glide_wings") || upgSet.has("ion_boosters") ? 1.45 : 1.02;
-      for (const sx of [-1, 1]) {
-        const wing = new THREE.Mesh(new THREE.BoxGeometry(wingSpan, 0.08, 0.72), wingMat);
-        wing.position.set(sx * (0.45 + wingSpan * 0.42), 1.28, 0.22);
-        wing.rotation.z = sx * 0.22;
-        group.add(wing);
+      const pilot = buildExplorerPilot3D({
+        role: "alchemist",
+        includeWings: true,
+        seated: false,
+        scale: 1.05,
+      });
+      const refs = pilot.userData?.animRefs;
+      if (
+        (upgSet.has("or_glide_wings") || upgSet.has("ion_boosters")) &&
+        refs?.leftWing &&
+        refs?.rightWing
+      ) {
+        refs.leftWing.scale.set(-1.32, 1.28, 1.2);
+        refs.rightWing.scale.set(1.32, 1.28, 1.2);
       }
-    }
+      group.add(pilot);
+      group.userData.pilot = pilot;
 
-    const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.85, 8), trimMat);
-    staff.position.set(0.55, 1.25, -0.25);
-    group.add(staff);
-    const crescent = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.05, 8, 18, Math.PI * 1.4), wingMat);
-    crescent.position.set(0.55, 2.22, -0.25);
-    group.add(crescent);
+      const staff = buildCrescentSiphonStaff();
+      staff.position.set(0.46, 1.02, -0.18);
+      staff.rotation.z = -0.08;
+      group.add(staff);
+    }
 
     return group;
   }
@@ -558,6 +639,7 @@ export class OddrootCoopManager {
     if (!root || typeof root.traverse !== "function") return;
     root.traverse((obj) => {
       try {
+        const isBadgeSprite = Boolean(obj.isSprite || obj.name === "PartnerNameBadge");
         const geoProp = obj["geom" + "etry"];
         if (geoProp && typeof geoProp.dispose === "function") {
           geoProp.dispose();
@@ -565,7 +647,9 @@ export class OddrootCoopManager {
         if (obj.material) {
           const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
           for (const m of mats) {
-            if (m && m.map && typeof m.map.dispose === "function") m.map.dispose();
+            if (isBadgeSprite && m && m.map && typeof m.map.dispose === "function") {
+              m.map.dispose();
+            }
             if (m && typeof m.dispose === "function") m.dispose();
           }
         }
@@ -721,6 +805,30 @@ export class OddrootCoopManager {
 
       partner.rootGroup.position.set(partner.currentX, partner.currentY, partner.currentZ);
       partner.rootGroup.rotation.y = partner.currentHeading;
+
+      const ud = partner.modelGroup?.userData || null;
+      if (ud) {
+        const speedNorm = Math.min(1, Math.max(0, Math.abs(partner.speed || 0) / 8.5));
+        const steerDelta = wrapAngleDelta(partner.currentHeading, partner.targetHeading);
+        const steerNorm = Math.max(-1, Math.min(1, steerDelta * 2.5));
+        const isAirborne =
+          partner.currentY > this.sampleGroundY(partner.currentX, partner.currentZ) + 0.9;
+        if (ud.pilot) {
+          animateExplorerPilot3D(ud.pilot, elapsed, speedNorm, steerNorm, isAirborne);
+        }
+        if (Array.isArray(ud.boarLegs)) {
+          for (let li = 0; li < ud.boarLegs.length; li++) {
+            ud.boarLegs[li].rotation.x =
+              Math.sin(elapsed * 9.5 + (li % 2 === 0 ? 0 : Math.PI)) * 0.42 * speedNorm;
+          }
+        }
+        if (Array.isArray(ud.boarSideWings)) {
+          for (const sw of ud.boarSideWings) {
+            sw.pivot.rotation.z =
+              sw.side * (0.08 + Math.sin(elapsed * 5.2) * (0.14 + speedNorm * 0.16));
+          }
+        }
+      }
 
       if (partner.thinkingHaloGroup.visible) {
         partner.thinkingHaloGroup.rotation.y += dt * 2.2;

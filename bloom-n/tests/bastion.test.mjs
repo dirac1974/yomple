@@ -919,3 +919,115 @@ test("30. Field Expeditions (EXPEDITION_CATALOG.arc_bastion) & portable getRoblo
   assert.ok(snap.opposition.length >= 10);
   world.dispose();
 });
+
+test("31. Custom 3D Character Pilots, Sculpted Rigs, Guardian Colossus, Sky-Whale, Spirit Fox & Astro-Toad Mascot", () => {
+  const { world } = createHeadlessBastionWorld();
+
+  // 1. Iron Ballista 6x6 Crawler + Heroic Standing Goggled Siegesmith Pilot
+  assert.equal(world.rigGroup.name, "bastion_rover_iron_ballista");
+  assert.equal(world.wheels.length, 6, "Expected 6 spoked wheels on Iron Ballista");
+  const siegesmithPilot = world.rigGroup.getObjectByName("custom_character_siegesmith");
+  assert.ok(siegesmithPilot, "Expected custom_character_siegesmith pilot standing on Iron Ballista");
+
+  world.setDriveInputs(0.6, 1.0, true);
+  world.step(0.25);
+  assert.ok(
+    Math.abs(world.wheels[0].mesh.rotation.x) > 0.01,
+    "Iron Ballista 6x6 wheels must spin with velocity"
+  );
+  assert.ok(
+    Math.abs(siegesmithPilot.userData.animRefs.headPivot.rotation.y) > 0.01,
+    "Siegesmith pilot must animate with steering and motion"
+  );
+
+  // 2. Prism Rail Skiff Twin-Prong Hover-Skiff + Seated Chrono-Tactician Pilot + Chronos Core + Holo Slate
+  world.setRigMode("prism_rail_skiff");
+  assert.equal(world.rigGroup.name, "bastion_rover_prism_rail_skiff");
+  const tacticianPilot = world.rigGroup.getObjectByName("custom_character_chrono_tactician");
+  assert.ok(tacticianPilot, "Expected custom_character_chrono_tactician seated in Prism Rail Skiff");
+  assert.ok(world.rigGroup.getObjectByName("skiff_hourglass_chronos_core"));
+  assert.ok(world.rigGroup.getObjectByName("skiff_holo_hud_slate"));
+  world.step(0.2);
+  assert.ok(
+    Math.abs(tacticianPilot.userData.animRefs.headPivot.rotation.y) > 0.01,
+    "Chrono-Tactician pilot must animate with steering and motion"
+  );
+
+  // 3. Cross-Realm Zero-G Astro-Toad Mascot + extra ab_* upgrade invariants
+  const prog = createInitialProgress("sarah");
+  prog.records.deepestSubZero = -60;
+  const unlocks = getCrossRealmUnlocks(prog);
+  world.rebuildRig(
+    "iron_ballista",
+    ["ab_repulsor_prow", "ab_prism_pierce", "ab_cryo_mortar", "ab_chronos_lens", "ab_angle_mirrors", "ab_sky_grapnel"],
+    unlocks,
+    { active: true, owner: "david", displayName: "David" }
+  );
+  const astroToad = world.rigGroup.getObjectByName("astro_toad_mascot");
+  assert.ok(astroToad, "Expected sculpted astro_toad_mascot when cross-realm unlocked");
+  assert.ok(Math.abs(astroToad.scale.x - 0.38) < 0.02);
+  for (const upId of [
+    "ab_repulsor_prow",
+    "ab_prism_pierce",
+    "ab_cryo_mortar",
+    "ab_chronos_lens",
+    "ab_angle_mirrors",
+    "ab_sky_grapnel",
+  ]) {
+    assert.ok(world.rigGroup.getObjectByName(`upgrade_${upId}`), `Expected upgrade_${upId}`);
+  }
+
+  // 4. Sculpted Citadel Guardian Colossus + rotating Astrolabe Halo + Sky-Whale + Spirit Fox warm_reveal
+  const sculptedGuardian = world.scene.getObjectByName("sculpted_guardian_arc_bastion");
+  assert.ok(sculptedGuardian, "Expected sculpted_guardian_arc_bastion in scene graph");
+  const haloRot0 = world.guardianHalo.rotation.z;
+  world.step(0.4);
+  assert.ok(
+    Math.abs(world.guardianHalo.rotation.z - haloRot0) > 0.01,
+    "Guardian golden Astrolabe Halo must rotate gently"
+  );
+  assert.ok(world.scene.getObjectByName("custom_sky_whale_arc_bastion"));
+
+  const enc = generateEncounter("W1.1");
+  world.populateEncounters([enc]);
+  world.playCommitVisual({ outcome: "warm_reveal", overdrive: false }, enc);
+  const spiritFox = world.scene.getObjectByName("custom_spirit_fox");
+  assert.ok(spiritFox && spiritFox.visible, "Spirit Fox 3D companion should appear on warm_reveal");
+
+  world.dispose();
+});
+
+test("32. Sculpted Clockwork Striders, Gear-Hounds, Hover-Zeppelins, Co-Op Partner Pilots & Ghost Silhouettes", () => {
+  const { world } = createHeadlessBastionWorld();
+
+  // Clockwork Striders, Gear-Hounds & Hover-Zeppelins
+  assert.ok(world.opposition.walkers.length >= 6);
+  assert.ok(world.opposition.walkers[0].group.getObjectByName("walker_monocle_eye"));
+  assert.ok(world.opposition.walkers[0].group.getObjectByName("walker_dorsal_gear"));
+  assert.ok(world.opposition.gearHounds.length >= 4, "Expected playful mechanical Gear-Hounds");
+  assert.ok(world.opposition.gearHounds[0].group.getObjectByName("gear_hound_head"));
+  assert.ok(world.opposition.gearHounds[0].group.getObjectByName("gear_hound_tail"));
+  assert.equal(world.opposition.blimps[0].group.name, "hover_zeppelin_mesh");
+  assert.ok(world.opposition.blimps[0].group.getObjectByName("zeppelin_rear_propeller"));
+
+  const kinds = new Set(world.opposition.getSnapshots().map((s) => s.kind));
+  assert.ok(kinds.has("gear_hound"));
+
+  // Co-Op Partner Rover Pilots (both Siegesmith and Chrono-Tactician)
+  world.syncRemotePartners([
+    { peerId: "p_ballista", displayName: "Ava", chassisOrMount: "iron_ballista", x: -6, z: 12 },
+    { peerId: "p_skiff", displayName: "Leo", chassisOrMount: "prism_rail_skiff", x: 6, z: 12 },
+  ]);
+  const pBallista = world.coop.remotePartners.get("p_ballista");
+  const pSkiff = world.coop.remotePartners.get("p_skiff");
+  assert.ok(pBallista.group.getObjectByName("custom_character_siegesmith"));
+  assert.ok(pSkiff.group.getObjectByName("custom_character_chrono_tactician"));
+
+  // Ghost-Rover sculpted silhouettes + pilot hologram
+  assert.ok(world.ghostController.mesh.getObjectByName("ghost_pilot_silhouette"));
+  world.ghostController.setRigAppearance("prism_rail_skiff");
+  assert.ok(world.ghostController.mesh.getObjectByName("ghost_pilot_silhouette"));
+
+  world.dispose();
+});
+

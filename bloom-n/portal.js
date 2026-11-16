@@ -55,6 +55,13 @@ import { OddrootAudio } from "./oddroot/audio.js";
 import { OddrootWorld3D, getSanctuaryJournalEntries } from "./oddroot/oddroot-3d.js";
 import { BastionAudio } from "./bastion/audio.js";
 import { BastionWorld3D } from "./bastion/bastion-3d.js";
+import { CHARACTER_PORTRAIT_PATHS } from "./core/character-graphics-3d.js";
+
+function charImgHtml(key, cls = "char-chip-avatar") {
+  const src = CHARACTER_PORTRAIT_PATHS[key];
+  if (!src) return "";
+  return `<img class="${cls}" src="${src}" alt="" loading="lazy" />`;
+}
 
 const store = loadStore();
 const session = createSessionState();
@@ -541,7 +548,7 @@ function updateAllShardAndZoneDisplays() {
   const mountSpec = ODDROOT_MOUNTS.find((m) => m.id === eqMount) || ODDROOT_MOUNTS[0];
   const mountBtn = $("oddroot-mount-btn");
   if (mountBtn) {
-    mountBtn.textContent = `${mountSpec.icon} ${mountSpec.name}`;
+    mountBtn.innerHTML = `${charImgHtml(mountSpec.id, "char-hud-avatar")}<span>${mountSpec.name}</span>`;
     mountBtn.classList.toggle("is-boar", mountSpec.id === "bramble_boar");
     mountBtn.classList.toggle("is-glider", mountSpec.id === "starlight_glider");
   }
@@ -550,7 +557,7 @@ function updateAllShardAndZoneDisplays() {
   const bastionSpec = BASTION_RIGS.find((r) => r.id === eqBastionRig) || BASTION_RIGS[0];
   const abRigBtn = $("ab-rig-btn");
   if (abRigBtn) {
-    abRigBtn.textContent = `${bastionSpec.icon} ${bastionSpec.name}`;
+    abRigBtn.innerHTML = `${charImgHtml(bastionSpec.id, "char-hud-avatar")}<span>${bastionSpec.name}</span>`;
     abRigBtn.classList.toggle("is-ballista", bastionSpec.id === "iron_ballista");
     abRigBtn.classList.toggle("is-skiff", bastionSpec.id === "prism_rail_skiff");
   }
@@ -620,7 +627,7 @@ function renderPortal() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = `rig-chip${prog.equippedChassis === ch.id ? " selected" : ""}`;
-    btn.textContent = `${ch.icon} ${ch.name}`;
+    btn.innerHTML = `${charImgHtml(ch.id, "char-chip-avatar")}<span>${ch.name}</span>`;
     btn.onclick = () => {
       frostwakeAudio.playDetentClick(12);
       prog.equippedChassis = ch.id;
@@ -644,7 +651,7 @@ function renderPortal() {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `rig-chip${curMount === m.id ? " selected" : ""}`;
-      btn.textContent = `${m.icon} ${m.name}`;
+      btn.innerHTML = `${charImgHtml(m.id, "char-chip-avatar")}<span>${m.name}</span>`;
       btn.onclick = () => {
         oddrootAudio.playDetentClick?.(14);
         prog.games = prog.games || {};
@@ -670,7 +677,7 @@ function renderPortal() {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `rig-chip${curRig === r.id ? " selected" : ""}`;
-      btn.textContent = `${r.icon} ${r.name}`;
+      btn.innerHTML = `${charImgHtml(r.id, "char-chip-avatar")}<span>${r.name}</span>`;
       btn.onclick = () => {
         bastionAudio.playDetentClick?.(14);
         prog.games = prog.games || {};
@@ -1365,7 +1372,7 @@ function renderTrickHoloProjector(enc) {
   card.style.display = "block";
   card.innerHTML = `
     <div class="trick-holo-title">
-      <span>🦊 ${spec.title}</span>
+      <span style="display:inline-flex;align-items:center;gap:6px">${charImgHtml("crystal_fox", "char-trick-fox")}<span>${spec.title}</span></span>
       <span style="color:var(--turquoise);font-size:0.74rem">${spec.foxWhisper || ""}</span>
     </div>
     <div class="trick-beats-grid">
@@ -1677,7 +1684,7 @@ function openGarageModal() {
     const b = document.createElement("button");
     b.type = "button";
     b.className = `rig-chip${prog.equippedChassis === ch.id ? " selected" : ""}`;
-    b.textContent = `${ch.icon} ${ch.name} (${ch.tag})`;
+    b.innerHTML = `${charImgHtml(ch.id, "char-garage-avatar")}<span>${ch.name} (${ch.tag})</span>`;
     b.onclick = () => {
       prog.equippedChassis = ch.id;
       if (prog.games?.frostwake) prog.games.frostwake.equippedChassis = ch.id;
@@ -1700,7 +1707,7 @@ function openGarageModal() {
       const b = document.createElement("button");
       b.type = "button";
       b.className = `rig-chip${curMount === m.id ? " selected" : ""}`;
-      b.textContent = `${m.icon} ${m.name} (${m.tag})`;
+      b.innerHTML = `${charImgHtml(m.id, "char-garage-avatar")}<span>${m.name} (${m.tag})</span>`;
       b.onclick = () => {
         prog.games.oddroot.equippedMount = m.id;
         activeBorrowedToy = null;
@@ -1723,7 +1730,7 @@ function openGarageModal() {
       const b = document.createElement("button");
       b.type = "button";
       b.className = `rig-chip${curRig === r.id ? " selected" : ""}`;
-      b.textContent = `${r.icon} ${r.name} (${r.tag})`;
+      b.innerHTML = `${charImgHtml(r.id, "char-garage-avatar")}<span>${r.name} (${r.tag})</span>`;
       b.onclick = () => {
         prog.games = prog.games || {};
         prog.games.arc_bastion = prog.games.arc_bastion || {};
@@ -1903,13 +1910,19 @@ function openJournalModal() {
               `<span class="creature-evo-pip${b.unlocked ? " unlocked" : ""}" title="${b.name}"></span>`
           )
           .join("");
+        const portraitSrc = CHARACTER_PORTRAIT_PATHS[c.id] || CHARACTER_PORTRAIT_PATHS.crystal_fox;
         return `
           <article class="creature-card ${c.hatched ? "hatched" : "unhatched"}">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <strong style="font-size:1rem">${c.icon} ${c.name}</strong>
-              <div class="creature-evo-pips">${pipsHtml}</div>
+            <div class="creature-card-head">
+              <img class="char-journal-portrait${c.hatched ? "" : " silhouette"}" src="${portraitSrc}" alt="" loading="lazy" />
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                  <strong style="font-size:0.96rem">${c.name}</strong>
+                  <div class="creature-evo-pips">${pipsHtml}</div>
+                </div>
+                <span class="creature-stage-pill ${stageClass}" style="margin-top:5px;display:inline-block">${c.stageLabel} · ${c.habitat}</span>
+              </div>
             </div>
-            <span class="creature-stage-pill ${stageClass}">${c.stageLabel} · ${c.habitat}</span>
             <p class="creature-whisper">${c.whisper}</p>
           </article>
         `;

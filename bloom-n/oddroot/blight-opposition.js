@@ -6,6 +6,11 @@
  */
 
 import * as THREE from "../vendor/three.module.min.js";
+import {
+  createSlimeDropletGeometry,
+  getCharacterFaceTexture,
+  createSplineTubeGeometry,
+} from "../core/character-graphics-3d.js";
 
 export const BASE_SIPHON_RADIUS = 3.2;
 export const WIDE_SIPHON_MULTIPLIER = 3.0;
@@ -78,20 +83,39 @@ export class BlightOppositionSystem {
       emissiveIntensity: 0.7,
       gradientMap: grad,
     });
+    const wispFaceTex = getCharacterFaceTexture("wisp_gloom");
     this.sporePlusMat = new THREE.MeshToonMaterial({
-      color: 0x9b7bf7,
+      map: wispFaceTex,
+      color: 0xd8b4fe,
       emissive: 0xfbbf24,
-      emissiveIntensity: 0.42,
+      emissiveIntensity: 0.36,
       transparent: true,
-      opacity: 0.84,
+      opacity: 0.9,
       gradientMap: grad,
     });
     this.sporeMinusMat = new THREE.MeshToonMaterial({
-      color: 0x7c6cf2,
+      map: wispFaceTex,
+      color: 0xc4b5fd,
       emissive: 0x38bdf8,
-      emissiveIntensity: 0.42,
+      emissiveIntensity: 0.36,
       transparent: true,
-      opacity: 0.84,
+      opacity: 0.9,
+      gradientMap: grad,
+    });
+    this.sporePlusTendrilMat = new THREE.MeshToonMaterial({
+      color: 0xfde68a,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 0.58,
+      transparent: true,
+      opacity: 0.86,
+      gradientMap: grad,
+    });
+    this.sporeMinusTendrilMat = new THREE.MeshToonMaterial({
+      color: 0x7dd3fc,
+      emissive: 0x0ea5e9,
+      emissiveIntensity: 0.58,
+      transparent: true,
+      opacity: 0.86,
       gradientMap: grad,
     });
     this.chasmRimMat = new THREE.MeshToonMaterial({
@@ -111,7 +135,40 @@ export class BlightOppositionSystem {
     this.thornSpikeGeo = new THREE.ConeGeometry(0.18, 0.75, 6);
     this.flowerPetalGeo = new THREE.OctahedronGeometry(0.26, 0);
     this.flowerCoreGeo = new THREE.DodecahedronGeometry(0.22, 0);
-    this.sporeGeo = new THREE.DodecahedronGeometry(0.48, 1);
+    this.sporeGeo = createSlimeDropletGeometry(0.52);
+    this.sporeRimGeo = new THREE.TorusGeometry(0.52, 0.042, 8, 18);
+    this.sporeTendrilGeos = [
+      createSplineTubeGeometry(
+        [
+          [-0.18, 0.04, 0.0],
+          [-0.24, -0.26, 0.08],
+          [-0.14, -0.54, -0.05],
+        ],
+        0.032,
+        10,
+        6
+      ),
+      createSplineTubeGeometry(
+        [
+          [0.0, 0.04, -0.18],
+          [0.05, -0.28, -0.25],
+          [-0.04, -0.58, -0.16],
+        ],
+        0.034,
+        10,
+        6
+      ),
+      createSplineTubeGeometry(
+        [
+          [0.18, 0.04, 0.06],
+          [0.25, -0.24, 0.14],
+          [0.15, -0.52, 0.04],
+        ],
+        0.032,
+        10,
+        6
+      ),
+    ];
     this.fissureRingGeo = new THREE.TorusGeometry(2.1, 0.28, 8, 24);
     this.waveRingGeo = new THREE.RingGeometry(0.84, 1.0, 40);
   }
@@ -227,12 +284,28 @@ export class BlightOppositionSystem {
         const bobPhase = idx * 0.85;
         const sy = baseY + Math.sin(bobPhase) * 0.22;
         const polarity = idx % 2 === 0 ? "+" : "-";
+        const tendrilMat =
+          polarity === "+" ? this.sporePlusTendrilMat : this.sporeMinusTendrilMat;
 
         const mesh = new THREE.Mesh(
           this.sporeGeo,
           polarity === "+" ? this.sporePlusMat : this.sporeMinusMat
         );
+        mesh.name = `GloomSporeWisp_${idx}`;
+
+        const collarRim = new THREE.Mesh(this.sporeRimGeo, tendrilMat);
+        collarRim.rotation.x = Math.PI / 2;
+        collarRim.position.y = -0.14;
+        mesh.add(collarRim);
+
+        for (const tGeo of this.sporeTendrilGeos) {
+          const tendril = new THREE.Mesh(tGeo, tendrilMat);
+          tendril.position.y = -0.1;
+          mesh.add(tendril);
+        }
+
         mesh.position.set(sx, sy, sz);
+        mesh.rotation.y = Math.atan2(-(lane.targetX - sx), -(lane.targetZ - sz));
         this.rootGroup.add(mesh);
 
         this.gloomSpores.push({
@@ -637,6 +710,11 @@ export class BlightOppositionSystem {
       spore.phase = spore.bobPhase;
       spore.y = spore.baseY + Math.sin(spore.bobPhase) * 0.22;
       spore.mesh.position.set(spore.x, spore.y, spore.z);
+      const bellPulse = Math.sin(spore.bobPhase * 1.35) * 0.055;
+      spore.mesh.scale.set(1 + bellPulse, 1 - bellPulse * 0.6, 1 + bellPulse);
+      if (dist > 0.05) {
+        spore.mesh.rotation.y = Math.atan2(-dx, -dz);
+      }
     }
   }
 

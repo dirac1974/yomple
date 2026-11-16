@@ -368,4 +368,63 @@ describe("Tier 5 Section C — Expanded Biomes, Field Expeditions, 3-Way Cosmeti
       }
     );
   });
+
+  test("T5-CHAR-01: Custom illustrated character portraits decode cleanly & non-primitive sculpted 3D pilots/mounts/guardians render across all 3 realms", async () => {
+    await pool.withPage({ initialUrl: "/bloom-n/" }, async (page) => {
+      await page.waitFor(
+        () => {
+          const imgs = [...document.querySelectorAll(".hero-char-fig, .char-chip-avatar")];
+          return imgs.length >= 12 && imgs.every((img) => img.complete && img.naturalWidth > 0);
+        },
+        { timeoutMs: 4000, label: "All Portal custom character PNG portraits decoded" }
+      );
+
+      // Verify Garage & Sanctuary Journal portraits also decode with naturalWidth > 0
+      const modalPortraits = await page.eval(async () => {
+        document.getElementById("portal-garage-btn")?.click();
+        await new Promise((r) => setTimeout(r, 120));
+        const garageImgs = [...document.querySelectorAll("#modal-garage .char-garage-avatar")];
+        const garageDecoded = garageImgs.length >= 6 && garageImgs.every((i) => i.complete && i.naturalWidth > 0);
+        document.getElementById("modal-garage")?.classList.remove("open");
+
+        document.getElementById("portal-journal-btn")?.click();
+        await new Promise((r) => setTimeout(r, 120));
+        const journalImgs = [...document.querySelectorAll("#journal-grid .char-journal-portrait")];
+        const journalDecoded = journalImgs.length >= 4 && journalImgs.every((i) => i.complete && i.naturalWidth > 0);
+        document.getElementById("modal-journal")?.classList.remove("open");
+
+        return {
+          garageCount: garageImgs.length,
+          garageDecoded,
+          journalCount: journalImgs.length,
+          journalDecoded,
+        };
+      });
+      assert.equal(modalPortraits.garageDecoded, true, "All Garage rig/mount custom portraits must load cleanly");
+      assert.equal(modalPortraits.journalDecoded, true, "All Sanctuary Journal creature portraits must load cleanly");
+
+      // Launch all 3 realms and verify HUD character avatars + zero WebGL/console errors
+      for (const realmId of ["frostwake", "oddroot", "arc_bastion"]) {
+        await launchRealmFromPortal(page, realmId);
+        await new Promise((r) => setTimeout(r, 180));
+        if (realmId === "oddroot") {
+          const ok = await page.eval(() => {
+            const img = document.querySelector("#oddroot-mount-btn .char-hud-avatar");
+            return Boolean(img && img.complete && img.naturalWidth > 0);
+          });
+          assert.equal(ok, true, "Oddroot mount HUD avatar should render decoded PNG");
+        }
+        if (realmId === "arc_bastion") {
+          const ok = await page.eval(() => {
+            const img = document.querySelector("#ab-rig-btn .char-hud-avatar");
+            return Boolean(img && img.complete && img.naturalWidth > 0);
+          });
+          assert.equal(ok, true, "Arc Bastion rig HUD avatar should render decoded PNG");
+        }
+        await exitRealmToPortal(page);
+      }
+
+      page.assertZeroRuntimeErrors("T5-CHAR-01");
+    });
+  });
 });

@@ -33,6 +33,18 @@ import {
   stepFieldExpedition,
   exportRobloxSimSnapshot,
 } from "../core/world-sim.js";
+import {
+  getCustomSurfaceTexture,
+  createLatheProfileGeometry,
+  createBeveledWingGeometry,
+  createSplineTubeGeometry,
+  buildExplorerPilot3D,
+  animateExplorerPilot3D,
+  buildSpiritFox3D,
+  buildSkyWhale3D,
+  buildSanctuaryCreature3D,
+  buildGuardianColossus3D,
+} from "../core/character-graphics-3d.js";
 
 export const VALLEY_SIZE = 184;
 export const VALLEY_HALF = VALLEY_SIZE / 2;
@@ -195,6 +207,10 @@ export class FrostwakeWorld3D {
     this.guardianAwakeningCount = 0;
 
     this.rigAnim = null;
+    this.driveInput = { steer: 0, throttle: 0, boosting: false };
+    this.pilotCharacter = null;
+    this.rigWheels = [];
+    this.wheels = this.rigWheels;
     this.laserBeams = [];
     this.wokenFoxes = [];
     this.gateSlots = [];
@@ -984,13 +1000,21 @@ export class FrostwakeWorld3D {
       roughness: 0.45,
       metalness: 0.25,
     });
-    const armorMat = new THREE.MeshToonMaterial({
-      color: 0x2b5d8c,
-      gradientMap: this.toonRamp,
-    });
 
-    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(5.6, 7.0, 2.8, 8), stoneMat);
-    pedestal.position.y = 1.4;
+    const pedestal = new THREE.Mesh(
+      createLatheProfileGeometry(
+        [
+          [0.2, 0.0],
+          [7.1, 0.05],
+          [6.5, 1.2],
+          [5.9, 2.5],
+          [5.6, 2.8],
+          [0.2, 2.82],
+        ],
+        16
+      ),
+      stoneMat
+    );
     const baseRingGeo = new THREE.RingGeometry(6.5, 7.4, 36);
     baseRingGeo.rotateX(-Math.PI / 2);
     const baseRing = new THREE.Mesh(
@@ -1000,49 +1024,71 @@ export class FrostwakeWorld3D {
     baseRing.position.y = 0.55;
     g.add(pedestal, baseRing);
 
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 2.2, 6.8, 6), armorMat);
-    torso.position.y = 6.2;
-    g.add(torso);
-
-    for (const sx of [-3.8, 3.8]) {
-      const pauldron = new THREE.Mesh(new THREE.DodecahedronGeometry(2.05, 0), armorMat);
-      pauldron.position.set(sx, 8.6, 0);
-      g.add(pauldron);
-    }
+    const colossus = buildGuardianColossus3D({ realm: "frostwake" });
+    colossus.position.y = 2.55;
+    colossus.scale.setScalar(1.38);
 
     this.guardianArms = [];
-    for (const sx of [-4.7, 4.7]) {
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 4.2, 1.4), armorMat);
-      arm.position.set(sx, 5.4, 0.5);
-      g.add(arm);
-      this.guardianArms.push(arm);
+    for (const child of colossus.children) {
+      if (child.isMesh && child.position.y > 7.4 && child.position.y < 8.4) {
+        // Orient painted guardian_ice luminous eyes toward +Z facing Frostwake Valley
+        child.rotation.y = -Math.PI * 0.5;
+      } else if (
+        child.isMesh &&
+        Math.abs(child.position.x) > 2.1 &&
+        child.position.y > 3.8 &&
+        child.position.y < 4.9
+      ) {
+        child.userData.baseY = child.position.y;
+        this.guardianArms.push(child);
+      }
     }
 
-    const helm = new THREE.Mesh(new THREE.OctahedronGeometry(1.95, 0), armorMat);
-    helm.position.y = 11.4;
     this.guardianVisorMat = new THREE.MeshBasicMaterial({ color: 0x45f0df });
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.28, 0.45), this.guardianVisorMat);
-    visor.position.set(0, 11.5, 1.55);
-    g.add(helm, visor);
+    const browCrest = new THREE.Mesh(
+      createBeveledWingGeometry(
+        [
+          [-0.82, 0.0],
+          [0.0, 0.34],
+          [0.82, 0.0],
+          [0.48, -0.14],
+          [0.0, 0.06],
+          [-0.48, -0.14],
+        ],
+        0.12,
+        0.03
+      ),
+      this.guardianVisorMat
+    );
+    browCrest.position.set(0, 8.38, 0.86);
+    colossus.add(browCrest);
 
-    for (const cx of [-0.9, 0, 0.9]) {
-      const spire = new THREE.Mesh(
-        new THREE.ConeGeometry(0.42, cx === 0 ? 2.8 : 2.1, 4),
-        new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xf4a62a, emissiveIntensity: 0.7 })
-      );
-      spire.position.set(cx, 13.4, 0);
-      g.add(spire);
-    }
+    g.add(colossus);
+    this.guardianColossusMesh = colossus;
 
     this.guardianRunes = [];
-    for (const rx of [-1.8, -0.6, 0.6, 1.8]) {
+    if (colossus.userData?.core) {
+      this.guardianRunes.push(colossus.userData.core);
+    }
+    const runeShardShape = createBeveledWingGeometry(
+      [
+        [0, 0.56],
+        [0.36, 0],
+        [0, -0.56],
+        [-0.36, 0],
+      ],
+      0.16,
+      0.04
+    );
+    for (const rx of [-2.1, -0.85, 0.85, 2.1]) {
       const rMat = new THREE.MeshStandardMaterial({
         color: 0x45f0df,
         emissive: 0x2ec4b6,
-        emissiveIntensity: 0.85,
+        emissiveIntensity: 0.88,
+        roughness: 0.14,
       });
-      const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.58, 0), rMat);
-      rune.position.set(rx, 6.8, 2.75);
+      const rune = new THREE.Mesh(runeShardShape, rMat);
+      rune.position.set(rx, 9.5, 2.95);
       g.add(rune);
       this.guardianRunes.push(rune);
     }
@@ -1797,26 +1843,7 @@ export class FrostwakeWorld3D {
   }
 
   _buildSkyWhale() {
-    const g = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x62f5e4,
-      emissive: 0x2dd4bf,
-      emissiveIntensity: 0.85,
-      transparent: true,
-      opacity: 0.78,
-      roughness: 0.2,
-    });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(2.6, 9.5, 8, 16), mat);
-    body.rotation.x = Math.PI / 2;
-    const finL = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.28, 2.2), mat);
-    finL.position.set(-3.6, -0.3, 1.2);
-    finL.rotation.z = 0.28;
-    const finR = finL.clone();
-    finR.position.x = 3.6;
-    finR.rotation.z = -0.28;
-    const fluke = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.25, 1.8), mat);
-    fluke.position.set(0, 0.3, -6.4);
-    g.add(body, finL, finR, fluke);
+    const g = buildSkyWhale3D({ theme: "frostwake", scale: 1.35 });
     g.visible = false;
     this.skyWhale = g;
     this.scene.add(g);
@@ -2054,18 +2081,39 @@ export class FrostwakeWorld3D {
       emissiveIntensity: 0.85,
     });
 
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.26, 10), goldMat);
-    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.52, 10), goldMat);
+    const base = new THREE.Mesh(
+      createLatheProfileGeometry(
+        [
+          [0.05, 0.0],
+          [0.42, 0.02],
+          [0.36, 0.24],
+          [0.12, 0.28],
+        ],
+        12
+      ),
+      goldMat
+    );
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.52, 12), goldMat);
     drum.rotation.z = Math.PI / 2;
-    drum.position.y = 0.24;
-    const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.55, 8), cyanMat);
-    spear.rotation.x = Math.PI / 2;
-    spear.position.set(0, 0.32, -0.45);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.46, 5), goldMat);
-    tip.rotation.x = -Math.PI / 2;
-    tip.position.set(0, 0.32, -1.28);
+    drum.position.y = 0.26;
+    const spear = new THREE.Mesh(
+      createLatheProfileGeometry(
+        [
+          [0.05, -0.75],
+          [0.065, 0.55],
+          [0.17, 0.58],
+          [0.01, 1.02],
+        ],
+        10
+      ),
+      cyanMat
+    );
+    spear.rotation.x = -Math.PI / 2;
+    spear.position.set(0, 0.32, -0.42);
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.032, 8, 14), goldMat);
+    collar.position.set(0, 0.32, -0.96);
 
-    turret.add(base, drum, spear, tip);
+    turret.add(base, drum, spear, collar);
     return turret;
   }
 
@@ -2097,19 +2145,36 @@ export class FrostwakeWorld3D {
     const g = new THREE.Group();
     g.rotation.order = "YXZ";
     this.rigWheels = [];
+    this.wheels = this.rigWheels;
+    this.pilotCharacter = null;
     this.sledPlasmaCones = [];
     this.rigThrusterCones = [];
 
-    const primaryColor = hasCrown ? 0xffd86b : spec.primaryHex;
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: primaryColor,
+    const hullSurfaceMat = new THREE.MeshStandardMaterial({
+      map: getCustomSurfaceTexture("frostwake_hull"),
+      color: hasCrown ? 0xffe48a : 0xffffff,
       roughness: 0.28,
-      metalness: 0.42,
+      metalness: 0.36,
+    });
+    const auroraWingMat = new THREE.MeshStandardMaterial({
+      map: getCustomSurfaceTexture("aurora_wing"),
+      color: hasCrown ? 0xffe896 : 0xbaf7ff,
+      emissive: hasCrown ? 0x92400e : 0x0284c7,
+      emissiveIntensity: 0.34,
+      roughness: 0.2,
+      metalness: 0.28,
+    });
+    const goldenPlowMat = new THREE.MeshStandardMaterial({
+      color: hasCrown ? 0xffe07d : 0xf4a62a,
+      emissive: hasWide ? 0xc2410c : 0x92400e,
+      emissiveIntensity: hasWide ? 0.42 : 0.24,
+      roughness: 0.24,
+      metalness: 0.62,
     });
     const darkMat = new THREE.MeshStandardMaterial({
       color: spec.secondaryHex,
-      roughness: 0.5,
-      metalness: 0.34,
+      roughness: 0.48,
+      metalness: 0.36,
     });
     const chromeMat = new THREE.MeshStandardMaterial({
       color: 0xdbe9f6,
@@ -2117,13 +2182,14 @@ export class FrostwakeWorld3D {
       metalness: 0.82,
     });
     const glassMat = new THREE.MeshStandardMaterial({
-      color: 0x8ef3ff,
-      emissive: 0x1b6b7d,
-      emissiveIntensity: 0.35,
-      roughness: 0.08,
-      metalness: 0.55,
+      color: 0xcffafe,
+      emissive: 0x0e7490,
+      emissiveIntensity: 0.28,
+      roughness: 0.06,
+      metalness: 0.22,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.44,
+      side: THREE.DoubleSide,
     });
     const glowMat = new THREE.MeshStandardMaterial({
       color: spec.glowHex,
@@ -2151,105 +2217,168 @@ export class FrostwakeWorld3D {
     });
 
     if (cleanChassis === "aurora_sled") {
-      // Faceted streamlined hover-fuselage + dorsal energy spine + nose splitter
-      const facetedBodyMat = new THREE.MeshStandardMaterial({
-        color: primaryColor,
-        roughness: 0.22,
-        metalness: 0.48,
-        flatShading: true,
-      });
-      const hull = new THREE.Mesh(new THREE.ConeGeometry(1.24, 4.65, 6), facetedBodyMat);
-      hull.rotation.x = -Math.PI / 2;
-      hull.scale.set(1.08, 1.0, 0.68);
-      hull.position.set(0, 1.02, 0.05);
-      g.add(hull);
+      // Sculpted manta-ray crystal hover-sled fuselage (Lathe profile along -Z)
+      const fuselage = new THREE.Mesh(
+        createLatheProfileGeometry(
+          [
+            [0.02, -2.35],
+            [0.38, -1.85],
+            [0.78, -0.95],
+            [0.96, 0.05],
+            [0.82, 1.08],
+            [0.44, 1.92],
+            [0.05, 2.34],
+          ],
+          22
+        ),
+        auroraWingMat
+      );
+      fuselage.name = "aurora_sled_manta_fuselage";
+      fuselage.rotation.x = -Math.PI / 2;
+      fuselage.scale.set(1.16, 0.62, 1.0);
+      fuselage.position.set(0, 0.92, 0.04);
+      g.add(fuselage);
 
-      const ventralKeel = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.24, 3.65), darkMat);
-      ventralKeel.position.set(0, 0.68, 0.18);
-      const dorsalSpine = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 2.85), glowMat);
-      dorsalSpine.position.set(0, 1.38, 0.55);
-      g.add(ventralKeel, dorsalSpine);
+      // Sculpted dorsal crystal spine + forward manta cephalic prongs
+      const dorsalSpine = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [0, 1.16, 0.72],
+            [0, 1.32, 1.38],
+            [0, 1.14, 2.12],
+          ],
+          0.075,
+          14,
+          8
+        ),
+        glowMat
+      );
+      g.add(dorsalSpine);
 
-      const noseCone = new THREE.Mesh(new THREE.ConeGeometry(0.54, 1.35, 4), chromeMat);
-      noseCone.rotation.x = -Math.PI / 2;
-      noseCone.rotation.z = Math.PI / 4;
-      noseCone.scale.set(1.15, 1.0, 0.55);
-      noseCone.position.set(0, 0.92, -2.35);
-      const noseSplitter = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.08, 0.62), plasmaEdgeMat);
-      noseSplitter.position.set(0, 0.74, -2.18);
-      g.add(noseCone, noseSplitter);
+      const prongShape = createBeveledWingGeometry(
+        [
+          [0.0, 0.0],
+          [0.24, 0.78],
+          [0.06, 0.92],
+          [-0.1, 0.28],
+        ],
+        0.05,
+        0.02
+      );
+      for (const side of [-1, 1]) {
+        const prong = new THREE.Mesh(prongShape, plasmaEdgeMat);
+        prong.rotation.x = -Math.PI / 2;
+        if (side < 0) prong.scale.x = -1;
+        prong.position.set(side * 0.34, 0.84, -1.72);
+        g.add(prong);
+      }
 
-      // Cockpit coaming + pilot silhouette + iridescent crystal bubble canopy
-      const coaming = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.78, 0.22, 12), darkMat);
-      coaming.scale.set(0.94, 1.0, 1.48);
-      coaming.position.set(0, 1.28, 0.24);
+      // Swept manta aurora winglets with painted aurora_wing texture + upturned tip fins
+      const wingSpan = (hasWide ? 4.85 : 3.55) * 0.5;
+      const mantaWingShape = createBeveledWingGeometry(
+        [
+          [0.0, 1.15],
+          [wingSpan * 0.54, 0.68],
+          [wingSpan, -0.45],
+          [wingSpan * 0.8, -1.08],
+          [0.0, -0.66],
+        ],
+        0.065,
+        0.026
+      );
+      const tipFinShape = createBeveledWingGeometry(
+        [
+          [0.0, 0.0],
+          [0.76, -0.18],
+          [0.92, 0.48],
+          [0.28, 0.56],
+        ],
+        0.045,
+        0.018
+      );
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(mantaWingShape, auroraWingMat);
+        wing.name = side < 0 ? "aurora_winglet_left" : "aurora_winglet_right";
+        wing.rotation.x = -Math.PI / 2;
+        if (side < 0) wing.scale.x = -1;
+        wing.position.set(side * 0.54, 0.88, 0.24);
+        wing.rotation.z = side * -0.06;
+        g.add(wing);
+
+        const leadingEdge = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [side * 0.5, 0.94, -0.88],
+              [side * (0.54 + wingSpan * 0.54), 0.9, -0.42],
+              [side * (0.52 + wingSpan * 0.98), 0.82, 0.68],
+            ],
+            0.046,
+            14,
+            8
+          ),
+          glowMat
+        );
+        g.add(leadingEdge);
+
+        const tipFin = new THREE.Mesh(tipFinShape, glowMat);
+        tipFin.rotation.y = Math.PI / 2 + side * -0.18;
+        tipFin.rotation.z = side * -0.24;
+        tipFin.position.set(side * (0.52 + wingSpan * 0.94), 0.88, 0.56);
+        g.add(tipFin);
+      }
+
+      // Open cockpit coaming + crystal windscreen cowling + curved aurora handlebars
+      const coaming = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.085, 10, 22), darkMat);
+      coaming.rotation.x = Math.PI / 2;
+      coaming.scale.set(0.95, 1.38, 1.0);
+      coaming.position.set(0, 1.12, 0.04);
       g.add(coaming);
 
-      const pilotSuitMat = new THREE.MeshStandardMaterial({
-        color: 0x101c2e,
-        roughness: 0.45,
-        metalness: 0.3,
-      });
-      const pilotTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.26, 6, 10), pilotSuitMat);
-      pilotTorso.position.set(0, 1.42, 0.3);
-      pilotTorso.rotation.x = -0.22;
-      const pilotHelm = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), darkMat);
-      pilotHelm.position.set(0, 1.68, 0.22);
-      const pilotVisor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.14), cyanHubMat);
-      pilotVisor.position.set(0, 1.69, 0.08);
-      g.add(pilotTorso, pilotHelm, pilotVisor);
-
-      const canopy = new THREE.Mesh(
-        new THREE.SphereGeometry(0.84, 18, 14),
-        new THREE.MeshStandardMaterial({
-          color: 0xc4f9ff,
-          emissive: 0x3bf0c5,
-          emissiveIntensity: 0.36,
-          roughness: 0.06,
-          metalness: 0.38,
-          transparent: true,
-          opacity: 0.56,
-        })
+      const windscreen = new THREE.Mesh(
+        new THREE.SphereGeometry(0.68, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.48),
+        glassMat
       );
-      canopy.scale.set(0.92, 0.72, 1.5);
-      canopy.position.set(0, 1.5, 0.24);
-      g.add(canopy);
+      windscreen.scale.set(0.96, 0.72, 1.24);
+      windscreen.rotation.x = -0.38;
+      windscreen.position.set(0, 1.18, -0.68);
+      g.add(windscreen);
 
-      // Swept gull-winglet stabilizers with glowing leading-edge trim
-      const halfSpan = (hasWide ? 4.8 : 3.5) * 0.5;
-      for (const side of [-1, 1]) {
-        const innerWing = new THREE.Mesh(
-          new THREE.BoxGeometry(halfSpan * 0.56, 0.12, 1.48),
-          facetedBodyMat
-        );
-        innerWing.position.set(side * halfSpan * 0.36, 0.96, 0.32);
-        innerWing.rotation.z = side * 0.18;
-        innerWing.rotation.y = -side * 0.16;
+      const handlebars = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-0.34, 1.31, -0.18],
+            [-0.18, 1.38, -0.34],
+            [0.0, 1.4, -0.38],
+            [0.18, 1.38, -0.34],
+            [0.34, 1.31, -0.18],
+          ],
+          0.034,
+          14,
+          8
+        ),
+        goldenPlowMat
+      );
+      g.add(handlebars);
 
-        const outerWing = new THREE.Mesh(
-          new THREE.BoxGeometry(halfSpan * 0.58, 0.1, 1.18),
-          darkMat
-        );
-        outerWing.position.set(side * halfSpan * 0.82, 0.98, 0.58);
-        outerWing.rotation.z = -side * 0.12;
-        outerWing.rotation.y = -side * 0.26;
+      const stem = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [0, 1.06, -0.44],
+            [0, 1.38, -0.36],
+          ],
+          0.04,
+          8,
+          8
+        ),
+        chromeMat
+      );
+      g.add(stem);
 
-        const wingTrim = new THREE.Mesh(
-          new THREE.BoxGeometry(halfSpan * 0.96, 0.07, 0.14),
-          glowMat
-        );
-        wingTrim.position.set(side * halfSpan * 0.58, 0.99, -0.22);
-        wingTrim.rotation.y = -side * 0.22;
-
-        const wingletFin = new THREE.Mesh(
-          new THREE.BoxGeometry(0.1, 0.68, 0.96),
-          glowMat
-        );
-        wingletFin.position.set(side * (halfSpan + 0.04), 1.24, 0.78);
-        wingletFin.rotation.z = -side * 0.28;
-
-        g.add(innerWing, outerWing, wingTrim, wingletFin);
-      }
+      // Seated Aurora Rider Pilot in open cockpit with billowing 3D ribbon scarf!
+      const rider = buildExplorerPilot3D({ role: "aurora_rider", seated: true, scale: 0.78 });
+      rider.position.set(0, 0.74, 0.06);
+      g.add(rider);
+      this.pilotCharacter = rider;
 
       // Twin sculpted hover-skids + underneath cyan ground-glow rings
       const groundGlowMat = new THREE.MeshBasicMaterial({
@@ -2263,21 +2392,46 @@ export class FrostwakeWorld3D {
       const groundGlowGeo = new THREE.RingGeometry(0.2, 0.54, 20);
       groundGlowGeo.rotateX(-Math.PI / 2);
 
-      for (const sx of [-1.28, 1.28]) {
-        const pylonF = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.48, 0.28), darkMat);
-        pylonF.position.set(sx * 0.86, 0.6, -0.82);
-        pylonF.rotation.z = sx > 0 ? -0.32 : 0.32;
-        const pylonR = pylonF.clone();
-        pylonR.position.z = 0.92;
-
-        const skidMain = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 3.85), chromeMat);
-        skidMain.position.set(sx, 0.34, 0.05);
-        const skidRail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 3.65), cyanHubMat);
-        skidRail.position.set(sx, 0.44, 0.05);
-        const skidTip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.68), glowMat);
-        skidTip.position.set(sx, 0.45, -2.06);
-        skidTip.rotation.x = 0.36;
-        g.add(pylonF, pylonR, skidMain, skidRail, skidTip);
+      for (const sx of [-1.24, 1.24]) {
+        const skidTube = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx, 0.52, -2.02],
+              [sx, 0.34, -1.35],
+              [sx, 0.34, 1.42],
+              [sx, 0.48, 1.92],
+            ],
+            0.095,
+            16,
+            8
+          ),
+          chromeMat
+        );
+        const pylonF = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 0.72, 0.78, -0.78],
+              [sx, 0.36, -0.82],
+            ],
+            0.055,
+            8,
+            8
+          ),
+          darkMat
+        );
+        const pylonR = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 0.72, 0.78, 0.92],
+              [sx, 0.36, 0.95],
+            ],
+            0.055,
+            8,
+            8
+          ),
+          darkMat
+        );
+        g.add(skidTube, pylonF, pylonR);
 
         for (const gz of [-0.95, 0.98]) {
           const glowPad = new THREE.Mesh(groundGlowGeo, groundGlowMat);
@@ -2286,35 +2440,47 @@ export class FrostwakeWorld3D {
         }
       }
 
-      // Twin rear ion-thruster nacelles with pulsing plasma cones
+      // Twin glowing rear ion thrusters with sculpted lathe pods + pulsing plasma cones
       const plasmaConeMat = new THREE.MeshBasicMaterial({
         color: 0x5ce1e6,
         transparent: true,
-        opacity: 0.78,
+        opacity: 0.82,
         side: THREE.DoubleSide,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
-      for (const sx of [-0.76, 0.76]) {
-        const nacelle = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.27, 0.33, 1.28, 6),
-          darkMat
-        );
+      const nacelleShape = createLatheProfileGeometry(
+        [
+          [0.14, -0.62],
+          [0.31, -0.22],
+          [0.33, 0.28],
+          [0.26, 0.64],
+        ],
+        14
+      );
+      const plasmaPlumeShape = createLatheProfileGeometry(
+        [
+          [0.23, -0.62],
+          [0.15, 0.0],
+          [0.06, 0.42],
+          [0.01, 0.66],
+        ],
+        12
+      );
+      for (const sx of [-0.72, 0.72]) {
+        const nacelle = new THREE.Mesh(nacelleShape, darkMat);
         nacelle.rotation.x = Math.PI / 2;
-        nacelle.position.set(sx, 0.98, 1.66);
+        nacelle.position.set(sx, 0.96, 1.66);
 
         const nozzleRing = new THREE.Mesh(
           new THREE.TorusGeometry(0.26, 0.055, 8, 16),
           cyanHubMat
         );
-        nozzleRing.position.set(sx, 0.98, 2.31);
+        nozzleRing.position.set(sx, 0.96, 2.31);
 
-        const plasmaCone = new THREE.Mesh(
-          new THREE.ConeGeometry(0.23, 1.28, 12, 1, true),
-          plasmaConeMat
-        );
+        const plasmaCone = new THREE.Mesh(plasmaPlumeShape, plasmaConeMat);
         plasmaCone.rotation.x = Math.PI / 2;
-        plasmaCone.position.set(sx, 0.98, 2.95);
+        plasmaCone.position.set(sx, 0.96, 2.95);
 
         g.add(nacelle, nozzleRing, plasmaCone);
         this.sledPlasmaCones.push({ mesh: plasmaCone, baseZ: 2.95, phase: sx > 0 ? 0 : 1.6 });
@@ -2323,80 +2489,185 @@ export class FrostwakeWorld3D {
       // Curved crescent energy prow + inner plasma arc
       const prowW = hasWide ? 4.5 : 3.1;
       const prow = new THREE.Mesh(
-        new THREE.TorusGeometry(prowW * 0.42, 0.19, 10, 28, Math.PI),
+        new THREE.TorusGeometry(prowW * 0.42, 0.18, 10, 28, Math.PI),
         hasWide ? magmaMat : glowMat
       );
       prow.rotation.x = Math.PI / 2;
       prow.rotation.z = Math.PI;
-      prow.position.set(0, 0.54, -1.58);
+      prow.position.set(0, 0.54, -1.62);
 
       const innerArc = new THREE.Mesh(
-        new THREE.TorusGeometry(prowW * 0.35, 0.08, 8, 24, Math.PI),
+        new THREE.TorusGeometry(prowW * 0.35, 0.075, 8, 24, Math.PI),
         plasmaEdgeMat
       );
       innerArc.rotation.x = Math.PI / 2;
       innerArc.rotation.z = Math.PI;
-      innerArc.position.set(0, 0.54, -1.48);
+      innerArc.position.set(0, 0.54, -1.52);
       g.add(prow, innerArc);
     } else {
-      // Sculpted 6x6 Thermal Dozer: beveled armored chassis + wheel-fender arches
-      const lowerTub = new THREE.Mesh(new THREE.BoxGeometry(1.94, 0.46, 3.68), darkMat);
-      lowerTub.position.set(0, 0.76, 0.22);
-      const mainHull = new THREE.Mesh(new THREE.BoxGeometry(2.26, 0.66, 3.42), bodyMat);
-      mainHull.position.set(0, 1.18, 0.22);
-      const upperBevel = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.18, 3.18), bodyMat);
-      upperBevel.position.set(0, 1.56, 0.26);
-      const frontGlacis = new THREE.Mesh(new THREE.BoxGeometry(2.14, 0.48, 0.88), bodyMat);
-      frontGlacis.position.set(0, 1.22, -1.34);
-      frontGlacis.rotation.x = 0.38;
-      const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(2.34, 0.28, 0.36), darkMat);
-      frontBumper.position.set(0, 0.86, -1.64);
-      g.add(lowerTub, mainHull, upperBevel, frontGlacis, frontBumper);
+      // Sleek curved 6x6 Arctic Dozer with frostwake_hull painted expedition plating
+      const curvedHullShape = createBeveledWingGeometry(
+        [
+          [-1.64, 0.56],
+          [-1.52, 1.06],
+          [-0.86, 1.44],
+          [0.92, 1.48],
+          [1.68, 1.18],
+          [1.82, 0.62],
+          [1.48, 0.48],
+          [-1.42, 0.48],
+        ],
+        1.98,
+        0.14
+      );
+      curvedHullShape.rotateY(Math.PI / 2);
+      curvedHullShape.center();
+      const mainHull = new THREE.Mesh(curvedHullShape, hullSurfaceMat);
+      mainHull.name = "terra_dozer_curved_hull";
+      mainHull.position.set(0, 1.02, 0.18);
+      g.add(mainHull);
 
-      // Rear louvered reactor deck + glowing core slats
-      const reactorDeck = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.34, 1.12), darkMat);
-      reactorDeck.position.set(0, 1.66, 1.32);
-      g.add(reactorDeck);
-      for (let r = 0; r < 3; r++) {
-        const slat = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.08, 0.14), glowMat);
-        slat.position.set(0, 1.85, 1.0 + r * 0.3);
-        g.add(slat);
+      // Sculpted curved fender skirts + glowing cyan expedition conduits
+      const fenderShape = createBeveledWingGeometry(
+        [
+          [-1.68, 0.82],
+          [-1.42, 1.18],
+          [1.56, 1.18],
+          [1.82, 0.82],
+          [1.58, 0.72],
+          [-1.46, 0.72],
+        ],
+        0.38,
+        0.045
+      );
+      fenderShape.rotateY(Math.PI / 2);
+      fenderShape.center();
+      for (const sx of [-1.18, 1.18]) {
+        const fender = new THREE.Mesh(fenderShape, darkMat);
+        fender.position.set(sx, 1.04, 0.2);
+        const sideConduit = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx + (sx > 0 ? 0.22 : -0.22), 1.14, -1.24],
+              [sx + (sx > 0 ? 0.24 : -0.24), 1.18, 0.2],
+              [sx + (sx > 0 ? 0.22 : -0.22), 1.12, 1.62],
+            ],
+            0.042,
+            14,
+            8
+          ),
+          glowMat
+        );
+        const bogieBeam = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [sx * 0.94, 0.58, 0.2],
+              [sx * 0.94, 0.66, 0.82],
+              [sx * 0.94, 0.58, 1.45],
+            ],
+            0.065,
+            10,
+            8
+          ),
+          chromeMat
+        );
+        g.add(fender, sideConduit, bogieBeam);
       }
 
-      // Sculpted left/right wheel-fender arches
-      for (const sx of [-1.24, 1.24]) {
-        const fenderTop = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 3.36), darkMat);
-        fenderTop.position.set(sx, 1.24, 0.2);
-        const fenderLipF = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.48), darkMat);
-        fenderLipF.position.set(sx, 1.1, -1.56);
-        fenderLipF.rotation.x = 0.52;
-        const fenderLipR = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.48), darkMat);
-        fenderLipR.position.set(sx, 1.1, 1.96);
-        fenderLipR.rotation.x = -0.52;
-        const sideTrim = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 2.95), glowMat);
-        sideTrim.position.set(sx + (sx > 0 ? 0.22 : -0.22), 1.25, 0.2);
-        g.add(fenderTop, fenderLipF, fenderLipR, sideTrim);
+      // Rounded panoramic cab glass canopy + sculpted roll-cage arches + cab interior controls
+      const cabCollar = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.085, 10, 26), darkMat);
+      cabCollar.rotation.x = Math.PI / 2;
+      cabCollar.scale.set(0.95, 1.12, 1.0);
+      cabCollar.position.set(0, 1.5, 0.28);
+      g.add(cabCollar);
+
+      const cabSeat = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.36, 8, 12), darkMat);
+      cabSeat.rotation.z = Math.PI / 2;
+      cabSeat.position.set(0, 1.38, 0.42);
+      g.add(cabSeat);
+
+      const dashConsole = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-0.48, 1.62, -0.06],
+            [0.0, 1.68, -0.18],
+            [0.48, 1.62, -0.06],
+          ],
+          0.065,
+          12,
+          8
+        ),
+        cyanHubMat
+      );
+      g.add(dashConsole);
+
+      // Dual control levers positioned at the Arctic Engineer Pilot's gloved hands
+      for (const lx of [-0.3, 0.3]) {
+        const leverShaft = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [lx, 1.42, 0.02],
+              [lx, 1.72, 0.14],
+            ],
+            0.026,
+            8,
+            8
+          ),
+          chromeMat
+        );
+        const gripKnob = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), goldenPlowMat);
+        gripKnob.position.set(lx, 1.73, 0.14);
+        g.add(leverShaft, gripKnob);
       }
 
-      // Armored cockpit cab + panoramic tinted glass windshield & side windows + cyan instrument bar
-      const cabBase = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.96, 1.66), darkMat);
-      cabBase.position.set(0, 1.96, 0.28);
-      const cabRoof = new THREE.Mesh(new THREE.BoxGeometry(1.76, 0.16, 1.58), bodyMat);
-      cabRoof.position.set(0, 2.48, 0.3);
-      const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.62, 0.12), glassMat);
-      windshield.position.set(0, 2.04, -0.52);
-      windshield.rotation.x = 0.24;
-      const sideWinL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.52, 1.16), glassMat);
-      sideWinL.position.set(-0.91, 2.04, 0.3);
-      const sideWinR = sideWinL.clone();
-      sideWinR.position.x = 0.91;
-      const instrumentBar = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.12, 0.2), cyanHubMat);
-      instrumentBar.position.set(0, 1.78, -0.32);
-      const lightBar = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.18, 0.28), glowMat);
-      lightBar.position.set(0, 2.58, -0.38);
-      g.add(cabBase, cabRoof, windshield, sideWinL, sideWinR, instrumentBar, lightBar);
+      // Seated Arctic Engineer Pilot visible inside rounded cab gripping the controls!
+      const engineer = buildExplorerPilot3D({ role: "arctic_engineer", seated: true, scale: 0.72 });
+      engineer.position.set(0, 1.16, 0.34);
+      g.add(engineer);
+      this.pilotCharacter = engineer;
 
-      // Twin front volumetric-style headlight cones
+      const cabCanopy = new THREE.Mesh(
+        new THREE.SphereGeometry(0.98, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.54),
+        glassMat
+      );
+      cabCanopy.name = "terra_dozer_cab_canopy";
+      cabCanopy.scale.set(0.94, 0.98, 1.12);
+      cabCanopy.position.set(0, 1.48, 0.28);
+      g.add(cabCanopy);
+
+      const frontRollArch = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-0.88, 1.48, -0.16],
+            [-0.78, 2.32, -0.04],
+            [0.0, 2.48, 0.02],
+            [0.78, 2.32, -0.04],
+            [0.88, 1.48, -0.16],
+          ],
+          0.052,
+          16,
+          8
+        ),
+        goldenPlowMat
+      );
+      const rearRollArch = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-0.88, 1.48, 0.78],
+            [-0.76, 2.34, 0.64],
+            [0.0, 2.48, 0.58],
+            [0.76, 2.34, 0.64],
+            [0.88, 1.48, 0.78],
+          ],
+          0.052,
+          16,
+          8
+        ),
+        darkMat
+      );
+      g.add(frontRollArch, rearRollArch);
+
+      // Roof floodlight pods + twin front volumetric headlight cones
       const headBeamMat = new THREE.MeshBasicMaterial({
         color: 0xbaf7ff,
         transparent: true,
@@ -2405,55 +2676,71 @@ export class FrostwakeWorld3D {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
+      for (const rx of [-0.36, 0.36]) {
+        const roofLamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), glowMat);
+        roofLamp.scale.set(1.2, 0.85, 0.7);
+        roofLamp.position.set(rx, 2.52, -0.02);
+        g.add(roofLamp);
+      }
       for (const hx of [-0.78, 0.78]) {
-        const housing = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.24), darkMat);
-        housing.position.set(hx, 1.12, -1.62);
-        const lens = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.08), plasmaEdgeMat);
-        lens.position.set(hx, 1.12, -1.73);
+        const lampPod = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), darkMat);
+        lampPod.position.set(hx, 1.08, -1.58);
+        const lens = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), plasmaEdgeMat);
+        lens.position.set(hx, 1.08, -1.66);
         const beamCone = new THREE.Mesh(
           new THREE.ConeGeometry(0.68, 4.1, 14, 1, true),
           headBeamMat
         );
         beamCone.rotation.x = Math.PI / 2 - 0.11;
-        beamCone.position.set(hx, 0.89, -3.76);
-        g.add(housing, lens, beamCone);
+        beamCone.position.set(hx, 0.89, -3.72);
+        g.add(lampPod, lens, beamCone);
       }
 
-      // Twin rear angled chrome exhaust stacks with glowing ember tips
-      for (const ex of [-0.88, 0.88]) {
-        const stackGrp = new THREE.Group();
-        stackGrp.position.set(ex, 1.62, 1.48);
-        stackGrp.rotation.x = -0.24;
-        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 1.38, 10), chromeMat);
-        pipe.position.y = 0.68;
-        const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.72, 8), darkMat);
-        shield.position.y = 0.52;
-        const emberTip = new THREE.Mesh(
-          new THREE.TorusGeometry(0.11, 0.038, 8, 14),
-          magmaMat
+      // Twin curved chrome exhaust stacks with glowing ember tips
+      for (const ex of [-0.84, 0.84]) {
+        const exhaustPipe = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [ex, 1.44, 1.34],
+              [ex * 1.04, 2.08, 1.52],
+              [ex * 1.08, 2.66, 1.74],
+            ],
+            0.088,
+            12,
+            8
+          ),
+          chromeMat
         );
-        emberTip.rotation.x = Math.PI / 2;
-        emberTip.position.y = 1.37;
-        const emberCore = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8),
-          plasmaEdgeMat
-        );
-        emberCore.position.y = 1.36;
-        stackGrp.add(pipe, shield, emberTip, emberCore);
-        g.add(stackGrp);
+        const emberTip = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.036, 8, 14), magmaMat);
+        emberTip.rotation.x = Math.PI / 2 + 0.25;
+        emberTip.position.set(ex * 1.08, 2.68, 1.75);
+        g.add(exhaustPipe, emberTip);
       }
 
-      // 6x6 rugged Arctic tires + glowing cyan hubcap rings & spokes
-      const wheelGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.48, 16);
+      // 6x6 treaded bogie wheels (populated in both this.rigWheels & this.wheels)
+      const wheelGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.48, 18);
       wheelGeo.rotateZ(Math.PI / 2);
       const wheelMat = new THREE.MeshStandardMaterial({
         color: 0x16202e,
         roughness: 0.84,
         metalness: 0.15,
       });
-      const hubRingGeo = new THREE.TorusGeometry(0.31, 0.052, 8, 16);
+      const treadShoulderGeo = new THREE.TorusGeometry(0.54, 0.055, 8, 18);
+      treadShoulderGeo.rotateY(Math.PI / 2);
+      const treadLugGeo = createBeveledWingGeometry(
+        [
+          [-0.22, -0.04],
+          [0.22, -0.04],
+          [0.18, 0.05],
+          [-0.18, 0.05],
+        ],
+        0.08,
+        0.015
+      );
+      treadLugGeo.center();
+      const hubRingGeo = new THREE.TorusGeometry(0.3, 0.05, 8, 16);
       hubRingGeo.rotateY(Math.PI / 2);
-      const hubCapGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12);
+      const hubCapGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.07, 12);
       hubCapGeo.rotateZ(Math.PI / 2);
 
       let wIdx = 0;
@@ -2461,17 +2748,28 @@ export class FrostwakeWorld3D {
         const outSign = wx > 0 ? 1 : -1;
         for (const wz of [-1.05, 0.2, 1.45]) {
           const w = new THREE.Mesh(wheelGeo, wheelMat);
+          w.name = `dozer_bogie_wheel_${wIdx}`;
           w.position.set(wx, 0.56, wz);
 
-          const rimCap = new THREE.Mesh(hubCapGeo, chromeMat);
+          const shoulderIn = new THREE.Mesh(treadShoulderGeo, wheelMat);
+          shoulderIn.position.x = -outSign * 0.18;
+          const shoulderOut = new THREE.Mesh(treadShoulderGeo, wheelMat);
+          shoulderOut.position.x = outSign * 0.18;
+          w.add(shoulderIn, shoulderOut);
+
+          for (let l = 0; l < 8; l++) {
+            const ang = (l / 8) * Math.PI * 2;
+            const lug = new THREE.Mesh(treadLugGeo, darkMat);
+            lug.position.set(0, Math.cos(ang) * 0.56, Math.sin(ang) * 0.56);
+            lug.rotation.x = -ang;
+            w.add(lug);
+          }
+
+          const rimCap = new THREE.Mesh(hubCapGeo, goldenPlowMat);
           rimCap.position.x = outSign * 0.23;
           const hubRing = new THREE.Mesh(hubRingGeo, cyanHubMat);
           hubRing.position.x = outSign * 0.25;
-          const spokeA = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.08), chromeMat);
-          spokeA.position.x = outSign * 0.25;
-          const spokeB = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.5), chromeMat);
-          spokeB.position.x = outSign * 0.25;
-          w.add(rimCap, hubRing, spokeA, spokeB);
+          w.add(rimCap, hubRing);
 
           g.add(w);
           this.rigWheels.push({
@@ -2493,87 +2791,144 @@ export class FrostwakeWorld3D {
         }
       }
 
-      // Twin hydraulic plow struts
+      // Twin hydraulic plow struts + heavy push-arms
+      const cylShape = createLatheProfileGeometry(
+        [
+          [0.11, -0.32],
+          [0.125, 0.22],
+          [0.09, 0.32],
+        ],
+        10
+      );
       for (const hx of [-0.66, 0.66]) {
-        const cylOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 0.62, 8), darkMat);
+        const cylOuter = new THREE.Mesh(cylShape, darkMat);
+        cylOuter.name = hx < 0 ? "plow_hydraulic_strut_left" : "plow_hydraulic_strut_right";
         cylOuter.rotation.x = Math.PI / 2 + 0.14;
-        cylOuter.position.set(hx, 0.72, -1.52);
+        cylOuter.position.set(hx, 0.84, -1.48);
         const pistonRod = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.065, 0.065, 0.56, 8),
+          new THREE.CylinderGeometry(0.062, 0.062, 0.62, 10),
           chromeMat
         );
         pistonRod.rotation.x = Math.PI / 2 + 0.14;
-        pistonRod.position.set(hx, 0.66, -1.84);
-        g.add(cylOuter, pistonRod);
+        pistonRod.position.set(hx, 0.76, -1.82);
+        const pushArm = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [hx * 1.1, 0.54, -1.28],
+              [hx * 1.02, 0.48, -1.92],
+            ],
+            0.068,
+            8,
+            8
+          ),
+          darkMat
+        );
+        g.add(cylOuter, pistonRod, pushArm);
       }
 
-      // Fierce Magma-Ribbed V-Plow Blade with serrated side-wings & glowing plasma cutting edge
-      const bladeW = (hasWide ? 4.7 : 3.2) * 0.55;
-      const bladeGeo = new THREE.BoxGeometry(bladeW, 1.08, 0.26);
-      const bladeL = new THREE.Mesh(bladeGeo, hasWide ? magmaMat : bodyMat);
-      bladeL.position.set(-bladeW * 0.44, 0.7, -1.96);
-      bladeL.rotation.y = 0.28;
-      const bladeR = new THREE.Mesh(bladeGeo, hasWide ? magmaMat : bodyMat);
-      bladeR.position.set(bladeW * 0.44, 0.7, -1.96);
-      bladeR.rotation.y = -0.28;
-
-      // Vertical glowing magma ribs + serrated side-wings on each V-plow half
-      for (const side of [-1, 1]) {
-        const hostBlade = side < 0 ? bladeL : bladeR;
-        for (const ribT of [-0.32, 0, 0.32]) {
-          const rib = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.96, 0.32), magmaMat);
-          rib.position.set(ribT * bladeW, 0, -0.03);
-          hostBlade.add(rib);
-        }
-        const wingEar = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.04, 0.24), darkMat);
-        wingEar.position.set(side * (bladeW * 0.5 + 0.12), 0.02, -0.14);
-        wingEar.rotation.y = -side * 0.52;
-        for (const ty of [-0.28, 0.24]) {
-          const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 4), magmaMat);
-          tooth.rotation.x = -Math.PI / 2;
-          tooth.position.set(side * 0.08, ty, -0.18);
-          wingEar.add(tooth);
-        }
-        hostBlade.add(wingEar);
-      }
-
-      const prowSplitter = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.14, 4), magmaMat);
-      prowSplitter.position.set(0, 0.72, -2.18);
-      prowSplitter.rotation.y = Math.PI / 4;
-
-      const magmaStrip = new THREE.Mesh(
-        new THREE.BoxGeometry(bladeW * 1.92, 0.2, 0.34),
-        hasWide ? magmaMat : glowMat
+      // Curved beveled concave golden/amber thermal V-plow blade
+      const bladeW = (hasWide ? 4.75 : 3.25) * 0.54;
+      const concaveBladeShape = createBeveledWingGeometry(
+        [
+          [-0.24, 0.16],
+          [0.1, 0.2],
+          [-0.08, 0.62],
+          [0.16, 1.08],
+          [-0.1, 1.16],
+          [-0.3, 0.62],
+        ],
+        bladeW,
+        0.05
       );
-      magmaStrip.position.set(0, 0.24, -2.04);
-      const plasmaEdge = new THREE.Mesh(
-        new THREE.BoxGeometry(bladeW * 1.98, 0.09, 0.18),
-        plasmaEdgeMat
+      concaveBladeShape.center();
+
+      const bladeL = new THREE.Mesh(concaveBladeShape, goldenPlowMat);
+      bladeL.name = "thermal_plow_wing_left";
+      bladeL.rotation.y = Math.PI / 2 + 0.26;
+      bladeL.position.set(-bladeW * 0.46, 0.72, -1.98);
+
+      const bladeR = new THREE.Mesh(concaveBladeShape, goldenPlowMat);
+      bladeR.name = "thermal_plow_wing_right";
+      bladeR.rotation.y = Math.PI / 2 - 0.26;
+      bladeR.position.set(bladeW * 0.46, 0.72, -1.98);
+
+      const centerCrest = new THREE.Mesh(
+        createBeveledWingGeometry(
+          [
+            [-0.22, 0.18],
+            [0.24, 0.22],
+            [0.06, 1.18],
+            [-0.18, 1.14],
+          ],
+          0.22,
+          0.04
+        ),
+        hasWide ? magmaMat : goldenPlowMat
       );
-      plasmaEdge.position.set(0, 0.18, -2.18);
-      g.add(bladeL, bladeR, prowSplitter, magmaStrip, plasmaEdge);
+      centerCrest.rotation.y = Math.PI / 2;
+      centerCrest.position.set(-0.11, 0.14, -2.18);
+
+      const thermalCuttingLip = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-bladeW * 0.94, 0.24, -1.74],
+            [0.0, 0.21, -2.24],
+            [bladeW * 0.94, 0.24, -1.74],
+          ],
+          0.09,
+          18,
+          8
+        ),
+        hasWide ? magmaMat : plasmaEdgeMat
+      );
+
+      const topDeflectorLip = new THREE.Mesh(
+        createSplineTubeGeometry(
+          [
+            [-bladeW * 0.92, 1.22, -1.74],
+            [0.0, 1.26, -2.16],
+            [bladeW * 0.92, 1.22, -1.74],
+          ],
+          0.052,
+          16,
+          8
+        ),
+        glowMat
+      );
+
+      g.add(bladeL, bladeR, centerCrest, thermalCuttingLip, topDeflectorLip);
     }
 
     if (hasBoost) {
       const boostFlameMat = new THREE.MeshBasicMaterial({
         color: 0xffd166,
         transparent: true,
-        opacity: 0.78,
+        opacity: 0.8,
         side: THREE.DoubleSide,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
+      const podShape = createLatheProfileGeometry(
+        [
+          [0.16, -0.36],
+          [0.32, 0.0],
+          [0.24, 0.36],
+        ],
+        12
+      );
+      const flameShape = createLatheProfileGeometry(
+        [
+          [0.21, -0.46],
+          [0.12, 0.08],
+          [0.01, 0.48],
+        ],
+        10
+      );
       for (const tx of [-0.65, 0.65]) {
-        const thruster = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.24, 0.34, 0.72, 10),
-          glowMat
-        );
+        const thruster = new THREE.Mesh(podShape, glowMat);
         thruster.rotation.x = Math.PI / 2;
         thruster.position.set(tx, 0.95, 2.15);
-        const flame = new THREE.Mesh(
-          new THREE.ConeGeometry(0.22, 0.95, 10, 1, true),
-          boostFlameMat
-        );
+        const flame = new THREE.Mesh(flameShape, boostFlameMat);
         flame.rotation.x = Math.PI / 2;
         flame.position.set(tx, 0.95, 2.95);
         g.add(thruster, flame);
@@ -2583,7 +2938,11 @@ export class FrostwakeWorld3D {
 
     if (hasHarpoon) {
       this.harpoonTurret = this._createStarlightWinchMesh();
-      this.harpoonTurret.position.set(0, cleanChassis === "aurora_sled" ? 1.88 : 2.65, 0.25);
+      this.harpoonTurret.position.set(
+        0,
+        cleanChassis === "aurora_sled" ? 1.88 : 2.58,
+        cleanChassis === "aurora_sled" ? 0.58 : 0.48
+      );
       g.add(this.harpoonTurret);
     } else {
       this.harpoonTurret = null;
@@ -2592,7 +2951,7 @@ export class FrostwakeWorld3D {
     if (hasCrown) {
       const halo = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.09, 10, 24), glowMat);
       halo.rotation.x = Math.PI / 2;
-      halo.position.set(0, 3.05, 0.2);
+      halo.position.set(0, 3.05, 0.25);
       g.add(halo);
     }
 
@@ -2604,22 +2963,15 @@ export class FrostwakeWorld3D {
       this.companionFox = null;
     }
 
-    // Oddroot Cross-Realm Visual Unlocks
+    // Oddroot Cross-Realm Visual Unlocks — Starry Zero-G Astro-Toad Cab Mascot!
     if (this.crossRealmState.astroToadCabMascot) {
       const mascot = new THREE.Group();
       mascot.name = "astro_toad_mascot";
       mascot.userData = { crossRealm: "astro_toad_mascot" };
-      const bubble = new THREE.Mesh(
-        new THREE.SphereGeometry(0.42, 12, 10),
-        new THREE.MeshBasicMaterial({ color: 0x90f1ef, transparent: true, opacity: 0.34 })
-      );
-      const toadBody = new THREE.Mesh(
-        new THREE.SphereGeometry(0.24, 10, 8),
-        new THREE.MeshStandardMaterial({ color: 0x7ee081, emissive: 0x2ec4b6, emissiveIntensity: 0.6 })
-      );
-      toadBody.rotation.z = Math.PI; // Floating upside-down Zero-G Astro-Toad!
-      mascot.add(bubble, toadBody);
-      mascot.position.set(-0.62, cleanChassis === "aurora_sled" ? 2.25 : 2.95, 0.45);
+      const starryToad = buildSanctuaryCreature3D("zero_g_toad", 1);
+      starryToad.scale.setScalar(0.42);
+      mascot.add(starryToad);
+      mascot.position.set(-0.62, cleanChassis === "aurora_sled" ? 2.12 : 2.66, 0.45);
       g.add(mascot);
       this.astroToadMascot = mascot;
     } else {
@@ -2634,10 +2986,22 @@ export class FrostwakeWorld3D {
         color: 0xc084fc,
         emissive: 0x7c3aed,
         emissiveIntensity: 0.75,
+        roughness: 0.22,
       });
-      for (const bx of [-1.32, 1.32]) {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 2.5), railMat);
-        rail.position.set(bx, 0.88, 0.1);
+      for (const bx of [-1.34, 1.34]) {
+        const rail = new THREE.Mesh(
+          createSplineTubeGeometry(
+            [
+              [bx, 0.88, -1.12],
+              [bx * 1.04, 0.94, 0.12],
+              [bx, 0.88, 1.36],
+            ],
+            0.085,
+            14,
+            8
+          ),
+          railMat
+        );
         buoy.add(rail);
       }
       g.add(buoy);
@@ -2651,10 +3015,21 @@ export class FrostwakeWorld3D {
         color: 0xffd166,
         emissive: 0xf4a62a,
         emissiveIntensity: 0.95,
+        roughness: 0.18,
       });
+      const tileShape = createBeveledWingGeometry(
+        [
+          [0, 0.15],
+          [0.2, 0],
+          [0, -0.15],
+          [-0.2, 0],
+        ],
+        0.06,
+        0.015
+      );
       for (let t = 0; t < 4; t++) {
-        const tile = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.22, 0.12), tileMat);
-        tile.position.set((t - 1.5) * 0.55, 0.92, -1.98);
+        const tile = new THREE.Mesh(tileShape, tileMat);
+        tile.position.set((t - 1.5) * 0.55, 0.94, -2.06);
         mosaic.add(tile);
       }
       g.add(mosaic);
@@ -2688,16 +3063,37 @@ export class FrostwakeWorld3D {
       pennant.name = "sibling_borrow_pennant";
       pennant.userData = { tag: "sibling_borrow_badge", owner: this.borrowedToyState.owner };
       const mast = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, 1.35, 6),
+        createSplineTubeGeometry(
+          [
+            [0, 0, 0],
+            [0, 0.72, 0.04],
+            [0, 1.38, 0.1],
+          ],
+          0.032,
+          10,
+          8
+        ),
         new THREE.MeshBasicMaterial({ color: 0xffffff })
       );
-      mast.position.y = 0.68;
+      const flag = new THREE.Mesh(
+        createBeveledWingGeometry(
+          [
+            [0, 0.95],
+            [0.64, 1.12],
+            [0, 1.32],
+          ],
+          0.02,
+          0.006
+        ),
+        glowMat
+      );
+      flag.rotation.y = Math.PI / 2;
       const star = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.28, 0),
+        new THREE.OctahedronGeometry(0.24, 0),
         new THREE.MeshBasicMaterial({ color: 0xffd166 })
       );
-      star.position.y = 1.42;
-      pennant.add(mast, star);
+      star.position.set(0, 1.46, 0.1);
+      pennant.add(mast, flag, star);
       pennant.position.set(0.88, 1.85, 1.55);
       g.add(pennant);
     }
@@ -2710,26 +3106,7 @@ export class FrostwakeWorld3D {
   }
 
   _createSpiritFoxMesh() {
-    const fox = new THREE.Group();
-    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf7fbff, roughness: 0.4 });
-    const cyanMat = new THREE.MeshStandardMaterial({
-      color: 0x45f0df,
-      emissive: 0x2ec4b6,
-      emissiveIntensity: 0.65,
-    });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.48, 1.05), whiteMat);
-    body.position.y = 0.52;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.46, 0.52), whiteMat);
-    head.position.set(0, 0.82, -0.52);
-    const earL = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.34, 4), cyanMat);
-    earL.position.set(-0.16, 1.16, -0.5);
-    const earR = earL.clone();
-    earR.position.x = 0.16;
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.85, 6), cyanMat);
-    tail.rotation.x = -1.1;
-    tail.position.set(0, 0.62, 0.78);
-    fox.add(body, head, earL, earR, tail);
-    return fox;
+    return buildSpiritFox3D({ scale: 1.0 });
   }
 
   populateEncounters(encounters = []) {
@@ -2864,6 +3241,11 @@ export class FrostwakeWorld3D {
     this.rigState.steerInput = cleanSteer;
     this.rigState.throttleInput = cleanThrottle;
     this.rigState.boosting = Boolean(boosting);
+    if (this.driveInput) {
+      this.driveInput.steer = cleanSteer;
+      this.driveInput.throttle = cleanThrottle;
+      this.driveInput.boosting = Boolean(boosting);
+    }
   }
 
   grappleNearestIcePod() {
@@ -3486,6 +3868,9 @@ export class FrostwakeWorld3D {
           boostMul = 1.38;
         }
       }
+      if (this.driveInput) {
+        this.driveInput.steer = steer;
+      }
 
       const permafrostFactor = this.opposition
         ? this.opposition.getPermafrostSpeedFactor(this.rigState.x, this.rigState.z, hasWide)
@@ -3664,12 +4049,29 @@ export class FrostwakeWorld3D {
         w.mesh.position.y = w.baseY + w.springY;
       }
 
+      if (this.pilotCharacter) {
+        const speedNorm = Math.min(
+          1.5,
+          Math.abs(finiteOr(this.rigState.speed, 0)) / Math.max(1, spec.topSpeed)
+        );
+        animateExplorerPilot3D(
+          this.pilotCharacter,
+          this.elapsed,
+          speedNorm,
+          this.driveInput?.steer || 0,
+          this.rigState.y > 0.5
+        );
+      }
+
       if (this.companionFox) {
         this.companionFox.position.y = Math.abs(Math.sin(elapsed * 7.5)) * 0.35;
+        if (this.companionFox.userData?.tail) {
+          this.companionFox.userData.tail.rotation.y = Math.sin(elapsed * 6.2) * 0.25;
+        }
       }
       if (this.astroToadMascot) {
         this.astroToadMascot.position.y =
-          (this.rigState.chassisId === "aurora_sled" ? 2.25 : 2.95) +
+          (this.rigState.chassisId === "aurora_sled" ? 2.12 : 2.66) +
           Math.sin(elapsed * 3.2) * 0.1;
       }
       if (this.clockworkCrest) {
@@ -3735,8 +4137,12 @@ export class FrostwakeWorld3D {
           ? Math.min(2.5, (4.8 - Math.abs(this.guardianAwakeTimer - 2.4)) * 1.2)
           : Math.sin(elapsed * 1.6) * 0.22;
       this.guardianArms.forEach((arm, idx) => {
-        arm.position.y = 5.4 + armLift + (idx === 1 ? 0.08 : 0);
+        const baseY = arm.userData?.baseY ?? 4.3;
+        arm.position.y = baseY + armLift * 0.72 + (idx === 1 ? 0.06 : 0);
       });
+    }
+    if (this.guardianColossusMesh?.userData?.core) {
+      this.guardianColossusMesh.userData.core.rotation.y = elapsed * 1.4;
     }
     if (this.guardianAwakeTimer > 0) {
       this.guardianAwakeTimer = Math.max(0, this.guardianAwakeTimer - dt);
@@ -3987,6 +4393,9 @@ export class FrostwakeWorld3D {
     for (const f of this.wokenFoxes) {
       f.mesh.position.y = f.baseY + Math.abs(Math.sin(elapsed * 5 + f.phase)) * 0.55;
       f.mesh.rotation.y += dt * 1.4;
+      if (f.mesh.userData?.tail) {
+        f.mesh.userData.tail.rotation.y = Math.sin(elapsed * 6 + f.phase) * 0.26;
+      }
     }
 
     if (this.whaleTimer > 0 && this.skyWhale) {
@@ -3995,6 +4404,15 @@ export class FrostwakeWorld3D {
       this.skyWhale.position.set(-55 + u * 110, 26 + Math.sin(u * Math.PI) * 14, -36);
       this.skyWhale.rotation.y = Math.PI / 2;
       this.skyWhale.rotation.x = -Math.cos(u * Math.PI) * 0.32;
+      const fins = this.skyWhale.userData?.fins;
+      if (fins) {
+        const finWave = Math.sin(elapsed * 2.8) * 0.18;
+        if (fins.leftFin) fins.leftFin.rotation.z = finWave;
+        if (fins.rightFin) fins.rightFin.rotation.z = -finWave;
+        if (fins.tailFluke) {
+          fins.tailFluke.rotation.x = Math.PI / 2 + Math.sin(elapsed * 4.2) * 0.24;
+        }
+      }
       if (this.whaleTimer <= 0) this.skyWhale.visible = false;
     }
   }
