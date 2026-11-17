@@ -341,8 +341,8 @@
     );
 }
 
-/* Mobile Dock Ergonomics: never overlap thumbstick controls with active encounter dock */
-@media (max-width: 820px) {
+/* Mobile Portrait Dock Ergonomics: never overlap thumbstick controls with full-width portrait dock */
+@media (max-width: 820px) and (orientation: portrait) {
   #screen-oddroot.dock-open .drive-cluster,
   [data-realm="oddroot"].dock-open .drive-cluster {
     display: none;

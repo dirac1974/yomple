@@ -45,6 +45,7 @@ import {
   buildSanctuaryCreature3D,
   buildGuardianColossus3D,
 } from "../core/character-graphics-3d.js";
+import { RobloxFollowCameraRig } from "../core/camera-rig-3d.js";
 
 export const VALLEY_SIZE = 184;
 export const VALLEY_HALF = VALLEY_SIZE / 2;
@@ -156,7 +157,7 @@ export class FrostwakeWorld3D {
     this.clock = new THREE.Clock();
     this.simElapsed = 0;
     this.elapsed = 0;
-    this._baseCameraFov = 52;
+    this._baseCameraFov = 54;
     this.encounterDockOpen = false;
     this._boundProgressRef = null;
 
@@ -247,6 +248,11 @@ export class FrostwakeWorld3D {
     this._tmpScale = new THREE.Vector3();
     this._tmpEuler = new THREE.Euler();
     this._camTargetVec = new THREE.Vector3();
+    this.cameraRig = new RobloxFollowCameraRig({
+      defaultDistance: 18.5,
+      defaultPitch: 0.43,
+      pivotHeight: 1.95,
+    });
 
     this._initScene();
   }
@@ -313,8 +319,8 @@ export class FrostwakeWorld3D {
     this.scene.background = new THREE.Color(0x0c2136);
     this.scene.fog = new THREE.FogExp2(0x102b44, 0.0056);
 
-    this.camera = new THREE.PerspectiveCamera(this._baseCameraFov, 16 / 9, 0.4, 380);
-    this.camera.position.set(0, 11, 36);
+    this.camera = new THREE.PerspectiveCamera(this._baseCameraFov, 16 / 9, 0.4, 480);
+    this.camera.position.set(0, 11.5, 40);
 
     this.renderer = null;
     this.webglAvailable = false;
@@ -1877,6 +1883,38 @@ export class FrostwakeWorld3D {
     return this.encounterDockOpen === true || this.activeGateSlot !== null;
   }
 
+  dismissActiveEncounter() {
+    if (this.activeGateSlot) {
+      this.activeGateSlot._dismissedUntilLeave = true;
+      this.activeGateSlot = null;
+    }
+    this.encounterDockOpen = false;
+    this.autopilotTarget = null;
+    if (this.opposition) {
+      this.opposition.setPaused(this.isOppositionPaused());
+    }
+  }
+
+  orbitCamera(deltaYaw = 0, deltaPitch = 0) {
+    return this.cameraRig?.orbitBy(deltaYaw, deltaPitch);
+  }
+
+  zoomCamera(deltaDistance = 0) {
+    return this.cameraRig?.zoomBy(deltaDistance);
+  }
+
+  zoomCameraScale(scaleFactor = 1) {
+    return this.cameraRig?.zoomScale(scaleFactor);
+  }
+
+  resetCamera(opts = {}) {
+    return this.cameraRig?.resetBehindRig(opts);
+  }
+
+  getCameraState() {
+    return this.cameraRig?.getState() || null;
+  }
+
   _persistFrostwakeExpeditionCount(completedTotal) {
     const prog = this._boundProgressRef;
     if (!prog || typeof prog !== "object" || Object.isFrozen(prog)) return;
@@ -3211,6 +3249,9 @@ export class FrostwakeWorld3D {
   engageAutopilotToNextGate() {
     const openSlots = this.gateSlots.filter((s) => !s.cleared);
     if (!openSlots.length) return null;
+    for (const s of openSlots) {
+      s._dismissedUntilLeave = false;
+    }
     let best = openSlots[0];
     if (best.encounter?.worldId !== "W0") {
       let bestD = Infinity;
@@ -3592,6 +3633,10 @@ export class FrostwakeWorld3D {
     applyEncounterCommitFX(this, slot, safeRes, safeEnc);
 
     if (safeRes.outcome === "clear" || safeRes.outcome === "warm_reveal") {
+      if (this.activeGateSlot === slot) {
+        this.activeGateSlot = null;
+        this.opposition?.setPaused(this.isOppositionPaused());
+      }
       const isOverdrive = Boolean(safeRes.overdrive);
       const bx = clampFinite(this.rigState.x, -VALLEY_SIZE, VALLEY_SIZE, 0);
       const by = clampFinite(this.rigState.y, -20, 80, 0);
@@ -4179,6 +4224,15 @@ export class FrostwakeWorld3D {
       const appX = slot.x + Math.sin(slot.rotY) * 6.0;
       const appZ = slot.z + Math.cos(slot.rotY) * 6.0;
       const d = Math.hypot(appX - this.rigState.x, appZ - this.rigState.z);
+      if (slot._dismissedUntilLeave) {
+        if (d > 12.2) {
+          slot._dismissedUntilLeave = false;
+        } else {
+          if (slot.targetRing) slot.targetRing.rotation.y += dt * 1.3;
+          if (slot.astrolabeRings) slot.astrolabeRings.core.rotation.y += dt * 1.8;
+          continue;
+        }
+      }
       if (d < nearestDist) {
         nearestDist = d;
         nearest = slot;
@@ -4267,35 +4321,21 @@ export class FrostwakeWorld3D {
     this._stepOuterFrontierBiomes(dt, elapsed, pausedForMath);
     this._stepFieldExpedition(dt, elapsed);
 
-    // 7. Smooth Chase Camera + Slipstream Boost FOV Kick (+5.5 deg)
+    // 7. Smooth Roblox-Style Follow/Orbit/Zoom Camera + Slipstream Boost FOV Kick (+5.5 deg)
     if (this.camera) {
-      const fwdX = -Math.sin(this.rigState.heading);
-      const fwdZ = -Math.cos(this.rigState.heading);
-      let desiredCamX = this.rigState.x - fwdX * 13.5;
-      let desiredCamZ = this.rigState.z - fwdZ * 13.5;
-      let desiredCamY = this.rigState.y + 7.2;
-      let lookX = this.rigState.x + fwdX * 6.0;
-      let lookY = this.rigState.y + 2.1;
-      let lookZ = this.rigState.z + fwdZ * 6.0;
+      this.cameraRig.step({
+        dt,
+        rigState: this.rigState,
+        activeGateSlot: this.activeGateSlot,
+        encounterDockOpen: this.encounterDockOpen,
+        groundHeightAt: (x, z) => this._baseHeight(x, z),
+        camera: this.camera,
+      });
 
-      if (this.activeGateSlot) {
-        const s = this.activeGateSlot;
-        desiredCamX =
-          this.rigState.x - fwdX * 11.5 + Math.cos(this.rigState.heading) * 2.2;
-        desiredCamY = this.rigState.y + 6.6;
-        desiredCamZ = this.rigState.z - fwdZ * 11.5;
-        lookX = (this.rigState.x + s.x) * 0.5;
-        lookY = s.y + 3.6;
-        lookZ = (this.rigState.z + s.z) * 0.5;
-      }
-
-      this._camTargetVec.set(desiredCamX, desiredCamY, desiredCamZ);
-      this.camera.position.lerp(this._camTargetVec, Math.min(1, dt * 4.8));
-      this.camera.lookAt(lookX, lookY, lookZ);
-
-      const baseFov = this._baseCameraFov || 52;
+      const baseFov = this._baseCameraFov || 54;
+      const framingGate = Boolean(this.activeGateSlot && this.encounterDockOpen);
       const targetFov =
-        this.slipstreamVfx?.isActive() && !this.activeGateSlot ? baseFov + 5.5 : baseFov;
+        this.slipstreamVfx?.isActive() && !framingGate ? baseFov + 5.5 : baseFov;
       const nextFov = this.camera.fov + (targetFov - this.camera.fov) * Math.min(1, dt * 6.5);
       if (Math.abs(nextFov - this.camera.fov) > 0.02) {
         this.camera.fov = nextFov;

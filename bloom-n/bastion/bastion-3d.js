@@ -47,6 +47,7 @@ import {
   buildSanctuaryCreature3D,
   buildGuardianColossus3D,
 } from "../core/character-graphics-3d.js";
+import { RobloxFollowCameraRig } from "../core/camera-rig-3d.js";
 
 export {
   SHARED_COIN_IDS,
@@ -180,7 +181,7 @@ export class BastionWorld3D {
     this.simElapsed = 0;
     this.elapsed = 0;
     this.elapsedTime = 0;
-    this._baseCameraFov = 53;
+    this._baseCameraFov = 55;
 
     this.encounterDockOpen = false;
     this.bulletTimeRequested = false;
@@ -264,6 +265,11 @@ export class BastionWorld3D {
 
     this._camTargetVec = new THREE.Vector3();
     this._camLookVec = new THREE.Vector3();
+    this.cameraRig = new RobloxFollowCameraRig({
+      defaultDistance: 18.8,
+      defaultPitch: 0.44,
+      pivotHeight: 2.05,
+    });
 
     this._initScene();
   }
@@ -351,9 +357,9 @@ export class BastionWorld3D {
       this._baseCameraFov,
       Math.max(0.2, w / Math.max(1, h)),
       0.25,
-      520
+      540
     );
-    this.camera.position.set(0, 9.5, 27.5);
+    this.camera.position.set(0, 11.2, 31.5);
     this.camera.lookAt(0, 1.8, 8.0);
 
     // Warm golden Siegesmith sun + cool sapphire sky hemisphere light
@@ -785,6 +791,41 @@ export class BastionWorld3D {
 
   isOppositionPaused() {
     return this.encounterDockOpen === true || this.activeGateSlot !== null;
+  }
+
+  dismissActiveEncounter() {
+    if (this.activeGateSlot) {
+      this.activeGateSlot._dismissedUntilLeave = true;
+      this.activeGateSlot = null;
+    }
+    this.encounterDockOpen = false;
+    this._gateAutoPause = false;
+    this.autopilotTarget = null;
+    this._refreshTimeScaleState(0);
+    if (this.opposition) {
+      this.opposition.setPaused(this.isOppositionPaused());
+    }
+    this._syncExpeditionBeacon();
+  }
+
+  orbitCamera(deltaYaw = 0, deltaPitch = 0) {
+    return this.cameraRig?.orbitBy(deltaYaw, deltaPitch);
+  }
+
+  zoomCamera(deltaDistance = 0) {
+    return this.cameraRig?.zoomBy(deltaDistance);
+  }
+
+  zoomCameraScale(scaleFactor = 1) {
+    return this.cameraRig?.zoomScale(scaleFactor);
+  }
+
+  resetCamera(opts = {}) {
+    return this.cameraRig?.resetBehindRig(opts);
+  }
+
+  getCameraState() {
+    return this.cameraRig?.getState() || null;
   }
 
   setBulletTimeRequested(flag) {
@@ -1926,6 +1967,9 @@ export class BastionWorld3D {
   engageAutopilotToNextGate() {
     const openSlots = this.gateSlots.filter((s) => !s.cleared);
     if (!openSlots.length) return null;
+    for (const s of openSlots) {
+      s._dismissedUntilLeave = false;
+    }
     let best = openSlots[0];
     if (best.encounter?.worldId !== "W0") {
       let bestD = Infinity;
@@ -2528,6 +2572,13 @@ export class BastionWorld3D {
       const dPad = Math.hypot(appX - this.rigState.x, appZ - this.rigState.z);
       const dCenter = Math.hypot(slot.x - this.rigState.x, slot.z - this.rigState.z);
       const d = Math.min(dPad, dCenter);
+      if (slot._dismissedUntilLeave) {
+        if (d > 11.5) {
+          slot._dismissedUntilLeave = false;
+        } else {
+          continue;
+        }
+      }
       if (d < nearestDist) {
         nearestDist = d;
         nearest = slot;
@@ -2698,40 +2749,21 @@ export class BastionWorld3D {
       }
     }
 
-    // 9. Smooth Third-Person Tactician Chase Camera + Slipstream Boost FOV Kick
+    // 9. Smooth Roblox-Style Tactician Follow/Orbit/Zoom Camera + Slipstream Boost FOV Kick
     if (this.camera) {
-      const fwdX = -Math.sin(this.rigState.heading);
-      const fwdZ = -Math.cos(this.rigState.heading);
-      if (this.activeGateSlot) {
-        const s = this.activeGateSlot;
-        this._camTargetVec.set(
-          this.rigState.x - fwdX * 11.5 + Math.cos(this.rigState.heading) * 2.4,
-          Math.max(this.rigState.y, s.y) + 6.8,
-          this.rigState.z - fwdZ * 11.5
-        );
-        this._camLookVec.set(
-          (this.rigState.x + s.x) * 0.5,
-          s.y + 2.8,
-          (this.rigState.z + s.z) * 0.5
-        );
-      } else {
-        this._camTargetVec.set(
-          this.rigState.x - fwdX * 13.8,
-          this.rigState.y + 7.6,
-          this.rigState.z - fwdZ * 13.8
-        );
-        this._camLookVec.set(
-          this.rigState.x + fwdX * 6.2,
-          this.rigState.y + 2.1,
-          this.rigState.z + fwdZ * 6.2
-        );
-      }
-      this.camera.position.lerp(this._camTargetVec, Math.min(1, dt * 5.2));
-      this.camera.lookAt(this._camLookVec);
+      this.cameraRig.step({
+        dt,
+        rigState: this.rigState,
+        activeGateSlot: this.activeGateSlot,
+        encounterDockOpen: this.encounterDockOpen,
+        groundHeightAt: (x, z) => this._baseHeight(x, z),
+        camera: this.camera,
+      });
 
       const baseFov = this._baseCameraFov;
+      const framingGate = Boolean(this.activeGateSlot && this.encounterDockOpen);
       const targetFov =
-        this.slipstreamVfx?.isActive() && !this.activeGateSlot ? baseFov + 5.5 : baseFov;
+        this.slipstreamVfx?.isActive() && !framingGate ? baseFov + 5.5 : baseFov;
       const nextFov = this.camera.fov + (targetFov - this.camera.fov) * Math.min(1, dt * 6.5);
       if (Math.abs(nextFov - this.camera.fov) > 0.02) {
         this.camera.fov = nextFov;

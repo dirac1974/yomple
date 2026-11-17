@@ -56,6 +56,7 @@ import { OddrootWorld3D, getSanctuaryJournalEntries } from "./oddroot/oddroot-3d
 import { BastionAudio } from "./bastion/audio.js";
 import { BastionWorld3D } from "./bastion/bastion-3d.js";
 import { CHARACTER_PORTRAIT_PATHS } from "./core/character-graphics-3d.js";
+import { bindCanvasCameraGestures } from "./core/camera-rig-3d.js";
 
 function charImgHtml(key, cls = "char-chip-avatar") {
   const src = CHARACTER_PORTRAIT_PATHS[key];
@@ -1357,6 +1358,9 @@ function exitRealmToHub() {
   $("fw-boost-pill")?.classList.remove("active", "overdrive");
   $("or-boost-pill")?.classList.remove("active", "overdrive");
   $("ab-boost-pill")?.classList.remove("active", "overdrive");
+  frostwakeWorld?.dismissActiveEncounter?.();
+  oddrootWorld?.dismissActiveEncounter?.();
+  bastionWorld?.dismissActiveEncounter?.();
   closeEncounterDock();
   disconnectMultiplayer();
   if (frostwakeWorld) frostwakeWorld.stop();
@@ -1430,6 +1434,13 @@ function closeEncounterDock() {
   $("encounter-dock")?.classList.remove("open");
 
   publishImmediateMultiplayerState(session.inSurge ? "surge" : "roaming");
+}
+
+function dismissEncounterDock() {
+  const world = getActiveWorld();
+  world?.dismissActiveEncounter?.();
+  closeEncounterDock();
+  getActiveAudio().playDetentClick?.(6);
 }
 
 function markFirstInput() {
@@ -2322,7 +2333,74 @@ function setupJoystickAndKeys() {
   bindThumbstick("oddroot-joy-zone", "oddroot-joy-knob");
   bindThumbstick("bastion-joy-zone", "bastion-joy-knob");
 
+  bindCanvasCameraGestures($("frostwake-canvas"), () => frostwakeWorld?.cameraRig);
+  bindCanvasCameraGestures($("oddroot-canvas"), () => oddrootWorld?.cameraRig);
+  bindCanvasCameraGestures($("bastion-canvas"), () => bastionWorld?.cameraRig);
+
+  document.querySelectorAll("[data-cam-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      getActiveAudio().unlock?.();
+      const world = getActiveWorld();
+      if (!world) return;
+      const action = btn.getAttribute("data-cam-action");
+      if (action === "zoom-in") {
+        world.zoomCamera?.(-3.5);
+        getActiveAudio().playDetentClick?.(8);
+      } else if (action === "zoom-out") {
+        world.zoomCamera?.(3.5);
+        getActiveAudio().playDetentClick?.(-8);
+      } else if (action === "reset") {
+        world.resetCamera?.();
+        getActiveAudio().playDetentClick?.(12);
+        showToast("🎥 Camera centered behind you!", 1600);
+      }
+    });
+  });
+
+  // Prevent iOS Safari multi-touch page zoom lock inside active 3D realms
+  const blockSafariPageZoomIn3D = (e) => {
+    if (activeRealmId !== "portal") {
+      e.preventDefault();
+    }
+  };
+  document.addEventListener("gesturestart", blockSafariPageZoomIn3D, { passive: false });
+  document.addEventListener("gesturechange", blockSafariPageZoomIn3D, { passive: false });
+
+  // Sync WebGL viewport cleanly across phone portrait <-> landscape rotations
+  const syncActiveWorldViewport = () => {
+    const world = getActiveWorld();
+    if (world) world.resize?.();
+  };
+  window.addEventListener("resize", syncActiveWorldViewport);
+  window.addEventListener("orientationchange", () => {
+    syncActiveWorldViewport();
+    setTimeout(syncActiveWorldViewport, 120);
+  });
+  window.visualViewport?.addEventListener("resize", syncActiveWorldViewport);
+
+  // Ensure mobile keyboard dismissal never leaves viewport shifted
+  document.addEventListener("focusout", (e) => {
+    if (e.target && e.target.tagName === "INPUT" && activeRealmId !== "portal") {
+      setTimeout(() => {
+        window.scrollTo?.(0, 0);
+        syncActiveWorldViewport();
+      }, 60);
+    }
+  });
+
   window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const openModalEl = document.querySelector(".modal-backdrop.open");
+      if (openModalEl) {
+        openModalEl.classList.remove("open");
+        return;
+      }
+      if (currentEncounter || $("encounter-dock")?.classList.contains("open")) {
+        e.preventDefault();
+        dismissEncounterDock();
+        return;
+      }
+    }
     if (document.activeElement && document.activeElement.tagName === "INPUT") {
       if (e.key === "Enter" && currentEncounter) {
         e.preventDefault();
@@ -2339,6 +2417,22 @@ function setupJoystickAndKeys() {
       const bt = bastionWorld.toggleBulletTime();
       syncBastionBulletTimePill();
       showToast(bt.requested ? "⏳ 0.08× Crystal Bullet-Time Aura ON!" : "⏳ Full-speed Citadel clock restored!");
+    }
+    // Roblox-style keyboard camera zoom (I / O, + / -), orbit ([ / ]), and center (C)
+    if (activeRealmId !== "portal") {
+      const world = getActiveWorld();
+      if (e.key === "i" || e.key === "I" || e.key === "=" || e.key === "+") {
+        world?.zoomCamera?.(-2.6);
+      } else if (e.key === "o" || e.key === "O" || e.key === "-" || e.key === "_") {
+        world?.zoomCamera?.(2.6);
+      } else if (e.key === "[") {
+        world?.orbitCamera?.(0.22, 0);
+      } else if (e.key === "]") {
+        world?.orbitCamera?.(-0.22, 0);
+      } else if (e.key === "c" || e.key === "C") {
+        world?.resetCamera?.();
+        showToast("🎥 Camera centered behind you!", 1600);
+      }
     }
     if (e.key === "Enter" && currentEncounter) handleCommit();
     syncDriveVector();
@@ -2524,6 +2618,10 @@ async function init() {
     getActiveAudio().playDetentClick?.(10);
     if (currentEncounter) renderTrickHoloProjector(currentEncounter);
   };
+
+  if ($("btn-close-dock")) {
+    $("btn-close-dock").onclick = () => dismissEncounterDock();
+  }
 
   $("enc-dial-input").addEventListener("input", (e) => {
     markFirstInput();

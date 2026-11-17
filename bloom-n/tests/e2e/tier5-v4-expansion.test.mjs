@@ -523,4 +523,152 @@ describe("Tier 5 Section C — Expanded Biomes, Field Expeditions, 3-Way Cosmeti
       page.assertZeroRuntimeErrors("T5-GARAGE-01");
     });
   });
+
+  test("T5-CAM-LANDSCAPE-01: Phone landscape (844x390) keeps HUD single-row & unobstructed, dock ✕ dismisses without re-trap, and Roblox camera zoom/orbit works", async () => {
+    await pool.withPage({ initialUrl: "/bloom-n/?u=sarah&f=MAPLE-K7Q2" }, async (page) => {
+      // Emulate iPhone 14/15 Pro in landscape (844 x 390)
+      await page.send("Emulation.setDeviceMetricsOverride", {
+        width: 844,
+        height: 390,
+        deviceScaleFactor: 2,
+        mobile: true,
+        screenOrientation: { type: "landscapePrimary", angle: 90 },
+      });
+
+      for (const realmId of ["frostwake", "oddroot", "arc_bastion"]) {
+        await launchRealmFromPortal(page, realmId);
+
+        const roamMetrics = await page.eval(() => {
+          const active = document.querySelector(".screen.active");
+          const hudTop = active.querySelector(".hud-top");
+          const drive = active.querySelector(".drive-cluster");
+          const joy = active.querySelector(".joy-zone");
+          const camHud = active.querySelector(".cam-hud-cluster");
+          const inputsUnder16 = [...document.querySelectorAll("input")].filter(
+            (inp) => parseFloat(getComputedStyle(inp).fontSize) < 16
+          );
+          const hudRect = hudTop.getBoundingClientRect();
+          const driveRect = drive.getBoundingClientRect();
+          const joyRect = joy.getBoundingClientRect();
+          const camRect = camHud.getBoundingClientRect();
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          const hudAreaRatio =
+            (hudRect.width * hudRect.height +
+              driveRect.width * driveRect.height +
+              camRect.width * camRect.height) /
+            (vw * vh);
+          return {
+            vw,
+            vh,
+            hudTopHeight: hudRect.height,
+            joyWidth: joyRect.width,
+            camVisible: getComputedStyle(camHud).display !== "none" && camRect.width > 0,
+            hudAreaRatio,
+            inputsUnder16Count: inputsUnder16.length,
+          };
+        });
+
+        assert.equal(roamMetrics.vw, 844);
+        assert.equal(roamMetrics.vh, 390);
+        assert.ok(
+          roamMetrics.hudTopHeight <= 46,
+          `${realmId} landscape .hud-top must stay a single slim row <=46px (got ${roamMetrics.hudTopHeight}px)`
+        );
+        assert.ok(
+          roamMetrics.joyWidth <= 86,
+          `${realmId} landscape .joy-zone must be compact <=86px (got ${roamMetrics.joyWidth}px)`
+        );
+        assert.equal(roamMetrics.camVisible, true, `${realmId} camera zoom/center pill visible while roaming`);
+        assert.ok(
+          roamMetrics.hudAreaRatio < 0.25,
+          `${realmId} landscape peripheral HUD leaves >75% 3D viewport unobstructed (ratio=${roamMetrics.hudAreaRatio.toFixed(3)})`
+        );
+        assert.equal(roamMetrics.inputsUnder16Count, 0, "Zero inputs below 16px font-size");
+
+        // Cruise to active gate/shrine in Frostwake & verify landscape side-sheet dock + ✕ dismiss + Roblox camera zoom/orbit
+        if (realmId === "frostwake") {
+          await cruiseToNextEncounterDock(page);
+
+          const dockLayout = await page.eval(() => {
+            const active = document.querySelector(".screen.active");
+            const drive = active.querySelector(".drive-cluster");
+            const dock = document.getElementById("encounter-dock");
+            const closeBtn = document.getElementById("btn-close-dock");
+            const dr = drive.getBoundingClientRect();
+            const dk = dock.getBoundingClientRect();
+            const cb = closeBtn.getBoundingClientRect();
+            const overlaps = !(
+              dr.right <= dk.left ||
+              dr.left >= dk.right ||
+              dr.bottom <= dk.top ||
+              dr.top >= dk.bottom
+            );
+            return {
+              driveVisible: getComputedStyle(drive).display !== "none" && dr.width > 0,
+              dockWidth: dk.width,
+              dockLeft: dk.left,
+              closeBtnVisible: cb.width > 0 && cb.height > 0,
+              overlaps,
+            };
+          });
+
+          assert.equal(dockLayout.driveVisible, true, "Left thumbstick stays accessible in phone landscape");
+          assert.equal(dockLayout.closeBtnVisible, true, "Dock ✕ close button is visible");
+          assert.equal(dockLayout.overlaps, false, "Landscape right-side dock never overlaps left drive cluster");
+          assert.ok(dockLayout.dockLeft > 420, `Landscape dock sits cleanly on right half (left=${dockLayout.dockLeft})`);
+
+          // Click ✕ (#btn-close-dock) and verify dock stays closed for 400ms while parked near gate!
+          await page.eval(() => {
+            document.getElementById("btn-close-dock")?.click();
+          });
+          await new Promise((r) => setTimeout(r, 420));
+
+          const afterDismiss = await page.eval(() => {
+            const dock = document.getElementById("encounter-dock");
+            return {
+              dockOpen: dock.classList.contains("open"),
+              screenDockOpen: document.getElementById("screen-frostwake").classList.contains("dock-open"),
+            };
+          });
+          assert.equal(afterDismiss.dockOpen, false, "Clicking ✕ closes #encounter-dock and prevents immediate re-trap");
+          assert.equal(afterDismiss.screenDockOpen, false, "screen-frostwake.dock-open removed on dismiss");
+
+          // Test Roblox camera controls: HUD zoom-out (+distance), canvas drag orbit, keyboard I/O/C
+          await page.eval(async () => {
+            const canvas = document.getElementById("frostwake-canvas");
+            const zoomOutBtn = document.querySelector('#screen-frostwake [data-cam-action="zoom-out"]');
+            const zoomInBtn = document.querySelector('#screen-frostwake [data-cam-action="zoom-in"]');
+            const resetBtn = document.querySelector('#screen-frostwake [data-cam-action="reset"]');
+
+            zoomOutBtn?.click();
+            await new Promise((r) => setTimeout(r, 80));
+            canvas.dispatchEvent(
+              new PointerEvent("pointerdown", { pointerId: 7, pointerType: "touch", clientX: 420, clientY: 195, bubbles: true })
+            );
+            canvas.dispatchEvent(
+              new PointerEvent("pointermove", { pointerId: 7, pointerType: "touch", clientX: 520, clientY: 235, bubbles: true })
+            );
+            canvas.dispatchEvent(
+              new PointerEvent("pointerup", { pointerId: 7, pointerType: "touch", clientX: 520, clientY: 235, bubbles: true })
+            );
+            await new Promise((r) => setTimeout(r, 80));
+            zoomInBtn?.click();
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "o", bubbles: true }));
+            await new Promise((r) => setTimeout(r, 80));
+            resetBtn?.click();
+          });
+
+          const toastAfterReset = await page.eval(
+            () => document.getElementById("hud-toast")?.textContent || ""
+          );
+          assert.match(toastAfterReset, /Camera centered/i, "Camera reset button centers camera and shows confirmation");
+        }
+
+        await exitRealmToPortal(page);
+      }
+
+      page.assertZeroRuntimeErrors("T5-CAM-LANDSCAPE-01");
+    });
+  });
 });

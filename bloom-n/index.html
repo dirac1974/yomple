@@ -220,6 +220,13 @@
       </div>
     </div>
 
+    <!-- Bottom-Right Peripheral Roblox-Style Camera Zoom & Center Controls -->
+    <div class="cam-hud-cluster" role="group" aria-label="Camera zoom and aim">
+      <button type="button" class="cam-hud-btn" data-cam-action="zoom-out" aria-label="Zoom camera out" title="Zoom out (O)">−</button>
+      <button type="button" class="cam-hud-btn cam-reset" data-cam-action="reset" aria-label="Center camera" title="Center view (C)">⟲</button>
+      <button type="button" class="cam-hud-btn" data-cam-action="zoom-in" aria-label="Zoom camera in" title="Zoom in (I)">+</button>
+    </div>
+
     <!-- Shared Bottom-Right Spatial 3D Encounter Dock (moves into active 3D realm) -->
     <aside id="encounter-dock" class="encounter-dock" aria-live="polite">
       <div class="enc-header">
@@ -227,6 +234,7 @@
         <div class="enc-header-right">
           <button type="button" id="btn-show-trick" class="trick-toggle-btn">🦊 Show Trick</button>
           <span id="enc-node-tag" class="enc-world-tag">W1.2</span>
+          <button type="button" id="btn-close-dock" class="dock-close-btn" aria-label="Close console and roam" title="Close &amp; roam (Esc)">✕</button>
         </div>
       </div>
       <div id="enc-equation" class="enc-equation">n + 100 = 100 - 200</div>
@@ -295,6 +303,12 @@
         <button type="button" id="oddroot-boost-btn" class="drive-pill boost">✨ Glide Boost</button>
       </div>
     </div>
+
+    <div class="cam-hud-cluster" role="group" aria-label="Camera zoom and aim">
+      <button type="button" class="cam-hud-btn" data-cam-action="zoom-out" aria-label="Zoom camera out" title="Zoom out (O)">−</button>
+      <button type="button" class="cam-hud-btn cam-reset" data-cam-action="reset" aria-label="Center camera" title="Center view (C)">⟲</button>
+      <button type="button" class="cam-hud-btn" data-cam-action="zoom-in" aria-label="Zoom camera in" title="Zoom in (I)">+</button>
+    </div>
   </section>
 
   <!-- ==================== SCREEN 4: ARC BASTION 60FPS 3D WORLD ==================== -->
@@ -338,6 +352,12 @@
         <button type="button" id="bastion-boost-btn" class="drive-pill boost">⚡ Siege Boost</button>
       </div>
     </div>
+
+    <div class="cam-hud-cluster" role="group" aria-label="Camera zoom and aim">
+      <button type="button" class="cam-hud-btn" data-cam-action="zoom-out" aria-label="Zoom camera out" title="Zoom out (O)">−</button>
+      <button type="button" class="cam-hud-btn cam-reset" data-cam-action="reset" aria-label="Center camera" title="Center view (C)">⟲</button>
+      <button type="button" class="cam-hud-btn" data-cam-action="zoom-in" aria-label="Zoom camera in" title="Zoom in (I)">+</button>
+    </div>
   </section>
 
   <!-- ==================== MODAL: PLAYER SWITCHER ==================== -->
@@ -357,7 +377,7 @@
           type="text"
           maxlength="18"
           placeholder="Find Yomple player name"
-          style="flex:1;min-width:180px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.25)"
+          style="flex:1;min-width:180px;padding:10px 12px;font-size:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.25)"
         />
         <button type="button" id="who-add-btn" class="pill-btn">Switch / Find</button>
       </div>

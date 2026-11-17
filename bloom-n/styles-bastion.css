@@ -288,8 +288,8 @@
   }
 }
 
-/* Mobile Ergonomics: Tuck steering thumbstick cleanly when Encounter Dock is open */
-@media (max-width: 760px) {
+/* Mobile Portrait Ergonomics: Tuck steering thumbstick cleanly when full-width portrait Encounter Dock is open */
+@media (max-width: 760px) and (orientation: portrait) {
   #screen-bastion.dock-open .drive-cluster {
     opacity: 0.25;
     pointer-events: none;

@@ -1884,5 +1884,405 @@ button:active {
   border-radius: 999px;
 }
 
+/* ==================== V5.2: ANTI-STUCK-ZOOM, ROBLOX CAMERA HUD & PHONE LANDSCAPE OVERHAUL ==================== */
+html,
+body,
+button,
+a,
+input,
+select,
+textarea,
+.hud-top,
+.encounter-dock,
+.modal-backdrop {
+  touch-action: manipulation;
+}
+
+/* Guarantee >=16px font-size on all inputs so iOS Safari never triggers stuck auto-zoom */
+input,
+select,
+textarea {
+  font-size: max(16px, 1rem);
+}
+
+#frostwake-canvas,
+#oddroot-canvas,
+#bastion-canvas {
+  touch-action: none;
+}
+
+.enc-header-right {
+  flex-shrink: 0;
+}
+
+.dock-close-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(148, 226, 240, 0.36);
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 900;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dock-close-btn:hover {
+  background: rgba(92, 225, 230, 0.26);
+  border-color: var(--turquoise);
+}
+
+/* Peripheral Bottom-Right Camera Zoom & Center Pill */
+.cam-hud-cluster {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: rgba(10, 26, 44, 0.76);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(92, 225, 230, 0.28);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.36);
+  z-index: 12;
+}
+
+#screen-oddroot .cam-hud-cluster {
+  background: hsla(170, 42%, 12%, 0.78);
+  border-color: hsla(158, 72%, 56%, 0.34);
+}
+
+#screen-bastion .cam-hud-cluster {
+  background: hsla(220, 52%, 13%, 0.8);
+  border-color: hsla(42, 92%, 64%, 0.38);
+}
+
+.cam-hud-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.cam-hud-btn.cam-reset {
+  font-size: 1.02rem;
+  color: var(--turquoise);
+  background: rgba(92, 225, 230, 0.16);
+}
+
+.cam-hud-btn:hover {
+  background: rgba(92, 225, 230, 0.28);
+}
+
+/* Tuck camera pill neatly while Encounter Dock occupies bottom-right */
+#screen-frostwake.dock-open .cam-hud-cluster,
+#screen-oddroot.dock-open .cam-hud-cluster,
+#screen-bastion.dock-open .cam-hud-cluster {
+  display: none;
+}
+
+/* Safe-area notch & home-bar insets on default 3D HUD */
+.hud-top {
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+}
+
+.drive-cluster {
+  left: max(16px, env(safe-area-inset-left));
+}
+
+.encounter-dock {
+  right: max(16px, env(safe-area-inset-right));
+}
+
+/* ==================== PHONE LANDSCAPE ERGONOMICS (e.g. 667x375, 844x390, 932x430) ==================== */
+@media (max-height: 540px) and (orientation: landscape) {
+  /* 1. Single-row peripheral top bar (~30px tall) where Shards, Garage & Mute all fit on-screen! */
+  .hud-top {
+    top: max(5px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    gap: 4px;
+    pointer-events: auto;
+    touch-action: pan-x;
+  }
+
+  .hud-top::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hud-group {
+    flex-wrap: nowrap;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  /* Hide passive teaser chip, mini bar track & expedition sub-pill in compact phone landscape so Shards & Workshop/Armory always stay visible on-screen */
+  .hud-wonder-chip,
+  .siphon-orb-strip,
+  .hud-zone-mini-track,
+  .hud-expedition-pill,
+  .ab-expedition-pill {
+    display: none !important;
+  }
+
+  .hud-btn,
+  .hud-zone-pill,
+  .mount-toggle-pill,
+  .ab-bullettime-pill,
+  .rig-toggle-pill,
+  .partner-pill,
+  .flare-btn,
+  .slipstream-boost-pill {
+    padding: 3px 7px !important;
+    font-size: 0.67rem !important;
+    line-height: 1.15;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  #hud-world-btn,
+  #oddroot-world-btn,
+  #bastion-world-btn {
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mount-toggle-pill,
+  .rig-toggle-pill,
+  .ab-bullettime-pill {
+    max-width: 106px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .char-hud-avatar,
+  .char-chip-avatar {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* 2. Tuck toast, surge banner & victory stamp right beneath slim top bar (shifted over left 3D view when dock is open) */
+  .surge-banner,
+  .hud-toast {
+    top: 38px;
+    padding: 4px 11px;
+    font-size: 0.74rem;
+  }
+
+  #screen-frostwake.dock-open .hud-toast,
+  #screen-oddroot.dock-open .hud-toast,
+  #screen-bastion.dock-open .hud-toast {
+    left: 26%;
+    max-width: 48vw;
+  }
+
+  .victory-stamp-card {
+    top: 40px;
+    padding: 7px 13px;
+    transform: translateX(-50%) scale(0.85);
+  }
+
+  /* 3. Compact corner thumbstick & drive pills — stays usable even when dock is open! */
+  .drive-cluster,
+  #screen-frostwake.dock-open .drive-cluster,
+  #screen-oddroot.dock-open .drive-cluster,
+  #screen-bastion.dock-open .drive-cluster {
+    display: flex !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: none !important;
+    left: max(10px, env(safe-area-inset-left));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .joy-zone {
+    width: 80px;
+    height: 80px;
+    background: rgba(14, 34, 56, 0.46);
+  }
+
+  .joy-knob {
+    width: 34px;
+    height: 34px;
+    left: 23px;
+    top: 23px;
+  }
+
+  .drive-quick-col {
+    gap: 5px;
+  }
+
+  .drive-pill {
+    padding: 6px 10px;
+    font-size: 0.72rem;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+
+  /* 4. Compact bottom-right camera zoom/center pill */
+  .cam-hud-cluster {
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    padding: 3px;
+    gap: 3px;
+  }
+
+  .cam-hud-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 0.9rem;
+  }
+
+  .cam-hud-btn.cam-reset {
+    font-size: 0.94rem;
+  }
+
+  /* 5. Clean right-side Encounter Dock with always-visible sticky Commit button! */
+  .encounter-dock {
+    top: 38px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    right: max(10px, env(safe-area-inset-right));
+    left: auto;
+    width: min(352px, 46vw);
+    max-height: calc(100dvh - 46px);
+    overflow-y: auto;
+    padding: 7px 10px;
+    gap: 4px;
+    border-radius: 16px;
+  }
+
+  .enc-prompt {
+    font-size: 0.73rem;
+    line-height: 1.15;
+  }
+
+  .trick-toggle-btn {
+    padding: 2px 7px;
+    font-size: 0.67rem;
+  }
+
+  .enc-world-tag {
+    font-size: 0.66rem;
+    padding: 2px 6px;
+  }
+
+  .dock-close-btn {
+    width: 25px;
+    height: 25px;
+    font-size: 0.76rem;
+  }
+
+  .enc-equation {
+    font-size: 0.98rem;
+    padding: 4px 8px;
+    border-radius: 9px;
+  }
+
+  .beam-chip {
+    padding: 3px 7px;
+    font-size: 0.69rem;
+    border-radius: 8px;
+  }
+
+  .drum-box {
+    padding: 5px 7px;
+    gap: 4px;
+    border-radius: 10px;
+  }
+
+  .drum-input {
+    width: 90px;
+    font-size: 16px;
+    padding: 2px 5px;
+    border-radius: 8px;
+  }
+
+  .drum-sign-btn {
+    padding: 4px 8px;
+    font-size: 0.74rem;
+  }
+
+  .detent-btn {
+    padding: 4px 2px;
+    font-size: 0.72rem;
+    border-radius: 7px;
+  }
+
+  .commit-btn {
+    position: sticky;
+    bottom: 0;
+    flex-shrink: 0;
+    padding: 7px 10px;
+    font-size: 0.85rem;
+    border-radius: 11px;
+  }
+
+  .trick-holo-card {
+    padding: 5px 7px;
+    font-size: 0.68rem;
+    line-height: 1.2;
+  }
+
+  .char-trick-fox {
+    width: 24px;
+    height: 24px;
+  }
+
+  .trick-beats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+  }
+
+  .trick-beat-box {
+    padding: 4px 6px;
+  }
+
+  /* 6. Portal & Modals comfortable fit in phone landscape */
+  #screen-portal {
+    padding: 10px max(14px, env(safe-area-inset-right)) 18px max(14px, env(safe-area-inset-left));
+  }
+
+  .realms-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .modal-backdrop {
+    padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  }
+
+  .modal-sheet {
+    max-height: 92dvh;
+    padding: 12px 16px;
+    border-radius: 18px;
+  }
+
+  .garage-realm-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 
 

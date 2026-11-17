@@ -50,6 +50,7 @@ import {
   createBeveledWingGeometry,
   getCustomSurfaceTexture,
 } from "../core/character-graphics-3d.js";
+import { RobloxFollowCameraRig } from "../core/camera-rig-3d.js";
 
 function applyFresnelRimToCharacterSubtree(
   rootObj,
@@ -465,6 +466,11 @@ export class OddrootWorld3D {
     this._tmpVecA = new THREE.Vector3();
     this._tmpVecB = new THREE.Vector3();
     this._tmpObj = new THREE.Object3D();
+    this.cameraRig = new RobloxFollowCameraRig({
+      defaultDistance: 18.8,
+      defaultPitch: 0.44,
+      pivotHeight: 2.0,
+    });
 
     this._initScene();
   }
@@ -536,8 +542,8 @@ export class OddrootWorld3D {
     this.scene.fog = new THREE.FogExp2(0x0d2633, 0.0052);
 
     this.baseFov = 55;
-    this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, 0.4, 420);
-    this.camera.position.set(0, 11.5, 36);
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, 0.4, 480);
+    this.camera.position.set(0, 12.2, 40.5);
     this.camera.lookAt(0, 3.05, 15.5);
     this.camera.updateMatrixWorld();
 
@@ -2452,6 +2458,36 @@ export class OddrootWorld3D {
     return Boolean(this.encounterDockOpen || this._gateAutoPause);
   }
 
+  dismissActiveEncounter() {
+    if (this.activeGateSlot) {
+      this.activeGateSlot._dismissedUntilLeave = true;
+      this.activeGateSlot = null;
+    }
+    this.encounterDockOpen = false;
+    this._gateAutoPause = false;
+    this.autopilotTarget = null;
+  }
+
+  orbitCamera(deltaYaw = 0, deltaPitch = 0) {
+    return this.cameraRig?.orbitBy(deltaYaw, deltaPitch);
+  }
+
+  zoomCamera(deltaDistance = 0) {
+    return this.cameraRig?.zoomBy(deltaDistance);
+  }
+
+  zoomCameraScale(scaleFactor = 1) {
+    return this.cameraRig?.zoomScale(scaleFactor);
+  }
+
+  resetCamera(opts = {}) {
+    return this.cameraRig?.resetBehindRig(opts);
+  }
+
+  getCameraState() {
+    return this.cameraRig?.getState() || null;
+  }
+
   // Loadout, Mounts, Cross-Realm, Observatory & Guardian
   _persistOddrootProgressMutation(mutatorFn) {
     const prog = this._boundProgressRef;
@@ -3523,6 +3559,9 @@ export class OddrootWorld3D {
       this.autopilotTarget = null;
       return null;
     }
+    for (const s of openSlots) {
+      s._dismissedUntilLeave = false;
+    }
 
     if (openSlots[0].encounter?.worldId === "W0") {
       const slot = openSlots[0];
@@ -4342,9 +4381,10 @@ export class OddrootWorld3D {
 
     this._stepSelfGhost(dt);
 
-    // 9. Smooth Third-Person Sanctuary Camera Follow, FOV Kick + Active Shrine Framing
+    // 9. Smooth Roblox-Style Sanctuary Follow/Orbit/Zoom Camera + FOV Kick
     const baseFov = this.baseFov || 55;
-    const targetFov = slipActive && !this.activeGateSlot ? 60.5 : baseFov;
+    const framingGate = Boolean(this.activeGateSlot && this.encounterDockOpen);
+    const targetFov = slipActive && !framingGate ? 60.5 : baseFov;
     const nextFov =
       this.camera.fov + (targetFov - this.camera.fov) * (1 - Math.exp(-7.5 * dt));
     if (Math.abs(nextFov - this.camera.fov) > 0.02) {
@@ -4352,40 +4392,14 @@ export class OddrootWorld3D {
       this.camera.updateProjectionMatrix();
     }
 
-    const fwdX = -Math.sin(this.rigState.heading);
-    const fwdZ = -Math.cos(this.rigState.heading);
-    if (this.activeGateSlot) {
-      const s = this.activeGateSlot;
-      const shrineOutX = Math.sin(s.rotY);
-      const shrineOutZ = Math.cos(s.rotY);
-      const midX = (this.rigState.x + s.x) * 0.5;
-      const midZ = (this.rigState.z + s.z) * 0.5;
-      this._tmpVecA.set(
-        midX + shrineOutX * 13.5,
-        Math.max(this.rigState.y, s.y) + 7.4,
-        midZ + shrineOutZ * 13.5
-      );
-      this._tmpVecB.set(
-        s.x * 0.75 + this.rigState.x * 0.25,
-        s.y + 1.9,
-        s.z * 0.75 + this.rigState.z * 0.25
-      );
-    } else {
-      this._tmpVecA.set(
-        this.rigState.x - fwdX * 13.5,
-        this.rigState.y + 8.6,
-        this.rigState.z - fwdZ * 13.5
-      );
-      this._tmpVecB.set(
-        this.rigState.x + fwdX * 6.5,
-        this.rigState.y + 2.1,
-        this.rigState.z + fwdZ * 6.5
-      );
-    }
-    const camLerp = 1 - Math.exp(-6.5 * dt);
-    this.camera.position.lerp(this._tmpVecA, camLerp);
-    this.camera.lookAt(this._tmpVecB);
-    this.camera.updateMatrixWorld();
+    this.cameraRig.step({
+      dt,
+      rigState: this.rigState,
+      activeGateSlot: this.activeGateSlot,
+      encounterDockOpen: this.encounterDockOpen,
+      groundHeightAt: (x, z) => this._groundHeightAt(x, z),
+      camera: this.camera,
+    });
   }
 
   _stepAvatarMovement(dt) {
@@ -4611,6 +4625,13 @@ export class OddrootWorld3D {
       const ax = slot.x + Math.sin(slot.rotY) * 6.0;
       const az = slot.z + Math.cos(slot.rotY) * 6.0;
       const dist = Math.hypot(this.rigState.x - ax, this.rigState.z - az);
+      if (slot._dismissedUntilLeave) {
+        if (dist > 12.2) {
+          slot._dismissedUntilLeave = false;
+        } else {
+          continue;
+        }
+      }
       if (dist < 9.2) {
         this.activeGateSlot = slot;
         this._gateAutoPause = true;
